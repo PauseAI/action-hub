@@ -108,13 +108,15 @@ describe('the tasks of a running project', () => {
         }),
     }))
 
-  it('are reviewed by its admins, owner and deputies', async () => {
-    await expectAccess(people, {
+  it('are accepted by its admins, owner and deputies', () =>
+    expectAccess(people, {
       allowed: RUNNERS,
       attempt: (as, w) =>
         as.projects.acceptTask({ projectId: w.project.id, taskId: w.tasks.submitted.id }),
-    })
-    await expectAccess(people, {
+    }))
+
+  it('are sent back for changes by its admins, owner and deputies', () =>
+    expectAccess(people, {
       allowed: RUNNERS,
       attempt: (as, w) =>
         as.projects.requestTaskChanges({
@@ -122,13 +124,14 @@ describe('the tasks of a running project', () => {
           taskId: w.tasks.submitted.id,
           message: 'Once more',
         }),
-    })
-    await expectAccess(people, {
+    }))
+
+  it('are reopened by its admins, owner and deputies', () =>
+    expectAccess(people, {
       allowed: RUNNERS,
       attempt: (as, w) =>
         as.projects.reopenTask({ projectId: w.project.id, taskId: w.tasks.done.id }),
-    })
-  })
+    }))
 
   it('are deleted by its admins, owner and deputies, and by whoever added them', async () => {
     await expectAccess(people, {

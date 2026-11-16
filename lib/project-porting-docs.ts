@@ -21,7 +21,7 @@ export function projectImportJsonSchema(): Record<string, unknown> {
  */
 export const PROJECT_IMPORT_EXAMPLE = {
   _meta: {
-    format: 'catalyse-project-export',
+    format: 'action-hub-project-export',
     version: 1,
     projectId: 42,
     baseHash: 'sha256:…copied from your export…',
@@ -59,10 +59,10 @@ export const PROJECT_IMPORT_EXAMPLE = {
  * file, so it addresses the assistant directly and leads with the rules that are most often
  * got wrong.
  */
-export const PROJECT_IMPORT_GUIDE = `# Editing a Catalyse project import file
+export const PROJECT_IMPORT_GUIDE = `# Editing a Action Hub project import file
 
 You are editing a JSON file that describes one project and its tasks. It will be uploaded
-back to Catalyse, which shows the human a diff before anything is written. Produce the whole
+back to Action Hub, which shows the human a diff before anything is written. Produce the whole
 file, valid JSON, with no commentary outside it.
 
 ## Identity — the rule most often got wrong

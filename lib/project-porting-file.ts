@@ -157,7 +157,7 @@ export type ProjectExportPayload = {
    */
   $schema?: string
   _meta: {
-    format: 'catalyse-project-export'
+    format: 'action-hub-project-export'
     version: 1
     projectId: number
     exportedAt: string

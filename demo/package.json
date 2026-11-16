@@ -1,5 +1,5 @@
 {
-  "name": "catalyse-demo",
+  "name": "action-hub-demo",
   "private": true,
   "description": "Dependencies only the demo recorder needs, kept out of the site's install. `npm run demo` installs them.",
   "dependencies": {

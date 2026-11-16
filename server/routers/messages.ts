@@ -245,7 +245,7 @@ export const messagesRouter = {
       const sender = context.volunteer
       const { root, other } = await loadThread(input.threadId, sender.id)
       if (other.deletedAt) {
-        throw new ORPCError('BAD_REQUEST', { message: 'This volunteer has left Catalyse' })
+        throw new ORPCError('BAD_REQUEST', { message: 'This volunteer has left Action Hub' })
       }
       if (!(await canContinue(context.volunteer, context.access, other))) {
         throw new ORPCError('BAD_REQUEST', {

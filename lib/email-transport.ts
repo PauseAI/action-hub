@@ -62,7 +62,7 @@ export class ResendTransport extends EmailTransport {
 
 /** Development transport: writes each email to disk and logs the path so it can be opened. */
 export class FileStubTransport extends EmailTransport {
-  static readonly DIR = '/tmp/catalyse-emails'
+  static readonly DIR = '/tmp/action-hub-emails'
 
   async send({ to, subject, html }: OutgoingEmail): Promise<boolean> {
     const fs = await import('fs/promises')

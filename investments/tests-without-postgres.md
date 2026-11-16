@@ -8,7 +8,7 @@ Every node test file runs `test/global-setup.ts`, so even a pure test such as `l
 
 ## Fix
 
-A vitest project for tests that need no database, and a script that prints a CI run's failing tests from its annotations (`gh api repos/PauseAI/catalyse/check-runs/<job id>/annotations`).
+A vitest project for tests that need no database, and a script that prints a CI run's failing tests from its annotations (`gh api repos/PauseAI/action-hub/check-runs/<job id>/annotations`).
 
 ## Hits
 

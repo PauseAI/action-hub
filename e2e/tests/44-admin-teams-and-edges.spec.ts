@@ -78,7 +78,7 @@ test.describe('Edges', () => {
       const html = await (await page.request.get(`${baseUrl}/privacy`)).text()
       expect(html).toContain('Your GDPR rights')
       await page.goto(`${baseUrl}/privacy`)
-      await expect(page).toHaveTitle('Catalyse | Privacy policy')
+      await expect(page).toHaveTitle('Action Hub | Privacy policy')
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 10_000 })
       // Signed out: the header offers a login, in the bar or behind the phone menu.
       const menu = page.getByRole('button', { name: 'Open menu' })

@@ -1,8 +1,8 @@
-# Catalyse
+# Action Hub
 
 **Volunteer & Project Matching Platform for PauseAI**
 
-Catalyse connects volunteers with projects, matching skills to needs and enabling effective coordination across PauseAI initiatives.
+Action Hub connects volunteers with projects, matching skills to needs and enabling effective coordination across PauseAI initiatives.
 
 ## Features
 
@@ -194,7 +194,7 @@ Actions are pinned to commit SHAs with the version in a trailing comment; bump b
 ## Project Structure
 
 ```text
-catalyse/
+action-hub/
 ├── app/                    # App Router pages and API routes
 ├── components/             # Shared React components
 ├── docs/                   # Architecture notes

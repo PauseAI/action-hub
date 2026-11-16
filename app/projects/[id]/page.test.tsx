@@ -84,7 +84,7 @@ describe('project page — visitor', () => {
     })
     await mount(project.id, me)
     await screen.findByRole('heading', { name: 'Visible project' })
-    expect(document.title).toBe('Catalyse | Visible project')
+    expect(document.title).toBe('Action Hub | Visible project')
     // Overview first: the description, skills and the doc link.
     expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('link', { name: 'Open project doc →' })).toHaveAttribute(
@@ -151,7 +151,7 @@ describe('project page — visitor', () => {
     // It says how the message is delivered, and Escape closes it with focus back on the button.
     expect(
       within(screen.getByRole('dialog', { name: 'Message owner' })).getByText(
-        `${owner.name} will see this in their Inbox and get a copy by email. You can both reply on Catalyse; your email address stays private unless you share it below.`,
+        `${owner.name} will see this in their Inbox and get a copy by email. You can both reply on Action Hub; your email address stays private unless you share it below.`,
       ),
     ).toBeInTheDocument()
     await userEvent.keyboard('{Escape}')

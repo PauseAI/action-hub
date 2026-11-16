@@ -43,7 +43,7 @@ describe('Header', () => {
   it('shows login/signup when signed out, on desktop and in the mobile menu', async () => {
     await mount(null, '/')
     expect(await screen.findByRole('link', { name: 'Login' })).toHaveAttribute('href', '/login')
-    expect(screen.getByRole('link', { name: 'Catalyse' })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('link', { name: 'Action Hub' })).toHaveAttribute('href', '/')
     await userEvent.click(screen.getByLabelText('Open menu'))
     expect(document.body.style.overflow).toBe('hidden')
     expect(screen.getAllByRole('link', { name: 'Sign up' })).toHaveLength(2)
@@ -62,7 +62,7 @@ describe('Header', () => {
     expect(screen.getByRole('link', { name: 'Projects' })).toHaveClass('bg-primary')
     expect(screen.getByRole('link', { name: 'Projects' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('link', { name: 'People' })).not.toHaveClass('bg-primary')
-    expect(screen.getByRole('link', { name: 'Catalyse' })).toHaveAttribute('href', '/dashboard')
+    expect(screen.getByRole('link', { name: 'Action Hub' })).toHaveAttribute('href', '/dashboard')
     expect(screen.queryByText('Confirm your location')).toBeNull()
     await userEvent.click(nameButton)
     expect(screen.getByRole('link', { name: 'Global admin' })).toHaveAttribute('href', '/admin')

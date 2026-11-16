@@ -32,7 +32,7 @@ describe('API tokens page', () => {
     const shown = await screen.findByRole('region', { name: 'New token' })
     const token = within(shown).getByText(/^cat_/).textContent!
     expect(shown).toHaveTextContent(
-      `claude mcp add --transport http catalyse http://localhost:3000/api/mcp --header "Authorization: Bearer ${token}"`,
+      `claude mcp add --transport http action-hub http://localhost:3000/api/mcp --header "Authorization: Bearer ${token}"`,
     )
     await userEvent.click(within(shown).getByRole('button', { name: 'Copy token' }))
     expect(writeText).toHaveBeenCalledWith(token)

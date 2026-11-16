@@ -44,7 +44,7 @@ describe('static pages', () => {
   it('manifest makes the app installable, with icons that exist', () => {
     const m = manifest()
     expect(m).toMatchObject({
-      short_name: 'Catalyse',
+      short_name: 'Action Hub',
       display: 'standalone',
       start_url: '/dashboard',
     })
@@ -69,7 +69,7 @@ describe('editor host pages', () => {
     })
     await waitFor(() => expect(document.body.textContent).toContain('Edit project'))
     expect(await screen.findByDisplayValue('Hosted')).toBeInTheDocument()
-    await waitFor(() => expect(document.title).toBe('Catalyse | Edit Hosted'))
+    await waitFor(() => expect(document.title).toBe('Action Hub | Edit Hosted'))
 
     await renderApp(<SuggestNewProjectPage />, { as: me })
     expect(await screen.findByRole('heading', { name: 'Propose a project' })).toBeInTheDocument()

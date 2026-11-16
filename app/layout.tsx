@@ -37,11 +37,11 @@ const sairaCondensed = Saira_Condensed({
 
 export const metadata: Metadata = {
   title: {
-    template: 'Catalyse | %s',
-    default: 'Catalyse | PauseAI Volunteer Platform',
+    template: 'Action Hub | %s',
+    default: 'Action Hub | PauseAI Volunteer Platform',
   },
   description: 'PauseAI volunteer platform',
-  appleWebApp: { title: 'Catalyse', statusBarStyle: 'default' },
+  appleWebApp: { title: 'Action Hub', statusBarStyle: 'default' },
 }
 
 export const viewport: Viewport = {

@@ -17,7 +17,7 @@ const PRIVACY_EMAIL = 'privacy@pauseai.info'
 export const metadata: Metadata = {
   title: 'Privacy policy',
   description:
-    'How Catalyse, the PauseAI volunteer platform, collects, uses and protects your data, and your rights under GDPR.',
+    'How Action Hub, the PauseAI volunteer platform, collects, uses and protects your data, and your rights under GDPR.',
 }
 
 /** A server component: the policy is the same for every reader, so it arrives as HTML. */

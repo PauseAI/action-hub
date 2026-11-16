@@ -34,7 +34,7 @@ export default function UpdatePrompt({ reload = () => window.location.reload() }
       role="status"
       className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9998] w-[360px] max-sm:w-[calc(100vw-24px)] max-sm:bottom-4 flex items-center gap-3 rounded-lg border border-brand-border bg-surface px-4 py-3 text-sm shadow-lg"
     >
-      <span className="flex-1">A new version of Catalyse is available.</span>
+      <span className="flex-1">A new version of Action Hub is available.</span>
       <Button variant="ghost" size="sm" onClick={() => setDismissed(data.sha)}>
         Later
       </Button>

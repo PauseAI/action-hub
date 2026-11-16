@@ -25,11 +25,11 @@ import { emails, linkParam } from '@/test/fakes/email'
 import { google } from '@/test/fakes/google'
 
 const subjects = {
-  confirm: 'Welcome to Catalyse: please confirm your email',
-  welcome: 'Welcome to Catalyse!',
-  reset: 'Reset your Catalyse password',
-  received: 'Your Catalyse application has been received',
-  approved: 'Your Catalyse application has been approved',
+  confirm: 'Welcome to Action Hub: please confirm your email',
+  welcome: 'Welcome to Action Hub!',
+  reset: 'Reset your Action Hub password',
+  received: 'Your Action Hub application has been received',
+  approved: 'Your Action Hub application has been approved',
 }
 const sentSubjects = () => emails.sent.map((e) => e.subject)
 
@@ -560,7 +560,7 @@ describe('verifyEmail / resendVerification', () => {
 
   it('locks out whoever pre-registered a listed address when its owner confirms it', async () => {
     // Anyone can sign up with an address they do not own. The owner, expecting mail
-    // from Catalyse, clicks the link from their own browser, signed out.
+    // from Action Hub, clicks the link from their own browser, signed out.
     const squatted = await createVolunteer({
       email: 'admin14@example.com',
       approvalStatus: 'pending',

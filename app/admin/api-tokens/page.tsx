@@ -69,7 +69,7 @@ export default function AdminApiTokensPage() {
 
   const mcpCommand =
     created &&
-    `claude mcp add --transport http catalyse ${window.location.origin}/api/mcp --header "Authorization: Bearer ${created.token}"`
+    `claude mcp add --transport http action-hub ${window.location.origin}/api/mcp --header "Authorization: Bearer ${created.token}"`
 
   return (
     <main className="container py-5 pb-15">

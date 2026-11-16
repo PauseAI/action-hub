@@ -23,7 +23,7 @@ export function AdminInviteEmail({ inviteUrl, invitedBy, invite, appUrl }: Admin
       <Heading as="h2">You&apos;re invited to run a PauseAI chapter</Heading>
       <Text>Hi there,</Text>
       <Text>
-        <strong>{invitedBy}</strong> has invited you to be {title} on Catalyse, the PauseAI
+        <strong>{invitedBy}</strong> has invited you to be {title} on Action Hub, the PauseAI
         volunteer coordination platform.
       </Text>
       <ul>
