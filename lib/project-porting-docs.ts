@@ -59,7 +59,7 @@ export const PROJECT_IMPORT_EXAMPLE = {
  * file, so it addresses the assistant directly and leads with the rules that are most often
  * got wrong.
  */
-export const PROJECT_IMPORT_GUIDE = `# Editing a Action Hub project import file
+export const PROJECT_IMPORT_GUIDE = `# Editing an Action Hub project import file
 
 You are editing a JSON file that describes one project and its tasks. It will be uploaded
 back to Action Hub, which shows the human a diff before anything is written. Produce the whole

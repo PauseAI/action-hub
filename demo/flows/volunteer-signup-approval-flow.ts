@@ -202,7 +202,7 @@ async function recordApplicantPending(engine: DemoEngine, browser: Browser): Pro
   const confirmUrl = `${BASE_URL}/verify-email?token=${_verifyToken}`
   const emailHtml = buildWelcomeAndConfirmHtml(APPLICANT.name, confirmUrl)
   await showEmailClient(engine, page, {
-    subject: 'Confirm your Action Hub email address',
+    subject: 'Welcome to Action Hub: please confirm your email',
     from: NOREPLY_EMAIL,
     to: APPLICANT.email,
     bodyHtml: emailHtml,
