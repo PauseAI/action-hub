@@ -27,3 +27,4 @@ A test that races only under full-suite load fails one `check-all` run, passes 8
 - 2026-11-11: `tasks-access` "are reviewed by its admins, owner and deputies" timed out at 20 s, 8/8 alone
 - 2026-11-11: three `tasks-access` tests timed out; with the host loaded the file failed two of 17 alone, on `main` too
 - 2026-11-12: `check-all` timed out seven tests across the access matrix, `cron-audit`, `concurrency` and `skills`; run alone, `tasks-access` still failed two of 17 and `projects-access` one of 23 at 20 s, in a change touching no code
+- 2026-11-12 (x3): notification preferences' `check-all`s each timed out `tasks-access`; the file took 112–165 s in the suite and, with the host loaded, failed alone at 122–143 s, on the base commit too
