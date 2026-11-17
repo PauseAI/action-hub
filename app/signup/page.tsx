@@ -808,7 +808,7 @@ export default function SignupPage() {
       )}
       <main className="container py-5 pb-15">
         <div className="max-w-2xl mx-auto">
-          <H1>{isGoogle ? 'Complete your application' : 'Join Catalyse'}</H1>
+          <H1>{isGoogle ? 'Complete your application' : 'Join Action Hub'}</H1>
           <P className="text-text-light mb-6">
             {isGoogle
               ? 'Your Google account is verified. Fill in your details to apply.'

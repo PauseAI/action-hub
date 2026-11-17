@@ -91,7 +91,7 @@ function sendNotificationEmail(
     name,
     subject: email?.subject ?? title,
     message: email?.message ?? html`${body ?? title}`,
-    ctaLabel: email?.ctaLabel ?? 'Open in Catalyse',
+    ctaLabel: email?.ctaLabel ?? 'Open in Action Hub',
     ctaUrl: email?.ctaUrl ?? link ?? '/inbox',
   })
 }

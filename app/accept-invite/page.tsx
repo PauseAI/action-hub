@@ -61,7 +61,7 @@ function AcceptInviteContent() {
       <div className={`${SECTION_CARD} mb-4 overflow-hidden wrap-break-word text-center`}>
         <H2>Chapter staff invite</H2>
         <P className="text-text-light my-4">
-          You&apos;ve been invited to help run a national chapter on Catalyse.
+          You&apos;ve been invited to help run a national chapter on Action Hub.
         </P>
         <P className="mb-6">Please log in or sign up with the invited email address to accept.</P>
         <Button href={`/login?redirect=${redirectUrl}`}>Log in</Button>

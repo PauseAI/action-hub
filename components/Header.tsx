@@ -44,22 +44,22 @@ function MobileNavSection({ children, admin }: { children: React.ReactNode; admi
   )
 }
 
-/** "Catalyse" from `sm` up; on a phone, its initial in a tile, to leave room for the buttons. */
+/** "Action Hub" from `sm` up; on a phone, its initials in a tile, to leave room for the buttons. */
 function Wordmark({ href }: { href: string }) {
   return (
     <Link
       href={href}
-      aria-label="Catalyse"
+      aria-label="Action Hub"
       className="font-display text-2xl font-black text-primary no-underline flex items-center"
     >
       <span
         aria-hidden="true"
-        className="sm:hidden flex size-9 items-center justify-center rounded-lg bg-primary text-[#111827]"
+        className="sm:hidden flex size-9 items-center justify-center rounded-lg bg-primary text-base text-[#111827]"
       >
-        C
+        AH
       </span>
       <span aria-hidden="true" className="hidden sm:inline">
-        Catalyse
+        Action Hub
       </span>
     </Link>
   )

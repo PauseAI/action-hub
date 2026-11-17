@@ -15,7 +15,7 @@ export function PasswordResetEmail({ resetUrl, name, appUrl }: PasswordResetEmai
       <Heading as="h2">Reset Your Password</Heading>
       <Text>{`Hi ${name},`}</Text>
       <Text>
-        We received a request to reset your password for your Catalyse account. Click the button
+        We received a request to reset your password for your Action Hub account. Click the button
         below to choose a new password:
       </Text>
       <Section style={{ textAlign: 'center', margin: '32px 0' }}>

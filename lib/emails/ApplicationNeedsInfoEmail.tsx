@@ -21,7 +21,7 @@ export function ApplicationNeedsInfoEmail({
       <Heading as="h2">We need a bit more information</Heading>
       <Text>{`Hi ${name},`}</Text>
       <Text>
-        Thanks for applying to join Catalyse PauseAI. Before we can finish reviewing your
+        Thanks for applying to join PauseAI Action Hub. Before we can finish reviewing your
         application, we need some more information from you:
       </Text>
       {applicantNotes && (

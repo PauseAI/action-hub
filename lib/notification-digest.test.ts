@@ -116,10 +116,10 @@ describe('digest contents', () => {
       'Europe/London',
     )
     expect(oneDay[0].items[0].detail).toBe('x')
-    expect(digestSubject(1, 'daily')).toBe('Catalyse: your daily digest of 1 notification')
+    expect(digestSubject(1, 'daily')).toBe('Action Hub: your daily digest of 1 notification')
     expect(digestSubject(4, 'every_3_days')).toBe(
-      'Catalyse: your three-day digest of 4 notifications',
+      'Action Hub: your three-day digest of 4 notifications',
     )
-    expect(digestSubject(2, 'weekly')).toBe('Catalyse: your weekly digest of 2 notifications')
+    expect(digestSubject(2, 'weekly')).toBe('Action Hub: your weekly digest of 2 notifications')
   })
 })

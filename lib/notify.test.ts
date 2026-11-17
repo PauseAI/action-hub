@@ -118,7 +118,7 @@ describe('notifyUser email preferences', () => {
     )
     expect(emails.last.html).toContain('Look &lt;here&gt;')
     expect(emails.last.html).toContain('/projects/9')
-    expect(emails.last.html).toContain('Open in Catalyse')
+    expect(emails.last.html).toContain('Open in Action Hub')
 
     await choose(vol.id, 'task_done', 'email')
     await notifyUser(vol.id, 'task_done', 'Done', null, null)

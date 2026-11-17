@@ -17,7 +17,7 @@ export function EmailFooter({
     <>
       <Hr style={{ marginTop: 32, borderColor: '#e2e8f0' }} />
       <Text style={{ fontSize: 13, color: '#718096' }}>
-        Catalyse - PauseAI Volunteer Platform - This is an automated email
+        Action Hub - PauseAI Volunteer Platform - This is an automated email
       </Text>
       {buttons.map((b) => (
         <Text key={b.url} style={{ fontSize: 12, color: '#718096' }}>

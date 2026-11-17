@@ -16,11 +16,11 @@ export function ApplicationRejectedEmail({
 }: ApplicationRejectedEmailProps) {
   return (
     <EmailLayout>
-      <Heading as="h2">Update on your Catalyse application</Heading>
+      <Heading as="h2">Update on your Action Hub application</Heading>
       <Text>{`Hi ${name},`}</Text>
       <Text>
-        Thank you for applying to join Catalyse PauseAI. Unfortunately we&apos;re unable to approve
-        your application at this time.
+        Thank you for applying to join PauseAI Action Hub. Unfortunately we&apos;re unable to
+        approve your application at this time.
       </Text>
       {applicantNotes && (
         <>

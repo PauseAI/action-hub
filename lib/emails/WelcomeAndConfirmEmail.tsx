@@ -12,7 +12,7 @@ export type WelcomeAndConfirmEmailProps = {
 export function WelcomeAndConfirmEmail({ name, confirmUrl, appUrl }: WelcomeAndConfirmEmailProps) {
   return (
     <EmailLayout>
-      <Heading as="h2">Welcome to Catalyse!</Heading>
+      <Heading as="h2">Welcome to Action Hub!</Heading>
       <Text>{`Hi ${name},`}</Text>
       <Text>
         Thanks for joining the PauseAI volunteer community! We&apos;re excited to have you.
@@ -35,7 +35,7 @@ export function WelcomeAndConfirmEmail({ name, confirmUrl, appUrl }: WelcomeAndC
       <Text>
         This link will expire in <strong>24 hours</strong>.
       </Text>
-      <Text>If you didn&apos;t sign up for Catalyse, you can safely ignore this email.</Text>
+      <Text>If you didn&apos;t sign up for Action Hub, you can safely ignore this email.</Text>
       <EmailFooter appUrl={appUrl} buttons={[{ label: 'Confirm Email', url: confirmUrl }]} />
     </EmailLayout>
   )

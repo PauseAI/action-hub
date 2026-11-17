@@ -356,11 +356,11 @@ export const authRouter = {
         volunteer.nationalChapterId,
         'new_volunteer_signup',
         'New volunteer application',
-        `${volunteer.name} has applied to join Catalyse`,
+        `${volunteer.name} has applied to join Action Hub`,
         `/admin/applications/${volunteer.id}`,
         {
-          message: html`<strong>${volunteer.name}</strong> (${email}) has applied to join Catalyse.
-            Please review their application.`,
+          message: html`<strong>${volunteer.name}</strong> (${email}) has applied to join Action
+            Hub. Please review their application.`,
           ctaLabel: 'Review Application',
           ctaUrl: `/admin/applications/${volunteer.id}`,
         },

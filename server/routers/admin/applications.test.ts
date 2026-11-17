@@ -15,10 +15,10 @@ import { clientAs } from '@/test/rpc'
 import { emails } from '@/test/fakes/email'
 
 const subjects = {
-  approved: 'Your Catalyse application has been approved',
-  rejected: 'Update on your Catalyse application',
-  needsInfo: 'Action needed on your Catalyse application',
-  reopened: 'Your Catalyse application has been reopened',
+  approved: 'Your Action Hub application has been approved',
+  rejected: 'Update on your Action Hub application',
+  needsInfo: 'Action needed on your Action Hub application',
+  reopened: 'Your Action Hub application has been reopened',
 }
 
 const hashOf = (email: string) =>
@@ -244,7 +244,7 @@ describe('admin.applications.action', () => {
         where: { volunteerId: a.id, type: 'application_approved' },
       }),
     ).toEqual([
-      expect.objectContaining({ title: 'Approved: welcome to Catalyse', link: '/projects' }),
+      expect.objectContaining({ title: 'Approved: welcome to Action Hub', link: '/projects' }),
     ])
     const unconfirmed = await createVolunteer({ approvalStatus: 'pending', emailConfirmed: false })
     await c.admin.applications.action({ id: unconfirmed.id, action: 'approve' })

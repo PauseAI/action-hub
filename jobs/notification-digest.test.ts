@@ -40,7 +40,7 @@ describe('runNotificationDigestJob', () => {
     const result = await runNotificationDigestJob(at('2026-11-12T08:05:00Z'))
     expect(result).toMatchObject({ sent: 1, notifications: 4 })
     const mail = emails.lastTo(ana.email!)
-    expect(mail.subject).toBe('Catalyse: your daily digest of 4 notifications')
+    expect(mail.subject).toBe('Action Hub: your daily digest of 4 notifications')
     const order = ['Needs action', 'Helper', 'Updates', 'Approved', 'Messages', 'Hello']
     const found = order.map((s) => mail.html.indexOf(s))
     expect(found.every((i) => i >= 0)).toBe(true)

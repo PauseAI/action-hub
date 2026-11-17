@@ -12,7 +12,9 @@ export default function Footer() {
   })
   const sha = versionData?.sha && versionData.sha !== 'dev' ? versionData.sha.slice(0, 7) : null
   const prMatch =
-    typeof versionData?.env === 'string' ? versionData.env.match(/^catalyse-pr-(\d+)$/) : null
+    typeof versionData?.env === 'string'
+      ? versionData.env.match(/^(?:catalyse|action-hub)-pr-(\d+)$/)
+      : null
   const prNumber = prMatch ? parseInt(prMatch[1]) : null
 
   return (
@@ -37,7 +39,7 @@ export default function Footer() {
         </a>
         {prNumber && (
           <a
-            href={`https://github.com/PauseAI/catalyse/pull/${prNumber}`}
+            href={`https://github.com/PauseAI/action-hub/pull/${prNumber}`}
             target="_blank"
             rel="noopener noreferrer"
             className="underline hover:text-brand-text transition-colors"

@@ -48,9 +48,9 @@ describe('POST /api/csp-report', () => {
         JSON.stringify({
           'csp-report': {
             'blocked-uri': ga,
-            'document-uri': 'https://catalyse.example/reset-password?token=secret#top',
-            referrer: 'https://catalyse.example/verify-email?token=secret',
-            'source-file': 'https://catalyse.example/_next/app.js?v=1',
+            'document-uri': 'https://action-hub.example/reset-password?token=secret#top',
+            referrer: 'https://action-hub.example/verify-email?token=secret',
+            'source-file': 'https://action-hub.example/_next/app.js?v=1',
             'violated-directive': 'connect-src',
             disposition: 'enforce',
             'line-number': 12,
@@ -63,9 +63,9 @@ describe('POST /api/csp-report', () => {
     )
     expect(logged()).toEqual({
       'blocked-uri': 'https://www.google-analytics.com/g/collect',
-      'document-uri': 'https://catalyse.example/reset-password',
-      referrer: 'https://catalyse.example/verify-email',
-      'source-file': 'https://catalyse.example/_next/app.js',
+      'document-uri': 'https://action-hub.example/reset-password',
+      referrer: 'https://action-hub.example/verify-email',
+      'source-file': 'https://action-hub.example/_next/app.js',
       'violated-directive': 'connect-src',
       disposition: 'enforce',
       'line-number': 12,
@@ -80,9 +80,9 @@ describe('POST /api/csp-report', () => {
             type: 'csp-violation',
             body: {
               blockedURL: ga,
-              documentURL: 'https://catalyse.example/reset-password?token=secret',
-              referrer: 'https://catalyse.example/verify-email?token=secret',
-              sourceFile: 'https://catalyse.example/_next/app.js?v=1',
+              documentURL: 'https://action-hub.example/reset-password?token=secret',
+              referrer: 'https://action-hub.example/verify-email?token=secret',
+              sourceFile: 'https://action-hub.example/_next/app.js?v=1',
               effectiveDirective: 'connect-src',
               lineNumber: 12,
               sample: 'resetToken = "secret"',
@@ -93,9 +93,9 @@ describe('POST /api/csp-report', () => {
     )
     expect(logged()).toEqual({
       blockedURL: 'https://www.google-analytics.com/g/collect',
-      documentURL: 'https://catalyse.example/reset-password',
-      referrer: 'https://catalyse.example/verify-email',
-      sourceFile: 'https://catalyse.example/_next/app.js',
+      documentURL: 'https://action-hub.example/reset-password',
+      referrer: 'https://action-hub.example/verify-email',
+      sourceFile: 'https://action-hub.example/_next/app.js',
       effectiveDirective: 'connect-src',
       lineNumber: 12,
     })
@@ -142,17 +142,17 @@ describe('POST /api/csp-report', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     const logged = () => JSON.parse(error.mock.lastCall![1] as string)
 
-    await POST(post(JSON.stringify({ 'csp-report': 'https://catalyse.example/?token=secret' })))
+    await POST(post(JSON.stringify({ 'csp-report': 'https://action-hub.example/?token=secret' })))
     expect(logged()).toEqual({})
 
-    await POST(post(JSON.stringify({ 'csp-report': ['https://catalyse.example/?token=secret'] })))
+    await POST(post(JSON.stringify({ 'csp-report': ['https://action-hub.example/?token=secret'] })))
     expect(logged()).toEqual({})
 
-    await POST(post(JSON.stringify('https://catalyse.example/?token=secret')))
+    await POST(post(JSON.stringify('https://action-hub.example/?token=secret')))
     expect(logged()).toEqual({})
 
     await POST(
-      post(JSON.stringify({ resetLink: 'https://catalyse.example/reset-password?token=secret' })),
+      post(JSON.stringify({ resetLink: 'https://action-hub.example/reset-password?token=secret' })),
     )
     expect(logged()).toEqual({})
 
@@ -162,8 +162,8 @@ describe('POST /api/csp-report', () => {
           'csp-report': {
             'blocked-uri': 'inline',
             'original-policy': "default-src 'self'; report-uri /api/csp-report?token=secret",
-            'next-page': 'https://catalyse.example/reset-password?token=secret',
-            'violated-directive': { url: 'https://catalyse.example/?token=secret' },
+            'next-page': 'https://action-hub.example/reset-password?token=secret',
+            'violated-directive': { url: 'https://action-hub.example/?token=secret' },
             'line-number': [1],
             'status-code': 0,
           },
@@ -178,11 +178,11 @@ describe('POST /api/csp-report', () => {
           {
             body: {
               blockedURL: 42,
-              documentURL: { href: 'https://catalyse.example/?token=secret' },
+              documentURL: { href: 'https://action-hub.example/?token=secret' },
               columnNumber: 7,
               statusCode: 200,
               disposition: 'report',
-              resetLink: 'https://catalyse.example/reset-password?token=secret',
+              resetLink: 'https://action-hub.example/reset-password?token=secret',
             },
           },
         ]),

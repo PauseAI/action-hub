@@ -58,6 +58,6 @@ export function workerDbUrl(parallelIndex: number, serverCount = WORKER_COUNT): 
 export function pidsFile(firstIndex: number): string {
   return path.join(
     os.tmpdir(),
-    firstIndex === 0 ? 'catalyse_e2e_pids.json' : `catalyse_e2e_pids_${firstIndex}.json`,
+    firstIndex === 0 ? 'action_hub_e2e_pids.json' : `action_hub_e2e_pids_${firstIndex}.json`,
   )
 }

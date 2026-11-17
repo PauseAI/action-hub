@@ -35,7 +35,7 @@ describe('home', () => {
     })
     await renderApp(<HomePage />, { as: pending, url: '/dashboard' })
     await screen.findByRole('heading', { name: 'Home' })
-    expect(document.title).toBe('Catalyse | Home')
+    expect(document.title).toBe('Action Hub | Home')
     const checklist = screen.getByRole('region', { name: 'Getting started' })
     expect(within(checklist).getByText('Application under review')).toBeInTheDocument()
     expect(within(checklist).getByText(/Your account is pending approval/)).toBeInTheDocument()

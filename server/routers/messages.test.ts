@@ -177,7 +177,7 @@ describe('message threads', () => {
     await clientAs(ann).messages.reply({ threadId, message: 'Thanks', shareEmail: true })
     await vi.waitFor(() =>
       expect(emails.lastTo(bob.email!)).toMatchObject({
-        subject: '[Catalyse] Banners',
+        subject: '[Action Hub] Banners',
         replyTo: ann.email,
       }),
     )

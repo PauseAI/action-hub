@@ -1,6 +1,6 @@
 # Demo system
 
-Playwright-driven screen recording system that produces narrated `.webm` demos of Catalyse flows. Supports snapshot-based comparison to catch visual regressions between runs.
+Playwright-driven screen recording system that produces narrated `.webm` demos of Action Hub flows. Supports snapshot-based comparison to catch visual regressions between runs.
 
 ## Commands
 

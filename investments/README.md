@@ -1,6 +1,6 @@
 # Investments
 
-Work that makes the repo easier to change, safer to run, or quicker to work on, as opposed to work on what Catalyse does for people. Each file here is one piece of it. They come in three kinds:
+Work that makes the repo easier to change, safer to run, or quicker to work on, as opposed to work on what Action Hub does for people. Each file here is one piece of it. They come in three kinds:
 
 - **Architecture:** large refactors that change how a whole area is built, so that a kind of change that now touches ten files touches one. They take a week or more, and are done a step at a time.
 - **Operations:** what keeps the live app working and tells us when it isn't. Examples: error reporting, alerts when a scheduled job stops, checks that stop a bad deploy.

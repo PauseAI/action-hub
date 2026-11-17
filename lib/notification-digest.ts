@@ -111,5 +111,5 @@ export function digestSections(items: DigestItem[], timeZone: string): DigestSec
 }
 
 export function digestSubject(count: number, frequency: DigestFrequency): string {
-  return `Catalyse: your ${SUBJECT_WORDS[frequency]} digest of ${count} ${count === 1 ? 'notification' : 'notifications'}`
+  return `Action Hub: your ${SUBJECT_WORDS[frequency]} digest of ${count} ${count === 1 ? 'notification' : 'notifications'}`
 }

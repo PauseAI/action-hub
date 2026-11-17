@@ -333,7 +333,7 @@ export default function AdminChapterPage({ params }: { params: Promise<{ id: str
             {events.map((e) => (
               <li key={e.id}>
                 <span className="text-text-light">{formatDate(e.createdAt)}</span>{' '}
-                {e.actorName ?? 'Catalyse'} {ACTION_LABELS[e.action]}{' '}
+                {e.actorName ?? 'Action Hub'} {ACTION_LABELS[e.action]}{' '}
                 {e.action !== ChapterAuditAction.JOINED_FROM_POOL && e.targetName}
               </li>
             ))}

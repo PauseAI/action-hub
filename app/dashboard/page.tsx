@@ -192,7 +192,7 @@ export default function HomePage() {
   })
 
   useEffect(() => {
-    document.title = 'Catalyse | Home'
+    document.title = 'Action Hub | Home'
   }, [])
 
   // Old `#tab-…` links open a section, then scroll to it once it exists; the notifications tab
@@ -400,7 +400,7 @@ export default function HomePage() {
       {welcome && (
         <Modal
           id="approval-welcome"
-          title="You're approved. Welcome to Catalyse!"
+          title="You're approved. Welcome to Action Hub!"
           isOpen
           onClose={() => dismissWelcome(welcome.notificationId)}
         >

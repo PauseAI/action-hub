@@ -100,7 +100,7 @@ The same shape serves the other seams: `google.accept(credential, account)` (`te
 
 ## Investments
 
-`investments/` holds work on the repo itself rather than on what Catalyse does: one file per item, each with a log of the times it cost someone. `investments/README.md` has the kinds, the template and the full rules.
+`investments/` holds work on the repo itself rather than on what Action Hub does: one file per item, each with a log of the times it cost someone. `investments/README.md` has the kinds, the template and the full rules.
 
 - **Log a hit** under an item's "Hits" when it costs you time: a script in `tmp/` you'd want again, the same edit in three or more places, a flaky test, a `check-all` rerun for a failure you didn't cause, a workaround for a tool or rule. Log it only where that item's fix would have prevented what you hit; otherwise start a new item from the template. Do this at the end of any medium or large task.
 - **Pick the next one** with `npm run investments`, which ranks items by hits with their size and kind. Weigh hits against size: tools collect hits fast, architecture and operations items slowly.
