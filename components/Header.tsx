@@ -44,7 +44,7 @@ function MobileNavSection({ children, admin }: { children: React.ReactNode; admi
   )
 }
 
-/** "Action Hub" from `sm` up; on a phone, its initial in a tile, to leave room for the buttons. */
+/** "Action Hub" from `sm` up; on a phone, its initials in a tile, to leave room for the buttons. */
 function Wordmark({ href }: { href: string }) {
   return (
     <Link
@@ -54,9 +54,9 @@ function Wordmark({ href }: { href: string }) {
     >
       <span
         aria-hidden="true"
-        className="sm:hidden flex size-9 items-center justify-center rounded-lg bg-primary text-[#111827]"
+        className="sm:hidden flex size-9 items-center justify-center rounded-lg bg-primary text-base text-[#111827]"
       >
-        A
+        AH
       </span>
       <span aria-hidden="true" className="hidden sm:inline">
         Action Hub
