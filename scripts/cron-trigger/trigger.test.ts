@@ -67,6 +67,20 @@ describe('cron trigger', () => {
     expect(f.calls[2].body).toBe(`HTTP 200, jobs failed: backup\n${body}`)
   })
 
+  it('pings fail when a job counts failures of its own', async () => {
+    const body = '{"notification-digest":{"due":2,"sent":1,"failed":1}}'
+    const f = fakeFetch({ [CRON_URL]: { status: 200, body } })
+    expect(await run({ env: env(), fetch: f.fetch, log: fakeLog().log })).toBe(1)
+    expect(f.calls[2].body).toBe(`HTTP 200, jobs failed: notification-digest\n${body}`)
+  })
+
+  it('treats failed: 0 as success', async () => {
+    const body = '{"notification-digest":{"due":1,"sent":1,"failed":0}}'
+    const f = fakeFetch({ [CRON_URL]: { status: 200, body } })
+    expect(await run({ env: env(), fetch: f.fetch, log: fakeLog().log })).toBe(0)
+    expect(f.urls().at(-1)).toBe(HC)
+  })
+
   it('treats a 2xx body that is not a job map as success', async () => {
     for (const body of ['not json', 'null']) {
       const f = fakeFetch({ [CRON_URL]: { status: 200, body } })
@@ -123,18 +137,23 @@ describe('cron trigger', () => {
   it('logs and carries on when the healthcheck URL is invalid', async () => {
     const f = fakeFetch()
     const { log, lines } = fakeLog()
-    const code = await run({ env: env({ CRON_HEALTHCHECK_URL: 'not a url' }), fetch: f.fetch, log })
+    const hc = 'hc-ping.com/secret-key'
+    const code = await run({ env: env({ CRON_HEALTHCHECK_URL: hc }), fetch: f.fetch, log })
     expect(code).toBe(0)
     expect(f.urls()).toEqual([CRON_URL])
-    expect(lines).toContainEqual(expect.stringContaining('ping/start failed'))
+    expect(lines).toContainEqual(expect.stringContaining('ping/start failed: Invalid URL'))
+    expect(lines.join('\n')).not.toContain('secret-key')
   })
 
   it('carries on when a ping errors or is refused', async () => {
-    const f = fakeFetch({ [`${HC}/start`]: new Error('dns'), [HC]: { status: 404 } })
+    const dns = new TypeError('fetch failed', { cause: new Error('getaddrinfo ENOTFOUND') })
+    const f = fakeFetch({ [`${HC}/start`]: dns, [HC]: { status: 404 } })
     const { log, lines } = fakeLog()
     expect(await run({ env: env(), fetch: f.fetch, log })).toBe(0)
     expect(f.urls()).toEqual([`${HC}/start`, CRON_URL, HC])
-    expect(lines).toContainEqual(expect.stringContaining('ping/start failed'))
+    expect(lines).toContainEqual(
+      expect.stringContaining('ping/start failed: fetch failed (getaddrinfo ENOTFOUND)'),
+    )
     expect(lines).toContainEqual(expect.stringContaining('got HTTP 404'))
   })
 

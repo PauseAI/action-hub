@@ -9,8 +9,9 @@
 //                          otherwise, with the status and response as the body, so a run that
 //                          fails or never starts raises an alert. Unset, nothing is pinged.
 //
-// A run fails on a non-2xx response, a network error, or any job in the response reporting an
-// error: the route answers 200 when a single job throws (runScheduledJobs in lib/cron-jobs.ts).
+// A run fails on a non-2xx response, a network error, or any job in the response reporting
+// `{ error }` or `{ failed: n > 0 }`: the route answers 200 when a single job throws
+// (runScheduledJobs in lib/cron-jobs.ts), and a job that counts its own failures returns them.
 import { realpathSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
@@ -21,7 +22,7 @@ const PING_TIMEOUT_MS = 10_000
 // healthchecks.io keeps the first 100 KB of a ping body; a few KB is enough to read a run.
 const PING_BODY_LIMIT = 4_000
 
-/** Names of the jobs whose result in the route's JSON is `{ error }`. */
+/** Names of the jobs whose result in the route's JSON is `{ error }` or `{ failed: n > 0 }`. */
 function failedJobs(body) {
   let results
   try {
@@ -31,7 +32,7 @@ function failedJobs(body) {
   }
   if (!results || typeof results !== 'object') return []
   return Object.entries(results)
-    .filter(([, r]) => r && typeof r === 'object' && 'error' in r)
+    .filter(([, r]) => r && typeof r === 'object' && ('error' in r || r.failed > 0))
     .map(([name]) => name)
 }
 
@@ -73,7 +74,9 @@ export async function run({
       })
       if (!res.ok) log.error(`[cron-trigger] healthcheck ping${suffix} got HTTP ${res.status}`)
     } catch (err) {
-      log.error(`[cron-trigger] healthcheck ping${suffix} failed:`, err)
+      // Only the message: an invalid-URL error carries the URL, which holds the check's key.
+      const cause = err?.cause?.message ? ` (${err.cause.message})` : ''
+      log.error(`[cron-trigger] healthcheck ping${suffix} failed: ${err?.message ?? err}${cause}`)
     }
   }
 

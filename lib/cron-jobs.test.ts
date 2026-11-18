@@ -105,6 +105,9 @@ describe('runScheduledJobs (the hourly trigger)', () => {
       if (ran.includes('applications-summary')) tries.push(h)
     }
     expect(tries).toEqual([8, 9, 10])
+    expect((await trigger(hour('2026-12-06', 23))).body['applications-summary']).toEqual({
+      error: 'Error: failed 3 times today; next try tomorrow',
+    })
     cronJobs.returns('applications-summary', 'fixed')
     expect((await trigger(hour('2026-12-07', 8))).ran).toContain('applications-summary')
   })
