@@ -144,7 +144,8 @@ export function setSnsGateway(gateway: SnsGateway | undefined): SnsGateway | und
   return previous
 }
 
-export type SnsVerdict = { ok: true } | { ok: false; reason: string }
+/** `retry` marks a refusal that may pass later, which SNS should deliver again. */
+export type SnsVerdict = { ok: true } | { ok: false; reason: string; retry?: boolean }
 
 /**
  * Whether `message` really came from SNS on a topic this app subscribed to, recently: the topic
@@ -173,7 +174,7 @@ export async function verifySnsMessage(message: SnsMessage): Promise<SnsVerdict>
   try {
     certificate = await snsGateway().certificate(message.SigningCertURL)
   } catch {
-    return { ok: false, reason: 'certificate unavailable' }
+    return { ok: false, reason: 'certificate unavailable', retry: true }
   }
   try {
     const signature = Buffer.from(message.Signature, 'base64')

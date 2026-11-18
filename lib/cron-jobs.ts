@@ -6,6 +6,7 @@ import { runApplicationsSummaryJob, runApplicationsAnonymisationJob } from '@/jo
 import { runCspSummaryJob } from '@/jobs/csp-summary'
 import { runDeadlineRemindersJob } from '@/jobs/deadline-reminders'
 import { runNotificationDigestJob } from '@/jobs/notification-digest'
+import { runEmailHousekeepingJob } from '@/jobs/email-housekeeping'
 import {
   CRON_JOB_INFO,
   CRON_JOB_NAMES,
@@ -28,6 +29,7 @@ const realRunners: CronJobRunners = {
   'csp-summary': runCspSummaryJob,
   'deadline-reminders': runDeadlineRemindersJob,
   'notification-digest': runNotificationDigestJob,
+  'email-housekeeping': () => runEmailHousekeepingJob(),
 }
 
 let current: CronJobRunners = realRunners

@@ -10,7 +10,7 @@ export type OutgoingEmail = {
   subject: string
   html: string
   replyTo?: string
-  /** One person's own request, such as a password reset: never held back by the hourly cap. */
+  /** One person's own request, such as a password reset: kept out of the bulk cap. */
   essential?: boolean
 }
 

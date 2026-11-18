@@ -2,14 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { suppressAddresses } from '@/lib/email-suppression'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
-import {
-  MAX_MESSAGE_AGE_MS,
-  isSnsMessage,
-  isSnsUrl,
-  snsGateway,
-  verifySnsMessage,
-  type SnsMessage,
-} from '@/lib/sns'
+import { isSnsMessage, isSnsUrl, snsGateway, verifySnsMessage, type SnsMessage } from '@/lib/sns'
 
 // SNS caps a message at 256 KB.
 const MAX_BODY_BYTES = 262_144
@@ -104,7 +97,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const verdict = await verifySnsMessage(message)
   if (!verdict.ok) {
     logger.warn({ topic: message.TopicArn, reason: verdict.reason }, '[EMAIL SNS] Refused message')
-    return status(403)
+    // SNS retries a 5xx but gives up on a 4xx, so a certificate that could not be fetched this
+    // time must not lose a real bounce for good.
+    return status(verdict.retry ? 503 : 403)
   }
 
   if (message.Type === 'SubscriptionConfirmation') {
@@ -128,9 +123,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   await prisma.snsMessage.createMany({
     data: [{ messageId: message.MessageId }],
     skipDuplicates: true,
-  })
-  await prisma.snsMessage.deleteMany({
-    where: { receivedAt: { lt: new Date(Date.now() - 2 * MAX_MESSAGE_AGE_MS) } },
   })
   return status(200)
 }

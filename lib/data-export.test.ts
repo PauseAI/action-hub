@@ -1,5 +1,5 @@
 import { suppressionKey } from '@/lib/email-suppression'
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   EXPORTED_COLUMNS,
   EXPORTED_LINKS,
@@ -495,6 +495,17 @@ describe('every exported link', () => {
       expect(Object.keys(row).sort(), link).toEqual(
         [...EXPORTED_COLUMNS[`ExperimentalJournalist.${link}`]].sort(),
       )
+    }
+  })
+
+  it('still exports without EMAIL_HASH_SECRET, which Resend runs without', async () => {
+    const me = await createVolunteer()
+    vi.stubEnv('EMAIL_HASH_SECRET', '')
+    try {
+      const { EmailSuppression } = await linkedRecords(me)
+      expect(EmailSuppression.emailHash).toEqual([])
+    } finally {
+      vi.unstubAllEnvs()
     }
   })
 

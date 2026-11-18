@@ -28,7 +28,10 @@ export async function suppressionOf(address: string): Promise<EmailSuppressionRe
   return row?.reason ?? null
 }
 
-/** Stops mail to `addresses`. A later event replaces an earlier one's reason and expiry. */
+/**
+ * Stops mail to `addresses`. A bounce makes a suppression permanent; a complaint suppresses for
+ * a year, or renews a complaint already there, but never shortens a bounce's.
+ */
 export async function suppressAddresses(
   addresses: string[],
   reason: EmailSuppressionReason,
@@ -37,15 +40,18 @@ export async function suppressAddresses(
   const now = new Date()
   const expiresAt =
     reason === 'complaint' ? new Date(now.getTime() + COMPLAINT_SUPPRESSION_MS) : null
-  const keys = new Set(addresses.filter((a) => a.trim()).map(suppressionKey))
+  const data = { reason, detail, createdAt: now, expiresAt }
+  const keys = [...new Set(addresses.filter((a) => a.trim()).map(suppressionKey))]
   for (const emailHash of keys) {
-    const data = { reason, detail, createdAt: now, expiresAt }
-    await prisma.emailSuppression.upsert({
-      where: { emailHash },
-      create: { emailHash, ...data },
-      update: data,
+    await prisma.emailSuppression.updateMany({
+      where: { emailHash, ...(reason === 'complaint' && { expiresAt: { not: null } }) },
+      data,
     })
   }
+  await prisma.emailSuppression.createMany({
+    data: keys.map((emailHash) => ({ emailHash, ...data })),
+    skipDuplicates: true,
+  })
 }
 
 /** Lets mail reach `address` again, as when its account is deleted. */

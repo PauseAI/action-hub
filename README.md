@@ -80,13 +80,18 @@ Key variables:
   - `SES_CONFIGURATION_SET` — named on every send, so SES applies the app's suppression,
     reputation alarms and pause switch, and publishes its bounces and complaints
   - `SES_FEEDBACK_TOPIC_ARN` — the SNS topic (`ses-<app>-feedback`) whose bounce and complaint
-    notifications `POST /api/email/sns` accepts. Set the topic to sign with SHA-256, as nothing
-    else is accepted: `aws sns set-topic-attributes --topic-arn <arn> --attribute-name
-SignatureVersion --attribute-value 2`. Permanent bounces and complaints go on
+    notifications `POST /api/email/sns` accepts. Permanent bounces and complaints go on
     `email_suppressions` and get no more mail (a complaint for a year, a bounce until lifted);
-    deleting a row, or the account, lifts it.
+    deleting a row, or the confirmed account, lifts it. Only SHA-256 signatures are accepted, so
+    set the topic to sign with them:
+
+    ```bash
+    aws sns set-topic-attributes --topic-arn <arn> --attribute-name SignatureVersion --attribute-value 2
+    ```
+
   - `EMAIL_HASH_SECRET` — a random secret keying the hashes suppressed addresses are kept under
     (`openssl rand -hex 32`); changing it forgets every suppression
+
 - `FROM_EMAIL` — the sender; with SES it must be set, on the verified domain:
   `Action Hub <noreply@action.pauseai.info>`
 - `EMAIL_HOURLY_CAP` — with `ses`, the most emails sent in one clock hour across every process

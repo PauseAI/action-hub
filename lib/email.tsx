@@ -73,7 +73,7 @@ function sendEmail(to: string, subject: string, html: string, replyTo?: string):
   return emailTransport().send({ to, subject, html, replyTo })
 }
 
-/** For mail one person asked for and is waiting on, which the hourly cap never holds back. */
+/** For mail one person asked for and is waiting on: kept out of the bulk cap (GuardedTransport). */
 function sendEssentialEmail(to: string, subject: string, html: string): Promise<boolean> {
   return emailTransport().send({ to, subject, html, essential: true })
 }

@@ -742,6 +742,14 @@ describe('deleteAccount and chapters', () => {
 })
 
 describe('deleteAccount', () => {
+  it('keeps the suppression of an address the account never confirmed', async () => {
+    const squatter = await createVolunteer({ emailConfirmed: false })
+    await suppressAddresses([squatter.email!], 'complaint', 'abuse')
+    await clientAs(squatter).auth.deleteAccount({ password: TEST_PASSWORD })
+    expect(await prisma.emailSuppression.count()).toBe(1)
+    await prisma.emailSuppression.deleteMany()
+  })
+
   it('requires the password when one is set, scrubs the account, and warns affected owners and admins', async () => {
     const me = await createVolunteer({ name: 'Leaver' })
     const owner = await createVolunteer()

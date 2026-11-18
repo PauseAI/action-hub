@@ -759,7 +759,10 @@ export const authRouter = {
       })
       await sendAccountDeletionNotifications(context.volunteer.id, context.volunteer.name)
       await deleteAllSessions(context.volunteer.id)
-      if (context.volunteer.email) await liftSuppression(context.volunteer.email)
+      // Only an address they proved is theirs: anyone can sign up with someone else's.
+      if (context.volunteer.email && context.volunteer.emailConfirmed) {
+        await liftSuppression(context.volunteer.email)
+      }
       await prisma.volunteer.update({
         where: { id: context.volunteer.id },
         data: {

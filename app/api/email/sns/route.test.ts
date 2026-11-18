@@ -69,6 +69,15 @@ describe('SNS email events', () => {
     expect(emails.sent.map((e) => e.to)).toEqual(['here@example.com'])
   })
 
+  it('never shortens a bounce with a later complaint', async () => {
+    await post(sns.notification(sesBounce(['a@example.com'])))
+    await post(sns.notification(sesComplaint(['a@example.com'])))
+    expect(await suppressed()).toEqual([
+      { email: 'a@example.com', reason: 'bounce', detail: 'Permanent/General' },
+    ])
+    expect((await prisma.emailSuppression.findFirstOrThrow()).expiresAt).toBeNull()
+  })
+
   it('suppresses complainers for a year, a later bounce for good, and ignores transient bounces', async () => {
     await post(sns.notification(sesComplaint(['a@example.com', 'b@example.com'])))
     await post(sns.notification(sesBounce(['a@example.com'])))
@@ -185,12 +194,12 @@ describe('SNS email events', () => {
       expect(res.status, url).toBe(403)
     }
     expect(sns.certificatesFetched).toEqual([])
-    // A well-formed SNS URL serving no certificate is refused too.
+    // A well-formed SNS URL serving no certificate gets a 503, so SNS delivers it again later.
     const other = CERT_URL.replace('01d0', 'ffff')
     const res = await post(
       sns.notification(sesBounce(['v@example.com']), { SigningCertURL: other }),
     )
-    expect(res.status).toBe(403)
+    expect(res.status).toBe(503)
     expect(await suppressed()).toEqual([])
   })
 
