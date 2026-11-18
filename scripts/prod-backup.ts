@@ -99,7 +99,7 @@ export class B2Reader {
       }
       const list = await this.call('list buckets', `${auth.apiUrl}/b2api/v2/b2_list_buckets`, {
         method: 'POST',
-        headers: { Authorization: auth.authorizationToken },
+        headers: { Authorization: auth.authorizationToken, 'Content-Type': 'application/json' },
         body: JSON.stringify({ accountId: auth.accountId, bucketName: this.bucket }),
       })
       const { buckets } = (await list.json()) as { buckets: { bucketId: string }[] }
@@ -117,7 +117,7 @@ export class B2Reader {
     do {
       const res = await this.call('list files', `${s.apiUrl}/b2api/v2/b2_list_file_names`, {
         method: 'POST',
-        headers: { Authorization: s.authToken },
+        headers: { Authorization: s.authToken, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           bucketId: s.bucketId,
           prefix: PREFIX,

@@ -15,13 +15,13 @@
  *   npx tsx scripts/fetch-prod-db.ts --file actionhub-<time>.dump.age   # a dump already downloaded
  */
 
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { Client } from 'pg'
-import { libpqUrl, resolveDbUrl } from '../lib/db-url'
+import { libpqUrl, loadEnvFile, resolveDbUrl } from '../lib/db-url'
 import { logger } from '../lib/logger'
 import { anonymise } from './anonymise-db'
 import { seedDevAccounts } from './seed-dev-accounts'
@@ -47,23 +47,6 @@ const flag = (name: string) => {
 }
 const envFile = flag('--env') ?? resolve(ROOT, '.env.backup')
 const localDump = flag('--file')
-
-// ── Env loading ───────────────────────────────────────────────────────────────
-
-function loadEnvFile(path: string): void {
-  if (!existsSync(path)) return
-  for (const line of readFileSync(path, 'utf8').split('\n')) {
-    const trimmed = line.trim()
-    if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) continue
-    const eqIdx = trimmed.indexOf('=')
-    const key = trimmed.slice(0, eqIdx).trim()
-    const value = trimmed
-      .slice(eqIdx + 1)
-      .trim()
-      .replace(/^['"]|['"]$/g, '')
-    if (!(key in process.env)) process.env[key] = value
-  }
-}
 
 // ── Restore ───────────────────────────────────────────────────────────────────
 
@@ -185,6 +168,9 @@ async function main(): Promise<void> {
     )
     process.exit(1)
   }
+
+  // Never leave raw prod data in the checkout: a plaintext dump found here is deleted.
+  for (const f of ['db/prod.dump', 'db/prod.dump.list']) rmSync(resolve(ROOT, f), { force: true })
 
   const encrypted = localDump ? readFileSync(localDump) : await downloadNewest()
 

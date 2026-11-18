@@ -64,6 +64,9 @@ export class FakeB2 {
       })
     }
     if (authorization !== 'token-1') return b2Error(401, 'bad_auth_token')
+    if (init?.method === 'POST' && headers.get('content-type') !== 'application/json') {
+      return b2Error(400, 'bad_request')
+    }
     if (path === '/b2api/v2/b2_list_buckets') {
       const found = body.bucketName === this.bucketName
       return Response.json({ buckets: found ? [{ bucketId: this.bucketId }] : [] })

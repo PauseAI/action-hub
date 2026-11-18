@@ -1,7 +1,8 @@
 import path from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
 
-function loadEnvFile(filePath: string): void {
+/** Sets each `KEY=value` in `filePath` that the environment does not already hold. */
+export function loadEnvFile(filePath: string): void {
   if (!existsSync(filePath)) return
   for (const line of readFileSync(filePath, 'utf8').split('\n')) {
     const trimmed = line.trim()

@@ -89,7 +89,6 @@ describe('admin.cronRuns', () => {
     expect(await c.admin.cronRuns.list({ jobName: 'csp-summary', status: 'success' })).toHaveLength(
       1,
     )
-    // Backups run in the infra backup-image service; the app has no job to start one.
     await expect(c.admin.cronRuns.run({ jobName: 'backup' } as never)).rejects.toThrow()
   })
 })

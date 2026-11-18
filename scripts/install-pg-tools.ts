@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Ensures the Postgres client tools (`pg_dump`, `pg_restore`) that `fetch-prod-db` shells out to
- * are on PATH, installing them with the machine's package manager when they are missing. Does
- * nothing if they are already there.
+ * Ensures the Postgres client tools (`pg_restore`, which `fetch-prod-db` shells out to, and
+ * `pg_dump`) are on PATH, installing them with the machine's package manager when they are
+ * missing. Does nothing if they are already there.
  *
  * Usage:
  *   npx tsx scripts/install-pg-tools.ts

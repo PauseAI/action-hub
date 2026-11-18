@@ -31,10 +31,6 @@ describe('CRON_JOBS', () => {
     expect(cronJobs.runs).toEqual([...CRON_JOB_NAMES])
   })
 
-  it('has no backup job: backups run in the infra backup-image service, not the app', () => {
-    expect(CRON_JOB_NAMES).not.toContain('backup')
-  })
-
   it('runs the real jobs unless swapped', () => {
     expect(setCronJobRunners(undefined)).toBe(cronJobs.runners)
     expect(cronJobRunners().digest).toBe(runDigestJob)

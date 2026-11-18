@@ -13,7 +13,9 @@ import { logger } from '../lib/logger'
  */
 const isProduction = process.env.RAILWAY_ENVIRONMENT_NAME === 'production'
 const canReadBackups = Boolean(
-  process.env.BACKUP_B2_READ_KEY_ID && process.env.BACKUP_AGE_IDENTITY_FILE,
+  process.env.BACKUP_B2_READ_KEY_ID &&
+  process.env.BACKUP_B2_READ_SECRET &&
+  process.env.BACKUP_AGE_IDENTITY_FILE,
 )
 
 async function databaseIsEmpty(): Promise<boolean> {
