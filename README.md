@@ -73,7 +73,21 @@ Key variables:
 - `APP_URL` — the app's public origin, used for links in emails; in production
   `https://action.pauseai.info`
 - `DATABASE_URL` — Postgres connection URL (e.g. `postgresql://postgres:postgres@localhost:5432/catalyse`)
-- `RESEND_API_KEY` — for email sending
+- `RESEND_API_KEY` — for email sending through Resend (the default provider)
+- `EMAIL_PROVIDER` — `resend` (default) or `ses`. With `ses`, mail goes through Amazon SES and
+  these are needed too (PauseAI/infra's `ses-app-setup.sh` writes the first four to a file):
+  - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` — read by the AWS SDK
+  - `SES_CONFIGURATION_SET` — named on every send, so SES applies the app's suppression,
+    reputation alarms and pause switch, and publishes its bounces and complaints
+  - `SES_FEEDBACK_TOPIC_ARN` — the SNS topic (`ses-<app>-feedback`) whose bounce and complaint
+    notifications `POST /api/email/sns` accepts; their addresses are added to
+    `email_suppressions` (hashed) and get no more mail. Delete a row to lift it.
+- `FROM_EMAIL` — the sender; with SES it must be on the verified domain, e.g.
+  `Action Hub <noreply@action.pauseai.info>`
+- `EMAIL_HOURLY_CAP` — with `ses`, the most emails sent in one clock hour across every process
+  (default 500). Beyond it mail is dropped and logged; essential mail (password reset, signup
+  confirmation, account merge, outreach login) still goes. Keep it above the number of people a
+  digest or call reaches.
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — for Google OAuth
 - `STUB_EMAIL=true` — suppress real emails in development
 

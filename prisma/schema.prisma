@@ -1568,3 +1568,31 @@ model CallDismissal {
   @@index([volunteerId], map: "idx_call_dismissals_volunteer")
   @@map("call_dismissals")
 }
+
+enum EmailSuppressionReason {
+  bounce
+  complaint
+}
+
+/// An address the email provider reported as permanently undeliverable or as having marked our
+/// mail as spam. Nothing is sent to it while the row exists; deleting the row lifts it. Kept as
+/// a hash (lib/auth.ts hashEmail), so it can outlive the account without holding the address.
+model EmailSuppression {
+  id        Int                    @id @default(autoincrement())
+  emailHash String                 @unique @map("email_hash")
+  reason    EmailSuppressionReason
+  /// The provider's classification, e.g. "Permanent/General" or a complaint's feedback type.
+  detail    String?
+  createdAt DateTime               @default(now()) @map("created_at")
+
+  @@map("email_suppressions")
+}
+
+/// How many emails were handed to the provider in one clock hour, so every process sending
+/// mail shares one ceiling (EMAIL_HOURLY_CAP).
+model EmailSendCount {
+  hour  DateTime @id
+  count Int      @default(0)
+
+  @@map("email_send_counts")
+}

@@ -246,6 +246,10 @@ const rowFor: Record<string, (who: Person, other: Person) => Promise<Row>> = {
     prisma.adminNote.create({ data: { volunteerId: who.id, authorId: other.id, content: 'note' } }),
   'AnonymisedEmail.emailHash': (who) =>
     prisma.anonymisedEmail.create({ data: { emailHash: hashEmail(who.email!) } }),
+  'EmailSuppression.emailHash': (who) =>
+    prisma.emailSuppression.create({
+      data: { emailHash: hashEmail(who.email!), reason: 'bounce', detail: 'Permanent/General' },
+    }),
   'ApiToken.volunteer': (who) =>
     prisma.apiToken.create({
       data: { volunteerId: who.id, name: 'n', tokenHash: `h${nextSeq()}` },

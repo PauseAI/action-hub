@@ -23,6 +23,7 @@ export const COLUMN_TREATMENT: Record<string, Record<string, Treatment>> = {
   admin_notes: { content: 'redact', category: 'keep' },
   api_tokens: { name: 'rows-deleted', token_hash: 'rows-deleted' },
   anonymised_emails: { email_hash: 'token' },
+  email_suppressions: { email_hash: 'token', detail: 'keep' },
   bug_report_comments: { content: 'redact' },
   calls: { title: 'redact', body: 'redact' },
   call_responses: { message: 'redact' },

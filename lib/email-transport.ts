@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { Resend } from 'resend'
+import { SendEmailCommand, SESv2Client } from '@aws-sdk/client-sesv2'
+import type { PrismaClient } from '@/generated/prisma/client'
 import { env } from './env'
 import { logger } from './logger'
 
@@ -8,12 +10,14 @@ export type OutgoingEmail = {
   subject: string
   html: string
   replyTo?: string
+  /** One person's own request, such as a password reset: never held back by the hourly cap. */
+  essential?: boolean
 }
 
 /**
- * The last hop of an outgoing email. Templates in `lib/email.ts` build an OutgoingEmail
- * and hand it to whichever transport `emailTransport()` returns; tests swap in their own
- * with `setEmailTransport`.
+ * The last hop of an outgoing email. Every template in `lib/email.tsx` builds an OutgoingEmail
+ * and hands it to whichever transport `emailTransport()` returns (with SES, inside
+ * GuardedTransport); tests swap in their own with `setEmailTransport`.
  */
 export abstract class EmailTransport {
   /** Resolves true once the email has been accepted; false when it could not be sent. */
@@ -24,7 +28,16 @@ export abstract class EmailTransport {
   }
 }
 
-type EmailEnv = Pick<typeof env, 'STUB_EMAIL' | 'RESEND_API_KEY' | 'FROM_EMAIL' | 'REPLY_TO_EMAIL'>
+type EmailEnv = Pick<
+  typeof env,
+  | 'STUB_EMAIL'
+  | 'RESEND_API_KEY'
+  | 'FROM_EMAIL'
+  | 'REPLY_TO_EMAIL'
+  | 'EMAIL_PROVIDER'
+  | 'AWS_REGION'
+  | 'SES_CONFIGURATION_SET'
+>
 
 /** The part of the Resend SDK this transport uses, so tests can pass a fake client. */
 export type ResendClient = Pick<Resend, 'emails'>
@@ -60,6 +73,43 @@ export class ResendTransport extends EmailTransport {
   }
 }
 
+/** The part of the SESv2 client this transport uses, so tests can pass a fake client. */
+export type SesClient = Pick<SESv2Client, 'send'>
+
+/** Amazon SES. Credentials come from the AWS SDK's own chain (AWS_ACCESS_KEY_ID and friends). */
+export class SesTransport extends EmailTransport {
+  constructor(
+    private readonly config: EmailEnv,
+    private readonly ses: SesClient = new SESv2Client({ region: config.AWS_REGION }),
+  ) {
+    super()
+  }
+
+  async send({ to, subject, html, replyTo }: OutgoingEmail): Promise<boolean> {
+    const effectiveReplyTo = replyTo || this.config.REPLY_TO_EMAIL
+    try {
+      await this.ses.send(
+        new SendEmailCommand({
+          FromEmailAddress: this.config.FROM_EMAIL,
+          Destination: { ToAddresses: [to] },
+          ...(effectiveReplyTo && { ReplyToAddresses: [effectiveReplyTo] }),
+          ConfigurationSetName: this.config.SES_CONFIGURATION_SET,
+          Content: {
+            Simple: {
+              Subject: { Data: subject, Charset: 'UTF-8' },
+              Body: { Html: { Data: html, Charset: 'UTF-8' } },
+            },
+          },
+        }),
+      )
+      return true
+    } catch (err) {
+      logger.error(err, '[EMAIL ERROR] SES')
+      return false
+    }
+  }
+}
+
 /** Development transport: writes each email to disk and logs the path so it can be opened. */
 export class FileStubTransport extends EmailTransport {
   static readonly DIR = '/tmp/action-hub-emails'
@@ -82,7 +132,7 @@ export class FileStubTransport extends EmailTransport {
   }
 }
 
-/** Used when neither a stub nor an API key is configured: logs the send and drops it. */
+/** Used when neither a stub, SES nor a Resend key is configured: logs the send and drops it. */
 export class UnconfiguredTransport extends EmailTransport {
   async send({ to, subject }: OutgoingEmail): Promise<boolean> {
     logger.info(`[EMAIL NOT CONFIGURED] Would send to ${to}: ${subject}`)
@@ -94,8 +144,81 @@ export class UnconfiguredTransport extends EmailTransport {
   }
 }
 
+const HOUR_MS = 60 * 60 * 1000
+
+/**
+ * Wraps SES so that nothing reaches it for an address on the suppression list
+ * (`EmailSuppression`), and no more than EMAIL_HOURLY_CAP emails an hour do in all, so a bug
+ * cannot mail everyone. The hourly count lives in the database, so the web and cron processes
+ * share one ceiling and a fan-out cannot outrun it by racing. Essential mail (a password reset,
+ * a confirmation link) counts towards the cap but is never refused by it. Fails closed: when the
+ * database cannot answer, nothing is sent.
+ */
+export class GuardedTransport extends EmailTransport {
+  constructor(readonly inner: EmailTransport) {
+    super()
+  }
+
+  async send(email: OutgoingEmail): Promise<boolean> {
+    let db: PrismaClient
+    let hour: Date
+    try {
+      // Loaded here, not at the top: the test harness imports this module before it has set
+      // the database URL that `lib/prisma` reads when it is first imported.
+      const [{ prisma }, { hashEmail }] = await Promise.all([import('./prisma'), import('./auth')])
+      db = prisma
+      const suppressed = await db.emailSuppression.findUnique({
+        where: { emailHash: hashEmail(email.to) },
+      })
+      if (suppressed) {
+        logger.info(`[EMAIL SUPPRESSED] Not sending "${email.subject}": ${suppressed.reason}`)
+        return false
+      }
+      hour = new Date(Math.floor(Date.now() / HOUR_MS) * HOUR_MS)
+      if (!(await this.claimSendSlot(db, hour, email.essential ?? false))) return false
+    } catch (err) {
+      logger.error(err, '[EMAIL ERROR] Suppression or cap check failed; not sending')
+      return false
+    }
+    const sent = await this.inner.send(email).catch((err: unknown) => {
+      logger.error(err, '[EMAIL ERROR]')
+      return false
+    })
+    // A send that went nowhere gives its slot back, so an outage does not use up the hour.
+    if (!sent) {
+      await db.emailSendCount
+        .updateMany({ where: { hour, count: { gt: 0 } }, data: { count: { decrement: 1 } } })
+        .catch((err: unknown) => logger.error(err, '[EMAIL ERROR] Could not return a send slot'))
+    }
+    return sent
+  }
+
+  configured(): boolean {
+    return this.inner.configured()
+  }
+
+  private async claimSendSlot(db: PrismaClient, hour: Date, essential: boolean): Promise<boolean> {
+    const cap = env.EMAIL_HOURLY_CAP
+    const { count } = await db.emailSendCount.upsert({
+      where: { hour },
+      create: { hour, count: 1 },
+      update: { count: { increment: 1 } },
+    })
+    if (count <= cap || essential) return true
+    if (count === cap + 1) {
+      logger.error(
+        { hour, cap },
+        `[EMAIL CAP] EMAIL_HOURLY_CAP of ${cap} reached; only essential email is sent until the next hour`,
+      )
+    }
+    return false
+  }
+}
+
+/** SES comes wrapped in GuardedTransport; Resend, the stub and the unconfigured drop do not. */
 export function createEmailTransport(config: EmailEnv = env): EmailTransport {
   if (config.STUB_EMAIL) return new FileStubTransport()
+  if (config.EMAIL_PROVIDER === 'ses') return new GuardedTransport(new SesTransport(config))
   if (config.RESEND_API_KEY) return new ResendTransport(config)
   return new UnconfiguredTransport()
 }
