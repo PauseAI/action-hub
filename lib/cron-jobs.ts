@@ -68,32 +68,40 @@ const MAX_DAILY_ATTEMPTS = 3
 
 type Db = Pick<typeof prisma, 'cronJobRun'>
 
+type DailyJobState = 'due' | 'not due' | 'out of tries'
+
 /**
  * Whether daily job `name` is due at `now`: from {@link DAILY_JOBS_HOUR_UTC}, until a scheduled
  * run of it succeeds that UTC day. A run still going holds the day; a failed or dead one is tried
- * again on the next trigger, up to {@link MAX_DAILY_ATTEMPTS} tries a day. An admin's Run now
- * counts for none of this.
+ * again on the next trigger, up to {@link MAX_DAILY_ATTEMPTS} tries a day, after which it is out
+ * of tries until the next day. An admin's Run now counts for none of this.
  */
-export async function dailyJobDue(name: CronJobName, now: Date, db: Db = prisma): Promise<boolean> {
-  if (now.getUTCHours() < DAILY_JOBS_HOUR_UTC) return false
+async function dailyJobState(name: CronJobName, now: Date, db: Db): Promise<DailyJobState> {
+  if (now.getUTCHours() < DAILY_JOBS_HOUR_UTC) return 'not due'
   const runs = await db.cronJobRun.findMany({
     where: { jobName: name, triggeredBy: 'cron', startedAt: { gte: startOfUtcDay(now) } },
     select: { status: true, startedAt: true },
   })
   const live = (r: { startedAt: Date }) => now.getTime() - r.startedAt.getTime() < STALE_RUN_MS
-  if (runs.some((r) => r.status === 'success' || (r.status === 'running' && live(r)))) return false
-  return runs.length < MAX_DAILY_ATTEMPTS
+  if (runs.some((r) => r.status === 'success' || (r.status === 'running' && live(r)))) {
+    return 'not due'
+  }
+  return runs.length < MAX_DAILY_ATTEMPTS ? 'due' : 'out of tries'
 }
 
 /**
- * Starts today's run of daily job `name` if it is due, and returns its audit row; null if not.
- * The check and the start share a transaction under a lock on the job's name, so two triggers
- * at once start it only once.
+ * Starts today's run of daily job `name` if it is due, and returns its audit row's id;
+ * otherwise why not. The check and the start share a transaction under a lock on the job's
+ * name, so two triggers at once start it only once.
  */
-async function claimDailyRun(name: CronJobName, now: Date): Promise<number | null> {
+async function claimDailyRun(
+  name: CronJobName,
+  now: Date,
+): Promise<number | Exclude<DailyJobState, 'due'>> {
   return prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`cron:${name}`}))`
-    if (!(await dailyJobDue(name, now, tx))) return null
+    const state = await dailyJobState(name, now, tx)
+    if (state !== 'due') return state
     const run = await tx.cronJobRun.create({
       data: { jobName: name, status: 'running', triggeredBy: 'cron', startedAt: now },
       select: { id: true },
@@ -104,7 +112,8 @@ async function claimDailyRun(name: CronJobName, now: Date): Promise<number | nul
 
 /**
  * One call of the hourly cron trigger at `now`: every hourly job, and each daily job that is
- * due. Each result is the job's own, its error, or `{ skipped: 'not due' }`.
+ * due. Each result is the job's own, its error, or `{ skipped: 'not due' }`. A daily job out of
+ * tries reports an error on every trigger until the next day, so the failure stays visible.
  */
 export async function runScheduledJobs(now: Date = new Date()): Promise<Record<string, unknown>> {
   const results = await Promise.allSettled(
@@ -112,8 +121,12 @@ export async function runScheduledJobs(now: Date = new Date()): Promise<Record<s
       if (CRON_JOB_INFO[name].every === 'hour') {
         return recordCronRun(name, () => current[name](), 'cron', QUIET_RUN[name])
       }
-      const runId = await claimDailyRun(name, now)
-      return runId === null ? { skipped: 'not due' } : finishCronRun(runId, () => current[name]())
+      const claim = await claimDailyRun(name, now)
+      if (claim === 'not due') return { skipped: 'not due' }
+      if (claim === 'out of tries') {
+        throw new Error(`failed ${MAX_DAILY_ATTEMPTS} times today; next try tomorrow`)
+      }
+      return finishCronRun(claim, () => current[name]())
     }),
   )
   return Object.fromEntries(
