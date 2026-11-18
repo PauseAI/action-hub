@@ -9,15 +9,15 @@ it; values are never written here.
 
 ### Web app
 
-| Setting        | Value                                                                                                    |
-| -------------- | -------------------------------------------------------------------------------------------------------- |
-| Source         | this repository, GitHub autodeploy                                                                       |
-| Build          | `Dockerfile`                                                                                             |
-| Start          | no custom start command; the Dockerfile's `CMD`: `npm run seed-preview && npm run migrate && next start` |
-| Healthcheck    | `GET /api/health` (runs `SELECT 1` against the database)                                                 |
-| Restart policy | on failure, at most 3 retries                                                                            |
-| Draining       | 10s between SIGTERM and SIGKILL, so the old container exits cleanly on a rolling deploy                  |
-| Domains        | `action.pauseai.info`, and `catalyse.up.railway.app` (`proxy.ts` redirects its pages)                    |
+| Setting        | Value                                                                                                                                                             |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Source         | this repository, GitHub autodeploy                                                                                                                                |
+| Build          | `Dockerfile`                                                                                                                                                      |
+| Start          | no custom start command; the Dockerfile's `CMD`: `npm run seed-preview && npm run migrate && exec node_modules/.bin/next start` (`exec`, so SIGTERM reaches Next) |
+| Healthcheck    | `GET /api/health` (runs `SELECT 1` against the database), Railway's default timeout                                                                               |
+| Restart policy | on failure, at most 3 retries                                                                                                                                     |
+| Draining       | 10s between SIGTERM and SIGKILL, so the old container exits cleanly on a rolling deploy                                                                           |
+| Domains        | `action.pauseai.info`, and `catalyse.up.railway.app` (`proxy.ts` redirects its pages)                                                                             |
 
 Variables set on the service:
 
@@ -30,7 +30,8 @@ Variables set on the service:
 
 Railway provides `PORT`, `RAILWAY_ENVIRONMENT_NAME`, `RAILWAY_GIT_COMMIT_SHA` (build and runtime)
 and, when a volume is mounted, `RAILWAY_VOLUME_MOUNT_PATH`; a standby host has to set the ones
-the app reads (`RAILWAY_ENVIRONMENT_NAME=production` keeps the production checks on).
+the app reads. The production checks in `validateEnv` (`lib/env.ts`) run when
+`RAILWAY_ENVIRONMENT_NAME` is `production` or unset; any other value turns them off.
 `STUB_EMAIL`, `STUB_GOOGLE` and `DISABLE_RATE_LIMIT` must be unset in production.
 
 ### Cron trigger
@@ -48,7 +49,8 @@ made every hourly run die at once with no logs.
 
 It POSTs to `/api/cron/daily`, which runs each job in `lib/cron-jobs.ts` when it is due.
 Variables: `CRON_SECRET` (the same value as the web app's), optionally `CRON_URL`, which
-defaults to `https://action.pauseai.info/api/cron/daily`, and `CRON_HEALTHCHECK_URL`.
+defaults to `https://action.pauseai.info/api/cron/daily`, and `CRON_HEALTHCHECK_URL`, a
+dead-man ping that `trigger.mjs` reads once the cron-healthcheck change is merged.
 
 ### Database backup
 
@@ -60,6 +62,24 @@ defaults to `https://action.pauseai.info/api/cron/daily`, and `CRON_HEALTHCHECK_
 
 Its variables are set in the Railway dashboard only; their names are not recorded in this
 repository yet.
+
+## Before the first apply
+
+`.railway/railway.ts` still holds placeholders: the cron and backup service names and the
+project name (search for `TODO`), and the web and backup services' region, limits and volumes.
+Fill them in from `railway config pull --json` first; with a placeholder name, `plan` shows
+"Create service TODO-..." and must not be applied.
+
+The web and cron services also still read `railway.toml` and `railway.cron.toml` (Config as
+Code), which Railway stops reading on 2026-12-01. `plan` refuses a service while its Config
+File path is set, so switch them over in this order:
+
+1. `railway config migrate status` lists the services still on a Config File path.
+2. `railway config migrate cutover` clears those paths. It starts no deployment and leaves
+   volumes alone; `railway config migrate undo` puts them back.
+3. `railway config plan`, then `railway config apply` (below), then redeploy web and cron.
+4. Only then delete `railway.toml` and `railway.cron.toml` in a PR. Deleting them while a path
+   is still set fails the next build.
 
 ## Changing a setting
 
