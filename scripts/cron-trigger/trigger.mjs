@@ -1,25 +1,90 @@
-const url = process.env.CRON_URL ?? 'https://action.pauseai.info/api/cron/daily'
-const secret = process.env.CRON_SECRET
+// Calls /api/cron/daily once and exits non-zero if it fails. Run hourly by the cron service
+// (railway.cron.toml), which carries only Node and this file, so it imports nothing but Node.
+//
+// Environment:
+//   CRON_SECRET            required; sent as the bearer token
+//   CRON_URL               optional; defaults to production's /api/cron/daily
+//   CRON_HEALTHCHECK_URL   optional; a healthchecks.io ping URL (https://hc-ping.com/<uuid>).
+//                          The run pings <url>/start, then <url> on HTTP 2xx or <url>/fail
+//                          otherwise, with the status and response as the body, so a run that
+//                          fails or never starts raises an alert. Unset, nothing is pinged.
+import { pathToFileURL } from 'node:url'
 
-console.log(`[cron-trigger] POST ${url}`)
+const DEFAULT_URL = 'https://action.pauseai.info/api/cron/daily'
+// The call waits for every job due this hour, a backup included.
+const REQUEST_TIMEOUT_MS = 15 * 60_000
+const PING_TIMEOUT_MS = 10_000
+// healthchecks.io keeps the first 100 KB of a ping body; a few KB is enough to read a run.
+const PING_BODY_LIMIT = 4_000
 
-if (!secret) {
-  console.error('[cron-trigger] CRON_SECRET is not set')
-  process.exit(1)
+/**
+ * Runs the trigger and returns the process exit code. A healthcheck ping never changes it:
+ * each is bounded by a short timeout and its failure is only logged.
+ *
+ * @param {{
+ *   env?: Record<string, string | undefined>,
+ *   fetch?: typeof globalThis.fetch,
+ *   log?: Pick<Console, 'log' | 'error'>,
+ *   pingTimeoutMs?: number,
+ * }} [options]
+ * @returns {Promise<number>}
+ */
+export async function run({
+  env = process.env,
+  fetch = globalThis.fetch,
+  log = console,
+  pingTimeoutMs = PING_TIMEOUT_MS,
+} = {}) {
+  const url = env.CRON_URL ?? DEFAULT_URL
+  const secret = env.CRON_SECRET
+  const healthcheck = env.CRON_HEALTHCHECK_URL?.trim().replace(/\/+$/, '')
+
+  const ping = async (suffix, body) => {
+    if (!healthcheck) return
+    let text = body ?? ''
+    if (secret) text = text.replaceAll(secret, '[redacted]')
+    if (text.length > PING_BODY_LIMIT) text = `${text.slice(0, PING_BODY_LIMIT)}\n…[truncated]`
+    try {
+      const res = await fetch(`${healthcheck}${suffix}`, {
+        method: 'POST',
+        body: text,
+        signal: AbortSignal.timeout(pingTimeoutMs),
+      })
+      if (!res.ok) log.error(`[cron-trigger] healthcheck ping${suffix} got HTTP ${res.status}`)
+    } catch (err) {
+      log.error(`[cron-trigger] healthcheck ping${suffix} failed:`, err)
+    }
+  }
+
+  if (!healthcheck) log.log('[cron-trigger] no healthcheck configured (CRON_HEALTHCHECK_URL)')
+  await ping('/start')
+
+  log.log(`[cron-trigger] POST ${url}`)
+
+  if (!secret) {
+    log.error('[cron-trigger] CRON_SECRET is not set')
+    await ping('/fail', 'CRON_SECRET is not set')
+    return 1
+  }
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${secret}` },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    })
+    const body = await res.text()
+    log.log(`[cron-trigger] HTTP ${res.status}`)
+    log.log(body)
+    await ping(res.ok ? '' : '/fail', `HTTP ${res.status}\n${body}`)
+    return res.ok ? 0 : 1
+  } catch (err) {
+    log.error('[cron-trigger] request failed:', err)
+    await ping('/fail', `request failed: ${err}${err?.cause ? ` (${err.cause})` : ''}`)
+    return 1
+  }
 }
 
-try {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${secret}` },
-    // The call waits for every job due this hour, a backup included.
-    signal: AbortSignal.timeout(15 * 60_000),
-  })
-  const body = await res.text()
-  console.log(`[cron-trigger] HTTP ${res.status}`)
-  console.log(body)
-  process.exit(res.ok ? 0 : 1)
-} catch (err) {
-  console.error('[cron-trigger] request failed:', err)
-  process.exit(1)
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.exit(await run())
 }

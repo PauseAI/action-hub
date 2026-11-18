@@ -36,6 +36,10 @@ Action Hub connects volunteers with projects, matching skills to needs and enabl
 - **Hosting**: Railway, served at https://action.pauseai.info. The Railway domain
   `catalyse.up.railway.app` stays attached: `proxy.ts` sends its pages to the same path on
   `APP_URL` with a 308, and answers `/api` itself so cron and MCP callers keep working.
+- **Scheduled jobs**: a separate Railway cron service (`railway.cron.toml`, `Dockerfile.cron`)
+  runs `scripts/cron-trigger/trigger.mjs` hourly, which POSTs to `/api/cron/daily` with
+  `CRON_SECRET`. Set `CRON_HEALTHCHECK_URL` on that service to a healthchecks.io ping URL and
+  each run reports its start and result there, so a run that fails or never happens alerts.
 
 ## Getting Started
 
