@@ -9,15 +9,15 @@ it; values are never written here.
 
 ### Web app
 
-| Setting        | Value                                                                                   |
-| -------------- | --------------------------------------------------------------------------------------- |
-| Source         | this repository, GitHub autodeploy                                                      |
-| Build          | `Dockerfile`                                                                            |
-| Start          | the Dockerfile's `CMD`: `npm run seed-preview && npm run migrate && next start`         |
-| Healthcheck    | `GET /api/health` (runs `SELECT 1` against the database)                                |
-| Restart policy | on failure, at most 3 retries                                                           |
-| Draining       | 10s between SIGTERM and SIGKILL, so the old container exits cleanly on a rolling deploy |
-| Domains        | `action.pauseai.info`, and `catalyse.up.railway.app` (`proxy.ts` redirects its pages)   |
+| Setting        | Value                                                                                                    |
+| -------------- | -------------------------------------------------------------------------------------------------------- |
+| Source         | this repository, GitHub autodeploy                                                                       |
+| Build          | `Dockerfile`                                                                                             |
+| Start          | no custom start command; the Dockerfile's `CMD`: `npm run seed-preview && npm run migrate && next start` |
+| Healthcheck    | `GET /api/health` (runs `SELECT 1` against the database)                                                 |
+| Restart policy | on failure, at most 3 retries                                                                            |
+| Draining       | 10s between SIGTERM and SIGKILL, so the old container exits cleanly on a rolling deploy                  |
+| Domains        | `action.pauseai.info`, and `catalyse.up.railway.app` (`proxy.ts` redirects its pages)                    |
 
 Variables set on the service:
 
@@ -42,9 +42,13 @@ the app reads (`RAILWAY_ENVIRONMENT_NAME=production` keeps the production checks
 | Schedule       | `0 * * * *` (hourly, UTC)                                       |
 | Restart policy | never                                                           |
 
+No custom start command: `Dockerfile.cron`'s `CMD` runs `trigger.mjs`. A Custom Start Command
+in the dashboard overrides it (`.railway/railway.ts` cannot clear one), and a stale one once
+made every hourly run die at once with no logs.
+
 It POSTs to `/api/cron/daily`, which runs each job in `lib/cron-jobs.ts` when it is due.
-Variables: `CRON_SECRET` (the same value as the web app's) and optionally `CRON_URL`, which
-defaults to `https://action.pauseai.info/api/cron/daily`.
+Variables: `CRON_SECRET` (the same value as the web app's), optionally `CRON_URL`, which
+defaults to `https://action.pauseai.info/api/cron/daily`, and `CRON_HEALTHCHECK_URL`.
 
 ### Database backup
 

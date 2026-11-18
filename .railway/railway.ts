@@ -22,7 +22,8 @@ export default defineRailway(() => {
   const web = service(WEB_SERVICE, {
     build: { builder: 'DOCKERFILE', dockerfilePath: 'Dockerfile' },
     deploy: {
-      // No startCommand: the Dockerfile's CMD seeds previews, migrates, then starts Next.
+      // No startCommand: the Dockerfile's CMD seeds previews, migrates, then starts Next. A
+      // dashboard Custom Start Command would still override it (see the cron service).
       healthcheckPath: '/api/health',
       restartPolicyType: 'ON_FAILURE',
       restartPolicyMaxRetries: 3,
@@ -39,6 +40,8 @@ export default defineRailway(() => {
   const cron = service(CRON_SERVICE, {
     build: { builder: 'DOCKERFILE', dockerfilePath: 'Dockerfile.cron' },
     deploy: {
+      // No startCommand: Dockerfile.cron's CMD runs trigger.mjs. The SDK drops a null start
+      // command, so this file cannot clear a dashboard Custom Start Command; check it is empty.
       restartPolicyType: 'NEVER',
       // Hourly: /api/cron/daily runs each job when it is due (lib/cron-jobs.ts).
       cronSchedule: '0 * * * *',
