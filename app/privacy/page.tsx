@@ -186,9 +186,9 @@ export default function PrivacyPage() {
             <P className="text-text-light">
               Passwords are hashed using PBKDF2-SHA256 with random salts and are never stored in
               plain text. All data is transmitted over HTTPS. Authentication uses secure random
-              tokens. Database backups are encrypted at rest by Backblaze and transmitted over
-              HTTPS. Access to backups requires API credentials that are stored securely as
-              environment variables.
+              tokens. Database backups are encrypted before they leave our servers, so Backblaze
+              cannot read them, and the backup service can add backups but not read or delete
+              them. The keys that read and decrypt them are kept in our password manager.
             </P>
           </div>
 
