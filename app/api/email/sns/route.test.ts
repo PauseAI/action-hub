@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { hashEmail } from '@/lib/auth'
+import { suppressionKey } from '@/lib/email-suppression'
 import { sendPasswordResetEmail } from '@/lib/email'
 import { GuardedTransport, setEmailTransport } from '@/lib/email-transport'
 import { emails } from '@/test/fakes/email'
@@ -12,6 +12,7 @@ afterEach(() => vi.unstubAllEnvs())
 
 beforeEach(async () => {
   await prisma.emailSuppression.deleteMany()
+  await prisma.snsMessage.deleteMany()
   vi.stubEnv('SES_FEEDBACK_TOPIC_ARN', TOPIC_ARN)
 })
 
@@ -28,7 +29,7 @@ const post = (body: unknown) =>
 async function suppressed(candidates = ADDRESSES) {
   const rows = await prisma.emailSuppression.findMany()
   return candidates.flatMap((email) => {
-    const row = rows.find((r) => r.emailHash === hashEmail(email))
+    const row = rows.find((r) => r.emailHash === suppressionKey(email))
     return row ? [{ email, reason: row.reason, detail: row.detail }] : []
   })
 }
@@ -68,25 +69,61 @@ describe('SNS email events', () => {
     expect(emails.sent.map((e) => e.to)).toEqual(['here@example.com'])
   })
 
-  it('suppresses complainers, keeps the first reason, and ignores transient bounces', async () => {
+  it('suppresses complainers for a year, a later bounce for good, and ignores transient bounces', async () => {
     await post(sns.notification(sesComplaint(['a@example.com', 'b@example.com'])))
     await post(sns.notification(sesBounce(['a@example.com'])))
     await post(sns.notification(sesBounce(['full@example.com'], 'Transient')))
     expect(await suppressed()).toEqual([
-      { email: 'a@example.com', reason: 'complaint', detail: 'abuse' },
+      { email: 'a@example.com', reason: 'bounce', detail: 'Permanent/General' },
       { email: 'b@example.com', reason: 'complaint', detail: 'abuse' },
     ])
+    const rows = await prisma.emailSuppression.findMany({ orderBy: { reason: 'asc' } })
+    expect(rows[0].expiresAt).toBeNull()
+    const year = rows[1].expiresAt!.getTime() - rows[1].createdAt.getTime()
+    expect(Math.round(year / 86_400_000)).toBe(365)
   })
 
-  it('accepts SignatureVersion 1 and a message with a Subject', async () => {
-    const res = await post(
-      sns.notification(sesBounce(['v1@example.com']), {
-        SignatureVersion: '1',
-        Subject: 'Amazon SES Email Event Notification',
-      }),
-    )
-    expect(res.status).toBe(200)
+  it('does not suppress someone whose complaint says the mail was not spam', async () => {
+    const complaint = sesComplaint(['a@example.com']) as { complaint: object }
+    complaint.complaint = { ...complaint.complaint, complaintFeedbackType: 'not-spam' }
+    expect((await post(sns.notification(complaint))).status).toBe(200)
+    expect(await prisma.emailSuppression.count()).toBe(0)
+  })
+
+  it('accepts a message with a Subject, but only SignatureVersion 2', async () => {
+    const subject = { Subject: 'Amazon SES Email Event Notification' }
+    const v1 = sns.notification(sesBounce(['v1@example.com']), {
+      ...subject,
+      SignatureVersion: '1',
+    })
+    expect((await post(v1)).status).toBe(403)
+    const v2 = sns.notification(sesBounce(['v1@example.com']), subject)
+    expect((await post(v2)).status).toBe(200)
     expect((await suppressed()).map((s) => s.email)).toEqual(['v1@example.com'])
+  })
+
+  it('handles a message once, however often it is delivered or replayed', async () => {
+    const message = sns.notification(sesBounce(['v@example.com']))
+    expect((await post(message)).status).toBe(200)
+    await prisma.emailSuppression.deleteMany()
+    expect((await post(message)).status).toBe(200)
+    expect(await prisma.emailSuppression.count()).toBe(0)
+  })
+
+  it('refuses a message signed more than an hour ago, or in the future', async () => {
+    const hour = 60 * 60 * 1000
+    for (const offset of [-hour - 60_000, 10 * 60_000]) {
+      const at = new Date(Date.now() + offset).toISOString()
+      const res = await post(sns.notification(sesBounce(['v@example.com']), { Timestamp: at }))
+      expect(res.status, at).toBe(403)
+    }
+    const garbled = sns.notification(sesBounce(['v@example.com']), { Timestamp: 'yesterday' })
+    expect((await post(garbled)).status).toBe(403)
+    const recent = new Date(Date.now() - hour + 60_000).toISOString()
+    expect(
+      (await post(sns.notification(sesBounce(['v@example.com']), { Timestamp: recent }))).status,
+    ).toBe(200)
+    expect(await prisma.emailSuppression.count()).toBe(1)
   })
 
   it('skips recipients without an address, and a complaint with no details', async () => {

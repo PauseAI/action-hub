@@ -1,3 +1,4 @@
+import { suppressionKey } from '@/lib/email-suppression'
 import { describe, it, expect } from 'vitest'
 import {
   EXPORTED_COLUMNS,
@@ -248,7 +249,11 @@ const rowFor: Record<string, (who: Person, other: Person) => Promise<Row>> = {
     prisma.anonymisedEmail.create({ data: { emailHash: hashEmail(who.email!) } }),
   'EmailSuppression.emailHash': (who) =>
     prisma.emailSuppression.create({
-      data: { emailHash: hashEmail(who.email!), reason: 'bounce', detail: 'Permanent/General' },
+      data: {
+        emailHash: suppressionKey(who.email!),
+        reason: 'bounce',
+        detail: 'Permanent/General',
+      },
     }),
   'ApiToken.volunteer': (who) =>
     prisma.apiToken.create({

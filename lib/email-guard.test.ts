@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { prisma } from './prisma'
 import { hashEmail } from './auth'
 import { GuardedTransport } from './email-transport'
-import { suppressAddresses } from './email-suppression'
+import { liftSuppression, suppressAddresses, suppressionKey } from './email-suppression'
 import { logger } from './logger'
 import { emails } from '@/test/fakes/email'
 
@@ -65,13 +65,24 @@ describe('GuardedTransport', () => {
     expect(emails.sent.map((e) => e.to)).toEqual(['ok@example.com'])
   })
 
-  it('sends essential mail past the cap, still counting it', async () => {
+  it('keeps essential mail out of the bulk cap, under a cap and a per-recipient limit of its own', async () => {
     vi.stubEnv('EMAIL_HOURLY_CAP', '1')
+    vi.stubEnv('EMAIL_ESSENTIAL_HOURLY_CAP', '7')
     vi.spyOn(logger, 'error').mockImplementation(() => logger as never)
+    const essential = (address: string) => ({ ...to(address), essential: true })
+    expect(await guarded.send(essential('reset@example.com'))).toBe(true)
+    // Essential mail took none of the bulk allowance.
     expect(await guarded.send(to('bulk1@example.com'))).toBe(true)
     expect(await guarded.send(to('bulk2@example.com'))).toBe(false)
-    expect(await guarded.send({ ...to('reset@example.com'), essential: true })).toBe(true)
-    expect(emails.sent.map((e) => e.to)).toEqual(['bulk1@example.com', 'reset@example.com'])
+    // Five an hour to one address, however it is written.
+    for (const n of [2, 3, 4, 5])
+      expect(await guarded.send(essential('reset@example.com')), `${n}`).toBe(true)
+    expect(await guarded.send(essential('Reset@Example.com'))).toBe(false)
+    expect(await guarded.send(essential('other@example.com'))).toBe(true)
+    // Seven essential emails in all, then no more this hour.
+    expect(await guarded.send(essential('third@example.com'))).toBe(true)
+    expect(await guarded.send(essential('fourth@example.com'))).toBe(false)
+    expect(emails.to('reset@example.com')).toHaveLength(5)
   })
 
   it('gives a failed send its slot back, so an outage does not use up the hour', async () => {
@@ -85,7 +96,7 @@ describe('GuardedTransport', () => {
 
   it('sends nothing when the database cannot say whether it may', async () => {
     const error = vi.spyOn(logger, 'error').mockImplementation(() => logger as never)
-    vi.spyOn(prisma.emailSuppression, 'findUnique').mockRejectedValueOnce(new Error('db down'))
+    vi.spyOn(prisma.emailSuppression, 'findFirst').mockRejectedValueOnce(new Error('db down'))
     expect(await guarded.send(to('a@example.com'))).toBe(false)
     expect(emails.sent).toEqual([])
     expect(error.mock.calls[0][1]).toContain('not sending')
@@ -111,10 +122,35 @@ describe('GuardedTransport', () => {
 })
 
 describe('suppressAddresses', () => {
-  it('stores each address once, hashed as typed in any case, ignoring blanks', async () => {
+  it('stores each address once under a keyed hash, in any case, ignoring blanks', async () => {
     await suppressAddresses([' A@Example.com', 'a@example.com', ' '], 'bounce', 'Permanent')
-    expect(await prisma.emailSuppression.findMany({ select: { emailHash: true } })).toEqual([
-      { emailHash: hashEmail('a@example.com') },
-    ])
+    const rows = await prisma.emailSuppression.findMany({ select: { emailHash: true } })
+    expect(rows).toEqual([{ emailHash: suppressionKey('a@example.com') }])
+    // Not the plain SHA-256 that anyone holding a list of addresses could recompute.
+    expect(rows[0].emailHash).not.toBe(hashEmail('a@example.com'))
+    vi.stubEnv('EMAIL_HASH_SECRET', 'another-secret')
+    expect(suppressionKey('a@example.com')).not.toBe(rows[0].emailHash)
+  })
+
+  it('lets a complaint lapse after a year, keeps a bounce, and lifts either on request', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-01-01T00:00:00Z') })
+    await suppressAddresses(['c@example.com'], 'complaint', 'abuse')
+    await suppressAddresses(['b@example.com'], 'bounce', 'Permanent/General')
+    expect(await guarded.send(to('c@example.com'))).toBe(false)
+    vi.setSystemTime(new Date('2027-01-02T00:00:00Z'))
+    expect(await guarded.send(to('c@example.com'))).toBe(true)
+    expect(await guarded.send(to('b@example.com'))).toBe(false)
+    // A new complaint after the old one lapsed suppresses again.
+    await suppressAddresses(['c@example.com'], 'complaint', 'abuse')
+    expect(await guarded.send(to('c@example.com'))).toBe(false)
+    await liftSuppression('B@example.com')
+    expect(await guarded.send(to('b@example.com'))).toBe(true)
+  })
+
+  it('refuses to key an address without the secret, and has nothing to lift', async () => {
+    vi.stubEnv('EMAIL_HASH_SECRET', '')
+    expect(() => suppressionKey('a@example.com')).toThrow('EMAIL_HASH_SECRET')
+    // Resend runs with no secret and no suppressions: deleting an account must still work.
+    await expect(liftSuppression('a@example.com')).resolves.toBeUndefined()
   })
 })

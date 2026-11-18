@@ -4,6 +4,10 @@ const flag = (value: string | undefined): boolean =>
   ['1', 'true', 'yes'].includes((value ?? '').toLowerCase())
 
 const DEFAULT_EMAIL_HOURLY_CAP = 500
+const DEFAULT_EMAIL_ESSENTIAL_HOURLY_CAP = 200
+
+const wholeNumber = (value: string | undefined, fallback: number): number =>
+  /^\d+$/.test(value ?? '') ? Number(value) : fallback
 
 /**
  * Typed view of the process environment. Each property reads `process.env` when accessed,
@@ -30,10 +34,17 @@ export const env = {
   get EMAIL_PROVIDER(): string {
     return (process.env.EMAIL_PROVIDER || 'resend').trim().toLowerCase()
   },
-  /** Most emails handed to the provider in one clock hour, across every process. */
+  /** Most non-essential emails handed to SES in one clock hour, across every process. */
   get EMAIL_HOURLY_CAP(): number {
-    const value = process.env.EMAIL_HOURLY_CAP ?? ''
-    return /^\d+$/.test(value) ? Number(value) : DEFAULT_EMAIL_HOURLY_CAP
+    return wholeNumber(process.env.EMAIL_HOURLY_CAP, DEFAULT_EMAIL_HOURLY_CAP)
+  },
+  /** Most essential emails (password resets, confirmations) handed to SES in one clock hour. */
+  get EMAIL_ESSENTIAL_HOURLY_CAP(): number {
+    return wholeNumber(process.env.EMAIL_ESSENTIAL_HOURLY_CAP, DEFAULT_EMAIL_ESSENTIAL_HOURLY_CAP)
+  },
+  /** Keys the hashes that suppressed addresses are stored under. */
+  get EMAIL_HASH_SECRET(): string | undefined {
+    return process.env.EMAIL_HASH_SECRET || undefined
   },
   /** The AWS SDK reads the same variable, with AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. */
   get AWS_REGION(): string | undefined {
@@ -101,6 +112,7 @@ export function validateEnv(): void {
       'AWS_ACCESS_KEY_ID',
       'AWS_SECRET_ACCESS_KEY',
       'SES_CONFIGURATION_SET',
+      'EMAIL_HASH_SECRET',
       // The default sender is not on the domain SES verified, so every send would be refused.
       'FROM_EMAIL',
     ] as const

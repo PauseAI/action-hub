@@ -44,6 +44,7 @@ process.env.ADMIN_EMAILS = [
 ].join(',')
 process.env.APP_URL = 'http://localhost:3000'
 process.env.CRON_SECRET = 'cron-secret'
+process.env.EMAIL_HASH_SECRET = 'email-hash-secret'
 // The network edge is faked: outgoing email lands in the in-memory outbox `emails`, Google
 // credentials verify only when a test has registered them with `google.accept`, requests
 // are rate-limited only when a test asks with `rateLimit.denyNext`, SNS messages are signed

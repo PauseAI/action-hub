@@ -100,12 +100,14 @@ describe('email provider settings', () => {
     const { env } = loadEnv({
       EMAIL_PROVIDER: undefined,
       EMAIL_HOURLY_CAP: undefined,
+      EMAIL_ESSENTIAL_HOURLY_CAP: undefined,
       SES_FEEDBACK_TOPIC_ARN: undefined,
       SES_CONFIGURATION_SET: undefined,
       AWS_REGION: undefined,
     })
     expect(env.EMAIL_PROVIDER).toBe('resend')
     expect(env.EMAIL_HOURLY_CAP).toBe(500)
+    expect(env.EMAIL_ESSENTIAL_HOURLY_CAP).toBe(200)
     expect(env.SES_FEEDBACK_TOPIC_ARN).toBeUndefined()
     expect(env.SES_CONFIGURATION_SET).toBeUndefined()
     expect(env.AWS_REGION).toBeUndefined()
@@ -140,6 +142,7 @@ describe('email provider settings', () => {
       AWS_ACCESS_KEY_ID: 'id',
       AWS_SECRET_ACCESS_KEY: 'secret',
       SES_CONFIGURATION_SET: 'action-hub',
+      EMAIL_HASH_SECRET: 'secret',
       FROM_EMAIL: 'Action Hub <noreply@action.pauseai.info>',
       SES_FEEDBACK_TOPIC_ARN: 'arn:aws:sns:eu-west-1:1:ses-action-hub-feedback',
     }
@@ -150,11 +153,12 @@ describe('email provider settings', () => {
       AWS_ACCESS_KEY_ID: '',
       AWS_SECRET_ACCESS_KEY: '',
       SES_CONFIGURATION_SET: '',
+      EMAIL_HASH_SECRET: '',
       FROM_EMAIL: '',
       SES_FEEDBACK_TOPIC_ARN: '',
     })
     expect(() => validateEnv()).toThrow(
-      /AWS_REGION[\s\S]*AWS_ACCESS_KEY_ID[\s\S]*AWS_SECRET_ACCESS_KEY[\s\S]*SES_CONFIGURATION_SET[\s\S]*FROM_EMAIL[\s\S]*SES_FEEDBACK_TOPIC_ARN/,
+      /AWS_REGION[\s\S]*AWS_ACCESS_KEY_ID[\s\S]*AWS_SECRET_ACCESS_KEY[\s\S]*SES_CONFIGURATION_SET[\s\S]*EMAIL_HASH_SECRET[\s\S]*FROM_EMAIL[\s\S]*SES_FEEDBACK_TOPIC_ARN/,
     )
     expect(() => validateEnv()).not.toThrow(/RESEND_API_KEY/)
   })

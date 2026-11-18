@@ -80,14 +80,21 @@ Key variables:
   - `SES_CONFIGURATION_SET` — named on every send, so SES applies the app's suppression,
     reputation alarms and pause switch, and publishes its bounces and complaints
   - `SES_FEEDBACK_TOPIC_ARN` — the SNS topic (`ses-<app>-feedback`) whose bounce and complaint
-    notifications `POST /api/email/sns` accepts; their addresses are added to
-    `email_suppressions` (hashed) and get no more mail. Delete a row to lift it.
-- `FROM_EMAIL` — the sender; with SES it must be on the verified domain, e.g.
+    notifications `POST /api/email/sns` accepts. Set the topic to sign with SHA-256, as nothing
+    else is accepted: `aws sns set-topic-attributes --topic-arn <arn> --attribute-name
+SignatureVersion --attribute-value 2`. Permanent bounces and complaints go on
+    `email_suppressions` and get no more mail (a complaint for a year, a bounce until lifted);
+    deleting a row, or the account, lifts it.
+  - `EMAIL_HASH_SECRET` — a random secret keying the hashes suppressed addresses are kept under
+    (`openssl rand -hex 32`); changing it forgets every suppression
+- `FROM_EMAIL` — the sender; with SES it must be set, on the verified domain:
   `Action Hub <noreply@action.pauseai.info>`
 - `EMAIL_HOURLY_CAP` — with `ses`, the most emails sent in one clock hour across every process
-  (default 500). Beyond it mail is dropped and logged; essential mail (password reset, signup
-  confirmation, account merge, outreach login) still goes. Keep it above the number of people a
+  (default 500); beyond it mail is dropped and logged. Keep it above the number of people a
   digest or call reaches.
+- `EMAIL_ESSENTIAL_HOURLY_CAP` — with `ses`, the same for essential mail (password reset, signup
+  confirmation, account merge, outreach login), kept apart from the cap above (default 200), plus
+  five an hour to any one address
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — for Google OAuth
 - `STUB_EMAIL=true` — suppress real emails in development
 

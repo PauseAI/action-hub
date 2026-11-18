@@ -24,6 +24,9 @@ export const COLUMN_TREATMENT: Record<string, Record<string, Treatment>> = {
   api_tokens: { name: 'rows-deleted', token_hash: 'rows-deleted' },
   anonymised_emails: { email_hash: 'token' },
   email_suppressions: { email_hash: 'token', detail: 'keep' },
+  // `bulk`, `essential`, or `to:` and a recipient's keyed hash.
+  email_send_counts: { bucket: 'token' },
+  sns_messages: { message_id: 'keep' },
   bug_report_comments: { content: 'redact' },
   calls: { title: 'redact', body: 'redact' },
   call_responses: { message: 'redact' },

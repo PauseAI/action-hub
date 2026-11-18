@@ -1,3 +1,4 @@
+import { suppressAddresses, suppressionKey } from '@/lib/email-suppression'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { logger } from '@/lib/logger'
 import { prisma } from '@/lib/prisma'
@@ -755,6 +756,8 @@ describe('deleteAccount', () => {
     const mine = await createProject({ assigneeId: me.id, status: 'in_progress' })
     await createProject({ assigneeId: me.id, status: 'completed' })
 
+    await suppressAddresses([me.email!], 'complaint', 'abuse')
+    await suppressAddresses(['someone-else@example.com'], 'complaint', 'abuse')
     const c = clientAs(me)
     await expect(c.auth.deleteAccount({})).rejects.toMatchObject({
       message: 'Password is incorrect',
@@ -769,6 +772,10 @@ describe('deleteAccount', () => {
     expect(row.deletedAt).not.toBeNull()
     expect(await prisma.deletionRequest.count({ where: { volunteerId: me.id } })).toBe(1)
     expect(await prisma.session.count({ where: { volunteerId: me.id } })).toBe(0)
+    // Their suppression goes with the account; nobody else's does.
+    expect(await prisma.emailSuppression.findMany({ select: { emailHash: true } })).toEqual([
+      { emailHash: suppressionKey('someone-else@example.com') },
+    ])
 
     const ownerNotes = await prisma.notification.findMany({
       where: { volunteerId: owner.id, type: 'account_deleted_impact' },

@@ -63,6 +63,24 @@ describe('HttpSnsGateway', () => {
     }
   })
 
+  it('stops fetching after five failed certificate fetches in ten minutes', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const server = await serve({ '/good.pem': [200, 'PEM'] })
+    try {
+      const gateway = new HttpSnsGateway()
+      for (let n = 0; n < 5; n++) {
+        await expect(gateway.certificate(server.url(`/miss${n}.pem`))).rejects.toThrow('404')
+      }
+      await expect(gateway.certificate(server.url('/good.pem'))).rejects.toThrow('too many')
+      expect(server.requested).toHaveLength(5)
+      vi.advanceTimersByTime(10 * 60 * 1000 + 1)
+      expect(await gateway.certificate(server.url('/good.pem'))).toBe('PEM')
+    } finally {
+      vi.useRealTimers()
+      await server.close()
+    }
+  })
+
   it('confirms a subscription by visiting its URL, and reports a refusal', async () => {
     const server = await serve({ '/confirm': [200, '<xml/>'], '/refused': [403, ''] })
     try {

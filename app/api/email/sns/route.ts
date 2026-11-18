@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { suppressAddresses } from '@/lib/email-suppression'
+import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
-import { isSnsMessage, isSnsUrl, snsGateway, verifySnsMessage, type SnsMessage } from '@/lib/sns'
+import {
+  MAX_MESSAGE_AGE_MS,
+  isSnsMessage,
+  isSnsUrl,
+  snsGateway,
+  verifySnsMessage,
+  type SnsMessage,
+} from '@/lib/sns'
 
 // SNS caps a message at 256 KB.
 const MAX_BODY_BYTES = 262_144
@@ -46,7 +54,8 @@ async function handleSesEvent(event: SesEvent): Promise<void> {
     const { bounceType, bounceSubType, bouncedRecipients } = event.bounce
     // The diagnostic code is left out: it often quotes the address back.
     await suppress(bouncedRecipients, 'bounce', `${bounceType}/${bounceSubType}`)
-  } else if (type === 'Complaint') {
+  } else if (type === 'Complaint' && event.complaint?.complaintFeedbackType !== 'not-spam') {
+    // A "not-spam" report is the recipient rescuing our mail from their spam folder.
     const { complainedRecipients, complaintFeedbackType } = event.complaint ?? {}
     await suppress(complainedRecipients, 'complaint', complaintFeedbackType ?? null)
   }
@@ -111,6 +120,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const event = parseJson(message.Message)
   if (!event || typeof event !== 'object') return status(400)
+  // SNS may deliver a message more than once, and a copy of a signed message could be posted
+  // again within the hour its timestamp is accepted: each MessageId is handled once.
+  const seen = await prisma.snsMessage.findUnique({ where: { messageId: message.MessageId } })
+  if (seen) return status(200)
   await handleSesEvent(event as SesEvent)
+  await prisma.snsMessage.createMany({
+    data: [{ messageId: message.MessageId }],
+    skipDuplicates: true,
+  })
+  await prisma.snsMessage.deleteMany({
+    where: { receivedAt: { lt: new Date(Date.now() - 2 * MAX_MESSAGE_AGE_MS) } },
+  })
   return status(200)
 }

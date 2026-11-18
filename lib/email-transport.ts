@@ -145,14 +145,16 @@ export class UnconfiguredTransport extends EmailTransport {
 }
 
 const HOUR_MS = 60 * 60 * 1000
+/** Essential emails one address may be sent in an hour, so nobody can flood a stranger with resets. */
+export const ESSENTIAL_PER_RECIPIENT_HOURLY = 5
 
 /**
- * Wraps SES so that nothing reaches it for an address on the suppression list
- * (`EmailSuppression`), and no more than EMAIL_HOURLY_CAP emails an hour do in all, so a bug
- * cannot mail everyone. The hourly count lives in the database, so the web and cron processes
- * share one ceiling and a fan-out cannot outrun it by racing. Essential mail (a password reset,
- * a confirmation link) counts towards the cap but is never refused by it. Fails closed: when the
- * database cannot answer, nothing is sent.
+ * Wraps SES so that nothing reaches it for a suppressed address (lib/email-suppression.ts),
+ * and a bug cannot mail everyone: at most EMAIL_HOURLY_CAP emails an hour go out in all. Essential
+ * mail (a password reset, a confirmation link) is kept apart, so a bulk run cannot lock anyone
+ * out and anyone requesting resets cannot use up the bulk allowance: it has its own cap,
+ * EMAIL_ESSENTIAL_HOURLY_CAP, and a limit per recipient. Counts live in the database, so every
+ * process shares them. Fails closed: when the database cannot answer, nothing is sent.
  */
 export class GuardedTransport extends EmailTransport {
   constructor(readonly inner: EmailTransport) {
@@ -162,20 +164,35 @@ export class GuardedTransport extends EmailTransport {
   async send(email: OutgoingEmail): Promise<boolean> {
     let db: PrismaClient
     let hour: Date
+    const claimed: string[] = []
     try {
       // Loaded here, not at the top: the test harness imports this module before it has set
       // the database URL that `lib/prisma` reads when it is first imported.
-      const [{ prisma }, { hashEmail }] = await Promise.all([import('./prisma'), import('./auth')])
+      const [{ prisma }, suppression] = await Promise.all([
+        import('./prisma'),
+        import('./email-suppression'),
+      ])
       db = prisma
-      const suppressed = await db.emailSuppression.findUnique({
-        where: { emailHash: hashEmail(email.to) },
-      })
-      if (suppressed) {
-        logger.info(`[EMAIL SUPPRESSED] Not sending "${email.subject}": ${suppressed.reason}`)
+      const reason = await suppression.suppressionOf(email.to)
+      if (reason) {
+        logger.info(`[EMAIL SUPPRESSED] Not sending "${email.subject}": ${reason}`)
         return false
       }
       hour = new Date(Math.floor(Date.now() / HOUR_MS) * HOUR_MS)
-      if (!(await this.claimSendSlot(db, hour, email.essential ?? false))) return false
+      // Each bucket with its cap, and the setting to name in the log once that cap is reached.
+      const buckets: [string, number, string | null][] = email.essential
+        ? [
+            [`to:${suppression.suppressionKey(email.to)}`, ESSENTIAL_PER_RECIPIENT_HOURLY, null],
+            ['essential', env.EMAIL_ESSENTIAL_HOURLY_CAP, 'EMAIL_ESSENTIAL_HOURLY_CAP'],
+          ]
+        : [['bulk', env.EMAIL_HOURLY_CAP, 'EMAIL_HOURLY_CAP']]
+      for (const [bucket, cap, setting] of buckets) {
+        if (!(await this.claim(db, hour, bucket, cap, setting))) {
+          await this.release(db, hour, claimed)
+          return false
+        }
+        claimed.push(bucket)
+      }
     } catch (err) {
       logger.error(err, '[EMAIL ERROR] Suppression or cap check failed; not sending')
       return false
@@ -184,11 +201,11 @@ export class GuardedTransport extends EmailTransport {
       logger.error(err, '[EMAIL ERROR]')
       return false
     })
-    // A send that went nowhere gives its slot back, so an outage does not use up the hour.
+    // A send that went nowhere gives its slots back, so an outage does not use up the hour.
     if (!sent) {
-      await db.emailSendCount
-        .updateMany({ where: { hour, count: { gt: 0 } }, data: { count: { decrement: 1 } } })
-        .catch((err: unknown) => logger.error(err, '[EMAIL ERROR] Could not return a send slot'))
+      await this.release(db, hour, claimed).catch((err: unknown) =>
+        logger.error(err, '[EMAIL ERROR] Could not return a send slot'),
+      )
     }
     return sent
   }
@@ -197,21 +214,36 @@ export class GuardedTransport extends EmailTransport {
     return this.inner.configured()
   }
 
-  private async claimSendSlot(db: PrismaClient, hour: Date, essential: boolean): Promise<boolean> {
-    const cap = env.EMAIL_HOURLY_CAP
+  /** Takes one send from `bucket`'s allowance this hour; false once `cap` are taken. */
+  private async claim(
+    db: PrismaClient,
+    hour: Date,
+    bucket: string,
+    cap: number,
+    setting: string | null,
+  ): Promise<boolean> {
     const { count } = await db.emailSendCount.upsert({
-      where: { hour },
-      create: { hour, count: 1 },
+      where: { hour_bucket: { hour, bucket } },
+      create: { hour, bucket, count: 1 },
       update: { count: { increment: 1 } },
     })
-    if (count <= cap || essential) return true
-    if (count === cap + 1) {
+    if (count <= cap) return true
+    // A refused claim stays counted, so the cap is announced once, not once per refused email.
+    if (count === cap + 1 && setting) {
       logger.error(
         { hour, cap },
-        `[EMAIL CAP] EMAIL_HOURLY_CAP of ${cap} reached; only essential email is sent until the next hour`,
+        `[EMAIL CAP] ${setting} of ${cap} reached; no more ${bucket} email until the next hour`,
       )
     }
     return false
+  }
+
+  private async release(db: PrismaClient, hour: Date, buckets: string[]): Promise<void> {
+    if (buckets.length === 0) return
+    await db.emailSendCount.updateMany({
+      where: { hour, bucket: { in: buckets }, count: { gt: 0 } },
+      data: { count: { decrement: 1 } },
+    })
   }
 }
 

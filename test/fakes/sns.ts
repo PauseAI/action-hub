@@ -1,4 +1,4 @@
-import { generateKeyPairSync, sign } from 'node:crypto'
+import { generateKeyPairSync, randomUUID, sign } from 'node:crypto'
 import { SnsGateway, snsStringToSign, type SnsMessage } from '@/lib/sns'
 
 export const TOPIC_ARN = 'arn:aws:sns:eu-west-1:123456789012:ses-action-hub-feedback'
@@ -28,14 +28,14 @@ export class FakeSns extends SnsGateway {
     this.confirmed.push(subscribeUrl)
   }
 
-  /** A notification as SNS would POST it, `message` serialised as its body. */
+  /** A notification as SNS would POST it, each with its own MessageId unless one is given. */
   notification(message: unknown, overrides: Partial<SnsMessage> = {}): SnsMessage {
     return this.signed({
       Type: 'Notification',
-      MessageId: 'msg-1',
+      MessageId: randomUUID(),
       TopicArn: TOPIC_ARN,
       Message: JSON.stringify(message),
-      Timestamp: '2026-11-18T12:00:00.000Z',
+      Timestamp: new Date().toISOString(),
       SignatureVersion: '2',
       SigningCertURL: CERT_URL,
       ...overrides,
@@ -45,12 +45,12 @@ export class FakeSns extends SnsGateway {
   subscriptionConfirmation(overrides: Partial<SnsMessage> = {}): SnsMessage {
     return this.signed({
       Type: 'SubscriptionConfirmation',
-      MessageId: 'msg-sub',
+      MessageId: randomUUID(),
       TopicArn: TOPIC_ARN,
       Token: 'token-1',
       Message: 'You have chosen to subscribe to the topic',
       SubscribeURL: `https://sns.eu-west-1.amazonaws.com/?Action=ConfirmSubscription&TopicArn=${TOPIC_ARN}&Token=token-1`,
-      Timestamp: '2026-11-18T12:00:00.000Z',
+      Timestamp: new Date().toISOString(),
       SignatureVersion: '2',
       SigningCertURL: CERT_URL,
       ...overrides,

@@ -1,3 +1,4 @@
+import { liftSuppression } from '@/lib/email-suppression'
 import { ORPCError } from '@orpc/server'
 import { randomBytes } from 'crypto'
 import { z } from 'zod'
@@ -758,6 +759,7 @@ export const authRouter = {
       })
       await sendAccountDeletionNotifications(context.volunteer.id, context.volunteer.name)
       await deleteAllSessions(context.volunteer.id)
+      if (context.volunteer.email) await liftSuppression(context.volunteer.email)
       await prisma.volunteer.update({
         where: { id: context.volunteer.id },
         data: {

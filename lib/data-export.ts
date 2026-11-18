@@ -1,6 +1,7 @@
 import type { RuntimeDataModel } from '@prisma/client/runtime/library'
 import { prisma } from '@/lib/prisma'
 import { hashEmail, isSuperAdmin } from '@/lib/auth'
+import { suppressionKey } from '@/lib/email-suppression'
 import type { Volunteer } from '@/generated/prisma/client'
 
 /**
@@ -282,7 +283,11 @@ export async function linkedRecords(
   const matching = (l: UserLink): Row | null => {
     if (l.matchBy === 'id') return { [l.foreignKey]: subject.id }
     if (email === null) return null
-    if (l.matchBy === 'emailHash') return { [l.foreignKey]: hashEmail(email) }
+    if (l.matchBy === 'emailHash') {
+      // Suppressions are keyed with a secret; everything else with a plain hash.
+      const hash = l.model === 'EmailSuppression' ? suppressionKey(email) : hashEmail(email)
+      return { [l.foreignKey]: hash }
+    }
     if (l.matchBy === 'participant')
       return { [l.foreignKey]: { in: participants.map((p) => p.id) } }
     return { [l.foreignKey]: byAddress }

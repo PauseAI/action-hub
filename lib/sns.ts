@@ -29,7 +29,12 @@ const SIGNED_FIELDS = {
   ],
 } as const satisfies Record<string, (keyof SnsMessage)[]>
 
-const ALGORITHMS: Record<string, string> = { '1': 'sha1', '2': 'sha256' }
+// Version 1 signs with SHA-1; the topic is set to version 2 (SHA-256), and nothing else is
+// accepted.
+const SIGNATURE_VERSION = '2'
+/** How old a message may be: SNS's own retries to an endpoint finish well within it. */
+export const MAX_MESSAGE_AGE_MS = 60 * 60 * 1000
+const CLOCK_SKEW_MS = 5 * 60 * 1000
 
 // Certificates and SubscribeURLs are only ever fetched from SNS itself, and a certificate only
 // from the path SNS publishes them at, so a forged message cannot send us fetching elsewhere.
@@ -88,16 +93,29 @@ export abstract class SnsGateway {
 }
 
 const MAX_CACHED_CERTIFICATES = 20
+const MAX_FAILED_FETCHES = 5
+const FAILED_FETCH_WINDOW_MS = 10 * 60 * 1000
 
 export class HttpSnsGateway extends SnsGateway {
   // SNS signs with a handful of long-lived certificates, so a small cache saves a fetch per message.
   private readonly certificates = new Map<string, string>()
+  // A forged message can name any certificate path on an SNS host, so fetches that fail are
+  // rationed: past a few in a window, nothing uncached is fetched until the window passes.
+  private failedFetches: number[] = []
 
   async certificate(url: string): Promise<string> {
     const cached = this.certificates.get(url)
     if (cached) return cached
+    const now = Date.now()
+    this.failedFetches = this.failedFetches.filter((t) => t > now - FAILED_FETCH_WINDOW_MS)
+    if (this.failedFetches.length >= MAX_FAILED_FETCHES) {
+      throw new Error('too many failed SNS certificate fetches')
+    }
     const res = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(10_000) })
-    if (!res.ok) throw new Error(`SNS certificate fetch failed: ${res.status}`)
+    if (!res.ok) {
+      this.failedFetches.push(now)
+      throw new Error(`SNS certificate fetch failed: ${res.status}`)
+    }
     const pem = await res.text()
     if (this.certificates.size >= MAX_CACHED_CERTIFICATES) this.certificates.clear()
     this.certificates.set(url, pem)
@@ -129,16 +147,22 @@ export function setSnsGateway(gateway: SnsGateway | undefined): SnsGateway | und
 export type SnsVerdict = { ok: true } | { ok: false; reason: string }
 
 /**
- * Whether `message` really came from SNS on a topic this app subscribed to: the topic is on
- * SES_FEEDBACK_TOPIC_ARN, the certificate is served by SNS, and the signature over the signed
- * fields checks out against it. The topic is checked first, so a stranger's topic costs no fetch.
+ * Whether `message` really came from SNS on a topic this app subscribed to, recently: the topic
+ * is SES_FEEDBACK_TOPIC_ARN, it was signed with version 2 within the last hour, the certificate
+ * is served by SNS, and the signature over the signed fields checks out against it. Everything
+ * but the signature is checked first, so a forged message costs no fetch.
  */
 export async function verifySnsMessage(message: SnsMessage): Promise<SnsVerdict> {
   if (!env.SES_FEEDBACK_TOPIC_ARN || message.TopicArn !== env.SES_FEEDBACK_TOPIC_ARN) {
     return { ok: false, reason: 'topic not allowed' }
   }
-  const algorithm = ALGORITHMS[message.SignatureVersion]
-  if (!algorithm) return { ok: false, reason: 'unknown signature version' }
+  if (message.SignatureVersion !== SIGNATURE_VERSION) {
+    return { ok: false, reason: 'signature version not 2' }
+  }
+  const age = Date.now() - Date.parse(message.Timestamp)
+  if (!(age <= MAX_MESSAGE_AGE_MS && age >= -CLOCK_SKEW_MS)) {
+    return { ok: false, reason: 'stale or future timestamp' }
+  }
   if (typeof message.Signature !== 'string' || !message.Signature) {
     return { ok: false, reason: 'unsigned' }
   }
@@ -153,7 +177,7 @@ export async function verifySnsMessage(message: SnsMessage): Promise<SnsVerdict>
   }
   try {
     const signature = Buffer.from(message.Signature, 'base64')
-    const valid = verify(algorithm, Buffer.from(snsStringToSign(message)), certificate, signature)
+    const valid = verify('sha256', Buffer.from(snsStringToSign(message)), certificate, signature)
     return valid ? { ok: true } : { ok: false, reason: 'bad signature' }
   } catch {
     return { ok: false, reason: 'bad signature' }
