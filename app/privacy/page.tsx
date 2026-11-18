@@ -124,9 +124,10 @@ export default function PrivacyPage() {
               </li>
               <li>
                 <strong>Backblaze B2</strong> (encrypted backups): daily encrypted backups of the
-                database are stored in Backblaze&apos;s EU data centre (Amsterdam). Backups are
-                retained for 30 days and then automatically deleted. Backups are used solely for
-                disaster recovery and are never accessed for any other purpose.
+                database are stored in Backblaze&apos;s EU data centre (Amsterdam). Each backup is
+                locked against deletion for 30 days and then automatically deleted a day later.
+                Backups are used solely for disaster recovery and are never accessed for any other
+                purpose.
               </li>
               <li>
                 <strong>Google Analytics</strong> (usage analytics): used only to understand how the
@@ -159,9 +160,9 @@ export default function PrivacyPage() {
                 platform integrity
               </li>
               <li>
-                Database backups: retained for 30 days, then automatically deleted. When you delete
-                your account, your data is anonymised in the live database immediately; backup
-                copies containing pre-deletion data will be overwritten within 30 days
+                Database backups: kept for 31 days, then automatically deleted. When you delete your
+                account, your data is anonymised in the live database immediately; backup copies
+                containing pre-deletion data are deleted within 31 days
               </li>
               <li>Password reset tokens expire after 1 hour</li>
               <li>Admin invite tokens expire after 7 days</li>
