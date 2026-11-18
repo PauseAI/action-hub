@@ -29,7 +29,7 @@ const realRunners: CronJobRunners = {
   'csp-summary': runCspSummaryJob,
   'deadline-reminders': runDeadlineRemindersJob,
   'notification-digest': runNotificationDigestJob,
-  'email-housekeeping': () => runEmailHousekeepingJob(),
+  'email-housekeeping': runEmailHousekeepingJob,
 }
 
 let current: CronJobRunners = realRunners
