@@ -90,15 +90,6 @@ export function validateEnv(): void {
     }
   }
 
-  const b2Vars = ['B2_KEY_ID', 'B2_APP_KEY', 'B2_BUCKET_NAME'] as const
-  const b2Set = b2Vars.filter((v) => process.env[v])
-  if (b2Set.length > 0 && b2Set.length < b2Vars.length) {
-    const missing = b2Vars.filter((v) => !process.env[v])
-    for (const v of missing) {
-      errors.push({ var: v, reason: 'required when any B2 backup var is set' })
-    }
-  }
-
   if (errors.length === 0) return
 
   const lines = errors.map((e) => `  - ${e.var}: ${e.reason}`).join('\n')

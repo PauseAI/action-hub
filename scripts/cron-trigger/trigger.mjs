@@ -16,7 +16,7 @@ import { realpathSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
 const DEFAULT_URL = 'https://action.pauseai.info/api/cron/daily'
-// The call waits for every job due this hour, a backup included.
+// The call waits for every job due this hour.
 const REQUEST_TIMEOUT_MS = 15 * 60_000
 const PING_TIMEOUT_MS = 10_000
 // healthchecks.io keeps the first 100 KB of a ping body; a few KB is enough to read a run.

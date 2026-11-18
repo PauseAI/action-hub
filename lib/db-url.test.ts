@@ -37,6 +37,15 @@ describe('resolveDbUrl', () => {
   })
 })
 
+describe('libpqUrl', () => {
+  it('drops the options only Prisma understands and keeps the rest', async () => {
+    const { libpqUrl } = await import('./db-url')
+    expect(
+      libpqUrl('postgresql://u:p@host:5432/db?schema=vitest_1&connection_limit=5&sslmode=require'),
+    ).toBe('postgresql://u:p@host:5432/db?sslmode=require')
+  })
+})
+
 describe('.env loading', () => {
   let dir: string
   const origCwd = process.cwd()

@@ -133,12 +133,12 @@ describe('cron runs', () => {
     expect(await screen.findByRole('dialog')).toHaveTextContent('nudged 3')
     await userEvent.keyboard('{Escape}')
 
-    cronJobs.fails('digest', 'digest exploded')
+    cronJobs.fails('nudges', 'nudges exploded')
     await userEvent.click(screen.getAllByRole('button', { name: 'Run now' })[0])
-    await screen.findByText('backup finished')
+    await screen.findByText('digest finished')
     await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(5))
     await userEvent.click(screen.getAllByRole('button', { name: 'Run now' })[1])
-    await screen.findByText('digest failed')
+    await screen.findByText('nudges failed')
   })
 
   it('shows the empty state', async () => {

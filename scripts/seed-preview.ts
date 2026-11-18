@@ -1,7 +1,6 @@
 import { execSync } from 'child_process'
 import { Client } from 'pg'
-import { libpqUrl } from '../jobs/backup'
-import { resolveDbUrl } from '../lib/db-url'
+import { libpqUrl, resolveDbUrl } from '../lib/db-url'
 import { logger } from '../lib/logger'
 
 /**
@@ -9,11 +8,13 @@ import { logger } from '../lib/logger'
  * an anonymised copy of production so reviewers see realistic data. Only an empty database
  * is seeded: the container also restarts on failure and on every push to the PR, and
  * reviewers' changes should survive those. SEED_PREVIEW_FORCE=1 reseeds regardless.
- * Production, environments without B2 credentials, and environments without ALLOW_DB_RESTORE=1
- * are left alone.
+ * Production, environments without the backup read key and age identity (see
+ * scripts/fetch-prod-db.ts), and environments without ALLOW_DB_RESTORE=1 are left alone.
  */
 const isProduction = process.env.RAILWAY_ENVIRONMENT_NAME === 'production'
-const hasB2 = Boolean(process.env.B2_KEY_ID)
+const canReadBackups = Boolean(
+  process.env.BACKUP_B2_READ_KEY_ID && process.env.BACKUP_AGE_IDENTITY_FILE,
+)
 
 async function databaseIsEmpty(): Promise<boolean> {
   const client = new Client({ connectionString: libpqUrl(resolveDbUrl()) })
@@ -29,9 +30,9 @@ async function databaseIsEmpty(): Promise<boolean> {
 }
 
 async function main(): Promise<void> {
-  if (isProduction || !hasB2 || process.env.ALLOW_DB_RESTORE !== '1') {
+  if (isProduction || !canReadBackups || process.env.ALLOW_DB_RESTORE !== '1') {
     logger.info(
-      '[SEED-PREVIEW] Skipped (production, B2 not configured, or ALLOW_DB_RESTORE not set)',
+      '[SEED-PREVIEW] Skipped (production, backup access not configured, or ALLOW_DB_RESTORE not set)',
     )
     return
   }

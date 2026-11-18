@@ -2,9 +2,9 @@
 # bumping this tag. Dockerfile.cron uses the same image.
 FROM node:24.22.1-bookworm-slim
 
-# openssl for the Prisma engines. pg_dump/pg_restore for the backup job and preview seeding:
-# the client major must be >= the Railway Postgres service's major (pg_dump refuses newer
-# servers), and Debian's postgresql-client lags behind, so take it from the PostgreSQL apt repo.
+# openssl for the Prisma engines. pg_restore for preview seeding: the client major must be >= the
+# major of the pg_dump that wrote the backups (the Railway Postgres service's), and Debian's
+# postgresql-client lags behind, so take it from the PostgreSQL apt repo.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl openssl \
   && install -d /usr/share/postgresql-common/pgdg \

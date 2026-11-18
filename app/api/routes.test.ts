@@ -8,7 +8,6 @@ import { cronJobs } from '@/test/fakes/cron-jobs'
 afterEach(() => vi.useRealTimers())
 
 beforeEach(() => {
-  cronJobs.returns('backup', 'backup-ok')
   cronJobs.returns('digest', 'digest-ok')
   cronJobs.returns('nudges', { nudged: 1 })
   cronJobs.returns('applications-summary', 'summary-ok')
@@ -24,7 +23,6 @@ const cron = (path: string, auth = 'Bearer cron-secret') =>
 describe('cron routes', () => {
   it('each refuses a bad secret and otherwise runs its job', async () => {
     const routes = {
-      backup: { key: 'backup', expected: 'backup-ok' },
       digest: { key: 'digest', expected: 'digest-ok' },
       'applications-summary': { key: 'applications', expected: 'summary-ok' },
     }
@@ -49,14 +47,6 @@ describe('cron routes', () => {
     })
   })
 
-  it('backup answers a failed run with its error as JSON', async () => {
-    cronJobs.fails('backup', 'upload failed')
-    const { POST } = await import('./cron/backup/route')
-    const res = await POST(cron('backup'))
-    expect(res.status).toBe(500)
-    expect(await res.json()).toEqual({ backup: { error: 'Error: upload failed' } })
-  })
-
   it('daily runs every job due and reports failures inline', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-12-10T09:00:00Z'))
@@ -64,7 +54,6 @@ describe('cron routes', () => {
     expect((await POST(cron('daily', 'Bearer nope'))).status).toBe(401)
     const body = await (await POST(cron('daily'))).json()
     expect(body).toMatchObject({
-      backup: 'backup-ok',
       digest: 'digest-ok',
       nudges: { nudged: 1 },
       'applications-summary': 'summary-ok',

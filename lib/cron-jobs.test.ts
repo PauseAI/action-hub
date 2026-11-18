@@ -9,13 +9,12 @@ import {
   setCronJobRunners,
 } from './cron-jobs'
 import { CRON_JOB_INFO, DAILY_JOBS_HOUR_UTC } from './cron-job-names'
-import { runBackupJobOrFail } from '@/jobs/backup'
+import { runDigestJob } from '@/jobs/digest'
 import { cronJobs } from '@/test/fakes/cron-jobs'
 
 describe('CRON_JOBS', () => {
   it('wraps every named job in an audited run', async () => {
     const expected: Record<string, string> = {
-      backup: 'backup-ran',
       digest: 'digest-ran',
       nudges: 'nudges-ran',
       'applications-summary': 'summary-ran',
@@ -32,10 +31,14 @@ describe('CRON_JOBS', () => {
     expect(cronJobs.runs).toEqual([...CRON_JOB_NAMES])
   })
 
+  it('has no backup job: backups run in the infra backup-image service, not the app', () => {
+    expect(CRON_JOB_NAMES).not.toContain('backup')
+  })
+
   it('runs the real jobs unless swapped', () => {
     expect(setCronJobRunners(undefined)).toBe(cronJobs.runners)
-    expect(cronJobRunners().backup).toBe(runBackupJobOrFail)
-    expect(setCronJobRunners(cronJobs.runners).backup).toBe(runBackupJobOrFail)
+    expect(cronJobRunners().digest).toBe(runDigestJob)
+    expect(setCronJobRunners(cronJobs.runners).digest).toBe(runDigestJob)
   })
 })
 
@@ -67,7 +70,7 @@ describe('runScheduledJobs (the hourly trigger)', () => {
     expect((await trigger(hour('2026-12-02', DAILY_JOBS_HOUR_UTC - 1))).ran).toEqual([
       'notification-digest',
     ])
-    expect((await trigger(hour('2026-12-02', DAILY_JOBS_HOUR_UTC))).ran).toContain('backup')
+    expect((await trigger(hour('2026-12-02', DAILY_JOBS_HOUR_UTC))).ran).toContain('digest')
   })
 
   it('catches up when the hour was missed, and reports what it skipped', async () => {
@@ -75,7 +78,7 @@ describe('runScheduledJobs (the hourly trigger)', () => {
     expect([...ran].sort()).toEqual([...CRON_JOB_NAMES].sort())
     const again = await trigger(hour('2026-12-03', 14))
     expect(again.ran).toEqual(['notification-digest'])
-    expect(again.body).toMatchObject({ backup: { skipped: 'not due' } })
+    expect(again.body).toMatchObject({ digest: { skipped: 'not due' } })
   })
 
   it('tries a failed job again next hour, but not one that succeeded or is still running', async () => {
@@ -91,10 +94,10 @@ describe('runScheduledJobs (the hourly trigger)', () => {
 
     // A run started an hour ago and still going holds the day; one six hours old has died.
     await prisma.cronJobRun.create({
-      data: { jobName: 'backup', status: 'running', startedAt: new Date('2026-12-05T08:00:00Z') },
+      data: { jobName: 'digest', status: 'running', startedAt: new Date('2026-12-05T08:00:00Z') },
     })
-    expect((await trigger('2026-12-05T09:30:00Z')).ran).not.toContain('backup')
-    expect((await trigger('2026-12-05T14:30:00Z')).ran).toContain('backup')
+    expect((await trigger('2026-12-05T09:30:00Z')).ran).not.toContain('digest')
+    expect((await trigger('2026-12-05T14:30:00Z')).ran).toContain('digest')
   })
 
   it('gives a failing job three tries a day, then waits for the next day', async () => {

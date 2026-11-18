@@ -1,27 +1,39 @@
 #!/usr/bin/env node
 /**
- * Restores the latest prod backup from B2 into the database at DATABASE_URL, migrates it to this
- * checkout's schema (the scrub names every current column, and the backup can predate the newest
- * migrations), then anonymises it and seeds the dev accounts (scripts/anonymise-db.ts). If the
- * migration or the scrub fails the database is emptied again, so raw prod data never outlives
- * it. Refuses to touch the production environment.
+ * Restores the latest prod backup (scripts/prod-backup.ts) into the database at DATABASE_URL,
+ * migrates it to this checkout's schema (the scrub names every current column, and the backup can
+ * predate the newest migrations), then anonymises it and seeds the dev accounts
+ * (scripts/anonymise-db.ts). If the migration or the scrub fails the database is emptied again,
+ * so raw prod data never outlives it. Refuses to touch the production environment.
+ *
+ * Needs BACKUP_AGE_IDENTITY_FILE, and to download, BACKUP_B2_READ_KEY_ID and
+ * BACKUP_B2_READ_SECRET (BACKUP_B2_BUCKET optional), from the environment or the env file.
  *
  * Usage:
- *   npx tsx scripts/fetch-prod-db.ts              # reads B2 creds from .env.b2
- *   npx tsx scripts/fetch-prod-db.ts --env /path/to/.env
+ *   npx tsx scripts/fetch-prod-db.ts                       # reads variables from .env.backup
+ *   npx tsx scripts/fetch-prod-db.ts --env /path/to/env
+ *   npx tsx scripts/fetch-prod-db.ts --file actionhub-<time>.dump.age   # a dump already downloaded
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { Client } from 'pg'
-import { libpqUrl } from '../jobs/backup'
-import { resolveDbUrl } from '../lib/db-url'
+import { libpqUrl, resolveDbUrl } from '../lib/db-url'
 import { logger } from '../lib/logger'
 import { anonymise } from './anonymise-db'
 import { seedDevAccounts } from './seed-dev-accounts'
 import { claimDisposable } from './disposable-db'
+import {
+  B2Reader,
+  DEFAULT_BUCKET,
+  STALE_AFTER_MS,
+  decryptDump,
+  dumpTakenAt,
+  newestDump,
+} from './prod-backup'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
@@ -29,8 +41,12 @@ const ROOT = resolve(__dirname, '..')
 // ── CLI args ──────────────────────────────────────────────────────────────────
 
 const args = process.argv.slice(2)
-const envFlagIndex = args.indexOf('--env')
-const envFile = envFlagIndex !== -1 ? args[envFlagIndex + 1] : resolve(ROOT, '.env.b2')
+const flag = (name: string) => {
+  const i = args.indexOf(name)
+  return i === -1 ? undefined : args[i + 1]
+}
+const envFile = flag('--env') ?? resolve(ROOT, '.env.backup')
+const localDump = flag('--file')
 
 // ── Env loading ───────────────────────────────────────────────────────────────
 
@@ -47,72 +63,6 @@ function loadEnvFile(path: string): void {
       .replace(/^['"]|['"]$/g, '')
     if (!(key in process.env)) process.env[key] = value
   }
-}
-
-// ── B2 API ────────────────────────────────────────────────────────────────────
-
-interface B2Auth {
-  authToken: string
-  apiUrl: string
-  downloadUrl: string
-  accountId: string
-}
-
-async function b2Authorize(keyId: string, appKey: string): Promise<B2Auth> {
-  const credentials = Buffer.from(`${keyId}:${appKey}`).toString('base64')
-  const res = await fetch('https://api.backblazeb2.com/b2api/v2/b2_authorize_account', {
-    headers: { Authorization: `Basic ${credentials}` },
-  })
-  if (!res.ok) throw new Error(`B2 auth failed: ${res.status} ${await res.text()}`)
-  const data = (await res.json()) as Record<string, string>
-  return {
-    authToken: data.authorizationToken,
-    apiUrl: data.apiUrl,
-    downloadUrl: data.downloadUrl,
-    accountId: data.accountId,
-  }
-}
-
-async function b2GetBucketId(auth: B2Auth, bucketName: string): Promise<string> {
-  const res = await fetch(`${auth.apiUrl}/b2api/v2/b2_list_buckets`, {
-    method: 'POST',
-    headers: { Authorization: auth.authToken, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ accountId: auth.accountId, bucketName }),
-  })
-  if (!res.ok) throw new Error(`b2_list_buckets failed: ${res.status} ${await res.text()}`)
-  const data = (await res.json()) as { buckets: { bucketId: string }[] }
-  if (!data.buckets.length) throw new Error(`Bucket '${bucketName}' not found`)
-  return data.buckets[0].bucketId
-}
-
-interface B2File {
-  fileName: string
-  uploadTimestamp: number
-  contentLength: number
-}
-
-async function b2ListFiles(auth: B2Auth, bucketId: string, prefix = ''): Promise<B2File[]> {
-  const res = await fetch(`${auth.apiUrl}/b2api/v2/b2_list_file_names`, {
-    method: 'POST',
-    headers: { Authorization: auth.authToken, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ bucketId, prefix, maxFileCount: 1000 }),
-  })
-  if (!res.ok) throw new Error(`b2_list_file_names failed: ${res.status} ${await res.text()}`)
-  const data = (await res.json()) as { files: B2File[] }
-  return data.files
-}
-
-async function b2DownloadFile(
-  auth: B2Auth,
-  bucketName: string,
-  fileName: string,
-  destPath: string,
-): Promise<void> {
-  const res = await fetch(`${auth.downloadUrl}/file/${bucketName}/${fileName}`, {
-    headers: { Authorization: auth.authToken },
-  })
-  if (!res.ok) throw new Error(`Download failed: ${res.status} ${await res.text()}`)
-  writeFileSync(destPath, Buffer.from(await res.arrayBuffer()))
 }
 
 // ── Restore ───────────────────────────────────────────────────────────────────
@@ -141,24 +91,73 @@ async function anonymiseDatabase(dbUrl: string): Promise<void> {
 }
 
 /**
- * Empties the public schema and restores the dump into it. The dump's own
- * `CREATE SCHEMA public` entry is filtered out of the restore list, since the schema
- * is recreated here first; `pg_restore -l`/`-L` is the documented way to skip entries.
+ * Empties the public schema and restores the dump into it, feeding pg_restore from memory so the
+ * plaintext never touches disk. The dump's own `CREATE SCHEMA public` entry is filtered out of
+ * the restore list, since the schema is recreated here first; `pg_restore -l`/`-L` is the
+ * documented way to skip entries. A dump piped out of pg_dump has no data offsets, so
+ * pg_restore reads it in order, which the filtered list keeps.
  */
-export async function restoreDump(dumpPath: string, dbUrl: string): Promise<void> {
+export async function restoreDump(dump: Uint8Array, dbUrl: string): Promise<void> {
   await emptyDatabase(dbUrl)
-  const listing = execFileSync('pg_restore', ['-l', dumpPath], { encoding: 'utf8' })
-  const filtered = listing
+  const filtered = pgRestore(['-l'], dump)
     .split('\n')
     .filter((line) => !/ SCHEMA - public /.test(line))
     .join('\n')
-  const listPath = `${dumpPath}.list`
-  writeFileSync(listPath, filtered)
-  execFileSync(
-    'pg_restore',
-    ['--no-owner', '--no-privileges', '--use-list', listPath, '--dbname', dbUrl, dumpPath],
-    { stdio: 'inherit' },
-  )
+  const dir = mkdtempSync(join(tmpdir(), 'fetch-prod-db-'))
+  try {
+    const listPath = join(dir, 'restore.list')
+    writeFileSync(listPath, filtered)
+    pgRestore(['--no-owner', '--no-privileges', '--use-list', listPath, '--dbname', dbUrl], dump)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+/**
+ * Runs pg_restore with the dump on stdin and returns its output. `-l` exits once it has read the
+ * table of contents, so a broken pipe is expected; the exit status decides success.
+ */
+function pgRestore(args: string[], dump: Uint8Array): string {
+  const r = spawnSync('pg_restore', args, {
+    input: dump,
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+    stdio: ['pipe', 'pipe', 'inherit'],
+  })
+  if (r.error && (r.error as NodeJS.ErrnoException).code !== 'EPIPE') throw r.error
+  if (r.status !== 0) throw new Error(`pg_restore exited with ${r.status ?? r.signal}`)
+  return r.stdout
+}
+
+// ── Download ──────────────────────────────────────────────────────────────────
+
+async function downloadNewest(): Promise<Uint8Array> {
+  const keyId = process.env.BACKUP_B2_READ_KEY_ID
+  const secret = process.env.BACKUP_B2_READ_SECRET
+  if (!keyId || !secret) {
+    logger.error(
+      `BACKUP_B2_READ_KEY_ID and BACKUP_B2_READ_SECRET must hold the bucket's read-only key (Psono: "actionhub-backup-read"). Add them to '${envFile}' or export them, or pass --file with a dump you downloaded.`,
+    )
+    process.exit(1)
+  }
+  const b2 = new B2Reader(keyId, secret, process.env.BACKUP_B2_BUCKET || DEFAULT_BUCKET)
+
+  logger.info(`Listing backups in ${b2.bucket}...`)
+  const latest = newestDump(await b2.listDumps())
+  if (!latest) {
+    logger.error(`No backups/actionhub-*.dump.age files in ${b2.bucket}.`)
+    process.exit(1)
+  }
+  logger.info(`Latest backup: ${latest.fileName} (${(latest.contentLength / 1024).toFixed(0)} KB)`)
+  const age = Date.now() - dumpTakenAt(latest.fileName).getTime()
+  if (age > STALE_AFTER_MS) {
+    logger.warn(
+      `This dump is ${Math.floor(age / 86_400_000)} days old: recent nightly backups may have failed.`,
+    )
+  }
+
+  logger.info('Downloading...')
+  return b2.download(latest)
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -179,46 +178,23 @@ async function main(): Promise<void> {
     process.exit(1)
   }
 
-  const keyId = process.env.B2_KEY_ID
-  const appKey = process.env.B2_APP_KEY
-  const bucketName = process.env.B2_BUCKET_NAME
-
-  if (!keyId || !appKey || !bucketName) {
+  const identityFile = process.env.BACKUP_AGE_IDENTITY_FILE
+  if (!identityFile) {
     logger.error(
-      `B2_KEY_ID, B2_APP_KEY, and B2_BUCKET_NAME must be set. Add them to '${envFile}' or export them as environment variables.`,
+      `BACKUP_AGE_IDENTITY_FILE must name a file holding Action Hub's age identity (Psono: "Action Hub - Object Storage (R2, B2, S3) Backup Encryption Key"). Add it to '${envFile}' or export it.`,
     )
     process.exit(1)
   }
 
+  const encrypted = localDump ? readFileSync(localDump) : await downloadNewest()
+
   const dbUrl = libpqUrl(resolveDbUrl())
-  mkdirSync(resolve(ROOT, 'db'), { recursive: true })
-  const dumpPath = resolve(ROOT, 'db/prod.dump')
-
-  logger.info('Authorising with B2...')
-  const auth = await b2Authorize(keyId, appKey)
-  const bucketId = await b2GetBucketId(auth, bucketName)
-
-  logger.info('Listing backups...')
-  const files = (await b2ListFiles(auth, bucketId, 'backups/')).filter((f) =>
-    f.fileName.endsWith('.dump'),
-  )
-  if (!files.length) {
-    logger.error('No Postgres backups found in B2.')
-    process.exit(1)
-  }
-
-  // Names carry the time the dump was taken (catalyse-YYYY-MM-DD_HHMMSS.dump) and sort by it;
-  // uploadTimestamp is reset whenever a file is copied between buckets.
-  const latest = files.reduce((a, b) => (a.fileName > b.fileName ? a : b))
-  logger.info(`Latest backup: ${latest.fileName} (${(latest.contentLength / 1024).toFixed(0)} KB)`)
-
-  logger.info('Downloading...')
-  await b2DownloadFile(auth, bucketName, latest.fileName, dumpPath)
-
-  logger.info(`Restoring into ${new URL(dbUrl).pathname.slice(1)}...`)
-  await restoreDump(dumpPath, dbUrl)
+  logger.info('Decrypting...')
+  const dump = await decryptDump(encrypted, identityFile)
 
   try {
+    logger.info(`Restoring into ${new URL(dbUrl).pathname.slice(1)}...`)
+    await restoreDump(dump, dbUrl)
     logger.info('Applying migrations...')
     execFileSync('npx', ['prisma', 'migrate', 'deploy'], {
       stdio: 'inherit',

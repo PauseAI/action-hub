@@ -19,7 +19,7 @@ describe('recordCronRun', () => {
   it('records an admin-triggered run whose result cannot be JSON-serialised', async () => {
     const circular: Record<string, unknown> = {}
     circular.self = circular
-    await recordCronRun('backup', async () => circular, 'admin')
+    await recordCronRun('digest', async () => circular, 'admin')
     const run = await prisma.cronJobRun.findFirstOrThrow({ orderBy: { id: 'desc' } })
     expect(run).toMatchObject({ triggeredBy: 'admin', summary: '[object Object]' })
   })
