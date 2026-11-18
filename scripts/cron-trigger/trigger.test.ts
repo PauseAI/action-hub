@@ -10,13 +10,14 @@ type Reply = { status: number; body?: string } | Error | 'hang'
 /** A fetch that records each request and answers by URL; unlisted URLs get an empty 200. */
 function fakeFetch(replies: Record<string, Reply> = {}) {
   const calls: Call[] = []
-  const fetch = async (input: string, init: RequestInit = {}) => {
+  const fetch = async (input: string | URL, init: RequestInit = {}) => {
+    const url = String(input)
     calls.push({
-      url: input,
+      url,
       body: typeof init.body === 'string' ? init.body : '',
       auth: new Headers(init.headers).get('authorization'),
     })
-    const reply = replies[input] ?? { status: 200 }
+    const reply = replies[url] ?? { status: 200 }
     if (reply === 'hang') {
       return new Promise<Response>((_, reject) =>
         init.signal?.addEventListener('abort', () => reject(init.signal?.reason)),
@@ -58,6 +59,22 @@ describe('cron trigger', () => {
     expect(f.calls[2].body).toBe('HTTP 500\nboom')
   })
 
+  it('pings fail and exits 1 when a job reports an error in a 200 response', async () => {
+    const body = '{"digest":{"sent":3},"backup":{"error":"Error: B2 down"}}'
+    const f = fakeFetch({ [CRON_URL]: { status: 200, body } })
+    expect(await run({ env: env(), fetch: f.fetch, log: fakeLog().log })).toBe(1)
+    expect(f.urls()).toEqual([`${HC}/start`, CRON_URL, `${HC}/fail`])
+    expect(f.calls[2].body).toBe(`HTTP 200, jobs failed: backup\n${body}`)
+  })
+
+  it('treats a 2xx body that is not a job map as success', async () => {
+    for (const body of ['not json', 'null']) {
+      const f = fakeFetch({ [CRON_URL]: { status: 200, body } })
+      expect(await run({ env: env(), fetch: f.fetch, log: fakeLog().log })).toBe(0)
+      expect(f.urls().at(-1)).toBe(HC)
+    }
+  })
+
   it('pings fail when the request throws', async () => {
     const f = fakeFetch({ [CRON_URL]: new Error('ECONNREFUSED') })
     expect(await run({ env: env(), fetch: f.fetch, log: fakeLog().log })).toBe(1)
@@ -73,10 +90,12 @@ describe('cron trigger', () => {
     expect(f.calls[1].body).toBe('CRON_SECRET is not set')
   })
 
-  it('trims a long body and never sends the secret', async () => {
+  it('trims a long body and never sends or logs the secret', async () => {
     const body = `top-secret ${'x'.repeat(10_000)}`
     const f = fakeFetch({ [CRON_URL]: { status: 200, body } })
-    await run({ env: env(), fetch: f.fetch, log: fakeLog().log })
+    const { log, lines } = fakeLog()
+    await run({ env: env(), fetch: f.fetch, log })
+    expect(lines.join('\n')).not.toContain('top-secret')
     const sent = f.calls[2].body
     expect(sent).not.toContain('top-secret')
     expect(sent).toContain('[redacted]')
@@ -88,6 +107,26 @@ describe('cron trigger', () => {
     const f = fakeFetch()
     await run({ env: env({ CRON_HEALTHCHECK_URL: `${HC}/` }), fetch: f.fetch, log: fakeLog().log })
     expect(f.urls()).toEqual([`${HC}/start`, CRON_URL, HC])
+  })
+
+  it('keeps a query string on the healthcheck URL', async () => {
+    const f = fakeFetch()
+    const hc = 'https://hc-ping.com/key/action-hub-cron?create=1'
+    await run({ env: env({ CRON_HEALTHCHECK_URL: hc }), fetch: f.fetch, log: fakeLog().log })
+    expect(f.urls()).toEqual([
+      'https://hc-ping.com/key/action-hub-cron/start?create=1',
+      CRON_URL,
+      'https://hc-ping.com/key/action-hub-cron?create=1',
+    ])
+  })
+
+  it('logs and carries on when the healthcheck URL is invalid', async () => {
+    const f = fakeFetch()
+    const { log, lines } = fakeLog()
+    const code = await run({ env: env({ CRON_HEALTHCHECK_URL: 'not a url' }), fetch: f.fetch, log })
+    expect(code).toBe(0)
+    expect(f.urls()).toEqual([CRON_URL])
+    expect(lines).toContainEqual(expect.stringContaining('ping/start failed'))
   })
 
   it('carries on when a ping errors or is refused', async () => {
@@ -119,9 +158,11 @@ describe('cron trigger', () => {
     expect(lines.filter((l) => l.includes('no healthcheck configured'))).toHaveLength(1)
   })
 
-  it('defaults to the production URL', async () => {
-    const f = fakeFetch()
-    await run({ env: { CRON_SECRET: 's3' }, fetch: f.fetch, log: fakeLog().log })
-    expect(f.urls()).toEqual(['https://action.pauseai.info/api/cron/daily'])
+  it('defaults to the production URL when CRON_URL is unset or blank', async () => {
+    for (const extra of [{}, { CRON_URL: ' ' }]) {
+      const f = fakeFetch()
+      await run({ env: { CRON_SECRET: 's3', ...extra }, fetch: f.fetch, log: fakeLog().log })
+      expect(f.urls()).toEqual(['https://action.pauseai.info/api/cron/daily'])
+    }
   })
 })

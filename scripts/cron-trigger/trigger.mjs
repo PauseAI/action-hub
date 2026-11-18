@@ -5,9 +5,13 @@
 //   CRON_SECRET            required; sent as the bearer token
 //   CRON_URL               optional; defaults to production's /api/cron/daily
 //   CRON_HEALTHCHECK_URL   optional; a healthchecks.io ping URL (https://hc-ping.com/<uuid>).
-//                          The run pings <url>/start, then <url> on HTTP 2xx or <url>/fail
+//                          The run pings <url>/start, then <url> on success or <url>/fail
 //                          otherwise, with the status and response as the body, so a run that
 //                          fails or never starts raises an alert. Unset, nothing is pinged.
+//
+// A run fails on a non-2xx response, a network error, or any job in the response reporting an
+// error: the route answers 200 when a single job throws (runScheduledJobs in lib/cron-jobs.ts).
+import { realpathSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
 const DEFAULT_URL = 'https://action.pauseai.info/api/cron/daily'
@@ -16,6 +20,20 @@ const REQUEST_TIMEOUT_MS = 15 * 60_000
 const PING_TIMEOUT_MS = 10_000
 // healthchecks.io keeps the first 100 KB of a ping body; a few KB is enough to read a run.
 const PING_BODY_LIMIT = 4_000
+
+/** Names of the jobs whose result in the route's JSON is `{ error }`. */
+function failedJobs(body) {
+  let results
+  try {
+    results = JSON.parse(body)
+  } catch {
+    return []
+  }
+  if (!results || typeof results !== 'object') return []
+  return Object.entries(results)
+    .filter(([, r]) => r && typeof r === 'object' && 'error' in r)
+    .map(([name]) => name)
+}
 
 /**
  * Runs the trigger and returns the process exit code. A healthcheck ping never changes it:
@@ -35,17 +53,20 @@ export async function run({
   log = console,
   pingTimeoutMs = PING_TIMEOUT_MS,
 } = {}) {
-  const url = env.CRON_URL ?? DEFAULT_URL
+  const url = env.CRON_URL?.trim() || DEFAULT_URL
   const secret = env.CRON_SECRET
-  const healthcheck = env.CRON_HEALTHCHECK_URL?.trim().replace(/\/+$/, '')
+  const healthcheck = env.CRON_HEALTHCHECK_URL?.trim()
+  const redact = (text) => (secret ? text.replaceAll(secret, '[redacted]') : text)
 
-  const ping = async (suffix, body) => {
+  const ping = async (suffix, body = '') => {
     if (!healthcheck) return
-    let text = body ?? ''
-    if (secret) text = text.replaceAll(secret, '[redacted]')
+    let text = redact(body)
     if (text.length > PING_BODY_LIMIT) text = `${text.slice(0, PING_BODY_LIMIT)}\n…[truncated]`
     try {
-      const res = await fetch(`${healthcheck}${suffix}`, {
+      // On the path, so a ping URL with a query string keeps it.
+      const target = new URL(healthcheck)
+      target.pathname = target.pathname.replace(/\/+$/, '') + suffix
+      const res = await fetch(target, {
         method: 'POST',
         body: text,
         signal: AbortSignal.timeout(pingTimeoutMs),
@@ -73,11 +94,17 @@ export async function run({
       headers: { Authorization: `Bearer ${secret}` },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
-    const body = await res.text()
+    const body = redact(await res.text())
     log.log(`[cron-trigger] HTTP ${res.status}`)
     log.log(body)
-    await ping(res.ok ? '' : '/fail', `HTTP ${res.status}\n${body}`)
-    return res.ok ? 0 : 1
+    const failed = res.ok ? failedJobs(body) : []
+    if (failed.length) log.error(`[cron-trigger] jobs failed: ${failed.join(', ')}`)
+    const ok = res.ok && failed.length === 0
+    const summary = failed.length
+      ? `HTTP ${res.status}, jobs failed: ${failed.join(', ')}`
+      : `HTTP ${res.status}`
+    await ping(ok ? '' : '/fail', `${summary}\n${body}`)
+    return ok ? 0 : 1
   } catch (err) {
     log.error('[cron-trigger] request failed:', err)
     await ping('/fail', `request failed: ${err}${err?.cause ? ` (${err.cause})` : ''}`)
@@ -85,6 +112,7 @@ export async function run({
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// import.meta.url has symlinks resolved, so resolve argv[1] the same way before comparing.
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   process.exit(await run())
 }
