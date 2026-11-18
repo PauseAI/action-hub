@@ -1,3 +1,6 @@
+# Config as Code, which Railway stops reading on 2026-12-01. .railway/railway.ts holds the same
+# settings; delete this file once `railway config migrate cutover` has run (docs/railway.md).
+
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile.cron"
