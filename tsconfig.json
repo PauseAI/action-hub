@@ -28,8 +28,7 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    "**/*.mts",
-    ".railway/**/*.ts"
+    "**/*.mts"
   ],
-  "exclude": ["node_modules", "e2e", "demo", "generated/zod", "tmp", ".claude"]
+  "exclude": ["node_modules", "e2e", "demo", "generated/zod", "tmp", ".claude", ".railway"]
 }
