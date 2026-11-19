@@ -26,7 +26,7 @@ Variables set on the service:
 - `DATABASE_URL`: also passed to the build, where `prisma generate` reads it
 - `APP_URL`, `CRON_SECRET`, `RESEND_API_KEY`: the app refuses to start in production without them
 - `FROM_EMAIL`, `REPLY_TO_EMAIL`, `GOOGLE_CLIENT_ID`, `ADMIN_EMAILS`
-- `B2_KEY_ID`, `B2_APP_KEY`, `B2_BUCKET_NAME`: the hourly backup job's offsite copy, all or none
+- `B2_KEY_ID`, `B2_APP_KEY`, `B2_BUCKET_NAME`: the daily backup job's offsite copy, all or none
 - `NEXT_PUBLIC_GA_MEASUREMENT_ID`: build time only, inlined into the client bundle
 - `ALLOW_DB_RESTORE`: only on the preview base environment, never production
 
@@ -51,8 +51,8 @@ made every hourly run die at once with no logs.
 
 It POSTs to `/api/cron/daily`, which runs each job in `lib/cron-jobs.ts` when it is due.
 Variables: `CRON_SECRET` (the same value as the web app's), optionally `CRON_URL`, which
-defaults to `https://action.pauseai.info/api/cron/daily`, and `CRON_HEALTHCHECK_URL`, a
-dead-man ping that `trigger.mjs` reads once the cron-healthcheck change is merged.
+defaults to `https://action.pauseai.info/api/cron/daily`, and `CRON_HEALTHCHECK_URL` (set on
+Railway; `trigger.mjs` does not read it yet).
 
 ### Database backup (`backup`)
 
@@ -67,15 +67,19 @@ Variables: `DATABASE_URL`, `BACKUP_NAME`, `BACKUP_AGE_RECIPIENTS`, `BACKUP_B2_BU
 
 ## Moving off Config as Code
 
-The web and cron services also still read `railway.toml` and `railway.cron.toml` (Config as
+The web and cron services still read `railway.toml` and `railway.cron.toml` (Config as
 Code), which Railway stops reading on 2026-12-01. `plan` refuses a service while its Config
-File path is set, so switch them over in this order:
+File path is set, so cutover has to come first. Between cutover and apply, a deploy of web or
+cron would use the dashboard's settings (Railpack instead of the Dockerfiles, cron at
+`0 8 * * *`), so do steps 2 to 4 in one sitting with no merge to `main` in between:
 
 1. `railway config migrate status` lists the services still on a Config File path.
 2. `railway config migrate cutover` clears those paths. It starts no deployment and leaves
    volumes alone; `railway config migrate undo` puts them back.
-3. `railway config plan`, then `railway config apply` (below), then redeploy web and cron.
-4. Only then delete `railway.toml` and `railway.cron.toml` in a PR. Deleting them while a path
+3. `railway config plan`. If it shows anything beyond the expected changes, run
+   `railway config migrate undo` and stop.
+4. `railway config apply` (below), then redeploy web and cron.
+5. Only then delete `railway.toml` and `railway.cron.toml` in a PR. Deleting them while a path
    is still set fails the next build.
 
 ## Changing a setting

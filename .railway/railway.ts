@@ -8,6 +8,7 @@
 // The plan compares each declared service field by field, so a source, variable list or volume
 // mount left out here reads as "remove it". Each one is declared as it is on Railway, and
 // variables are `preserve()`, so their values stay in Railway and never appear in this file.
+// Domains and other networking keys are a sparse patch: left out, they stay as they are.
 import { defineRailway, github, image, preserve, project, service, volume } from 'railway/iac'
 
 export const partial = 'action-hub'
@@ -26,6 +27,7 @@ export default defineRailway(() => {
     deploy: {
       // No startCommand: the Dockerfile's CMD seeds previews, migrates, then starts Next. A
       // dashboard Custom Start Command would still override it (see the cron service).
+      // Railway's default timeout: start-up runs migrations before Next answers.
       healthcheckPath: '/api/health',
       restartPolicyType: 'ON_FAILURE',
       restartPolicyMaxRetries: 3,

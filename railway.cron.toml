@@ -1,5 +1,5 @@
 # Config as Code, which Railway stops reading on 2026-12-01. .railway/railway.ts replaces it;
-# delete this file only after cutover (docs/railway.md, "Before the first apply").
+# delete this file only after cutover (docs/railway.md, "Moving off Config as Code").
 
 [build]
 builder = "DOCKERFILE"
