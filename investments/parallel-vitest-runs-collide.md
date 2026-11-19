@@ -14,3 +14,4 @@ A per-run database prefix and reports directory in `test/pg.ts` and `scripts/tes
 
 - 2026-10-15 (x6): P4-05, P4-14, P4-07, P4-20 and P4-19 runs beside other agents' runs in the same checkout failed 49 to 100 suites or refused to start on the coverage lock; in Phase 6 two agents' single-file runs of the project page test dropped each other's databases, so each waited for the other
 - 2026-10-23: the dependency-lag rework, in its own worktree, lost 78 tests when another worktree's run started mid-run
+- 2026-11-18: a background `pkill -f` matched its own shell, so an earlier `check-all` kept running beside the next; 19 tests timed out and coverage hit a PARSE_ERROR across eight unrelated files
