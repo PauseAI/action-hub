@@ -8,5 +8,5 @@
     "skipLibCheck": true,
     "types": []
   },
-  "include": ["railway.ts"]
+  "include": ["railway.ts", "railway.test.ts"]
 }

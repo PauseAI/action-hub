@@ -17,7 +17,13 @@ const REPO = 'PauseAI/action-hub'
 // Railway's europe-west4 (Amsterdam). Declared so a deploy update cannot move a service.
 const REGION = 'europe-west4-drams3a'
 
-export default defineRailway(() => {
+export default defineRailway((ctx) => {
+  // The services, variables and volume below are production's. Preview is set in the dashboard
+  // (docs/railway.md); applying this there would delete its ALLOW_DB_RESTORE.
+  if (ctx.environment !== 'production') {
+    throw new Error(`.railway/railway.ts describes production, not "${ctx.environment}"`)
+  }
+
   const webVolume = volume('web-volume', { region: REGION, sizeMB: 500 })
 
   const web = service('web', {
@@ -33,7 +39,7 @@ export default defineRailway(() => {
       restartPolicyMaxRetries: 3,
       // Railway gives 0s by default between SIGTERM and SIGKILL, so the old container is
       // force-killed before it can exit(0) and is marked CRASHED (a false alert email) on every
-      // rolling deploy.
+      // deploy.
       drainingSeconds: 10,
     },
     // jobs/backup.ts keeps the last week of dumps here (RAILWAY_VOLUME_MOUNT_PATH).
