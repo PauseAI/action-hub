@@ -54,9 +54,10 @@ in the dashboard overrides it (`.railway/railway.ts` cannot clear one), and a st
 made every hourly run die at once with no logs.
 
 It POSTs to `/api/cron/daily`, which runs each job in `lib/cron-jobs.ts` when it is due.
-Variables: `CRON_SECRET` (the same value as the web app's), optionally `CRON_URL`, which
-defaults to `https://action.pauseai.info/api/cron/daily`, and `CRON_HEALTHCHECK_URL`, a healthchecks.io
-ping URL that each run reports its start and result to.
+Variables: `CRON_SECRET` (the same value as the web app's) and `CRON_HEALTHCHECK_URL`, a
+healthchecks.io ping URL that each run reports its start and result to. `trigger.mjs` also reads
+`CRON_URL` (default `https://action.pauseai.info/api/cron/daily`); it is unset, and setting it
+means adding it to `.railway/railway.ts` first (below).
 
 ### Database backup (`backup`)
 
@@ -76,41 +77,55 @@ Until then they override the dashboard for web and cron in every environment tha
 File path set, and what sits underneath is different: Railpack instead of the Dockerfiles (so no
 `seed-preview`/`migrate` start-up), cron at `0 8 * * *`, no healthcheck, draining or retry limit.
 
-### Production
+A service with no Config File path still reads a `railway.toml` at the repository root, until the
+file is gone from the commit it deploys. That file is the web app's, so **no service is deployed
+between clearing its path and deploying the commit that deletes the TOMLs**: cron would build the
+web `Dockerfile`. Scheduled cron runs reuse the image already built, so they are unaffected.
 
-`plan` refuses a service while its Config File path is set, so cutover comes before apply, and a
-deploy in between would use the dashboard's settings. Do it in one sitting:
+Do it in one sitting, in this order.
 
-0. In a checkout of `main`: `npm ci`, and `railway --version` must be 5.75.0 or newer (the CLI
-   whose plan logic this file was checked against). `railway link` to Action Hub, production.
-   Then turn off automatic deploys from `main` on `web` and `Cron for digest` (Settings >
-   Source), keeping the repository connected, so nothing deploys mid-way. `plan` reads a missing
-   `main` trigger as no change; if it shows a `source` change, the repository came disconnected,
-   so reconnect it and plan again.
-1. `railway config migrate status` lists the services still on a Config File path.
-2. `railway config migrate cutover` clears those paths. It starts no deployment and leaves
-   volumes alone; `railway config migrate undo` puts them back.
-3. `railway config plan`. If it shows anything beyond the expected changes, run
-   `railway config migrate undo`, turn autodeploy back on and stop.
-4. `railway config apply`, then redeploy web and cron.
-5. Turn autodeploy back on for both services.
-6. Once preview is switched over too, delete `railway.toml` and `railway.cron.toml` in a PR.
-   Deleting them while any environment still has a path set fails that environment's next build.
-
-### Preview
+### 1. Preview base environment (dashboard)
 
 `.railway/railway.ts` describes production only and refuses to run anywhere else: the preview
-base environment holds `ALLOW_DB_RESTORE`, which an apply of this file would delete. Preview is
-set in the dashboard instead, and PR environments fork from it. In the preview base environment,
-for `web` and (if it has one) `Cron for digest`:
+base environment holds `ALLOW_DB_RESTORE`, which an apply of this file would delete. For `web`
+and (if it has one) `Cron for digest`, with no redeploy until step 4:
 
-1. Set the settings first, while the TOML still overrides them, so there is no gap: the builder
-   to Dockerfile with the Dockerfile path, restart policy, healthcheck and draining from the web
-   table above, and for cron `Dockerfile.cron`, restart Never and `0 * * * *`.
+1. Set the settings first, while the TOML still overrides them: the builder to Dockerfile with
+   the Dockerfile path, restart policy, healthcheck and draining from the web table above, and
+   for cron `Dockerfile.cron`, restart Never and `0 * * * *`.
 2. Clear the Config File path in the service settings.
-3. Open or redeploy a PR environment and check it builds from the Dockerfile and seeds.
 
-PR environments that already exist keep their own paths; close and reopen them after step 2.
+### 2. Production (`railway config`)
+
+`plan` refuses a service while its Config File path is set, so cutover comes before apply.
+
+0. In a checkout of `main`: `npm ci`, and `railway --version` must be 5.75.0 or newer (the CLI
+   whose plan logic this file was checked against). `railway link` to Action Hub, production,
+   and pass no `-e`: the file reads the environment's name from the link. Turn off automatic
+   deploys from `main` on `web` and `Cron for digest` (Settings > Source), keeping the repository
+   connected. `plan` reads a missing `main` trigger as no change; if it shows a `source` change,
+   the repository came disconnected, so reconnect it and plan again.
+1. `railway config migrate status` lists the services still on a Config File path.
+2. `railway config migrate cutover` clears those paths. It starts no deployment and leaves
+   volumes alone. It saves the old paths to `.railway/.cac-migration.json` (gitignored), which
+   `railway config migrate undo` needs: keep the same checkout and don't `git clean` it.
+3. `railway config plan`. If it shows anything beyond the expected changes, run
+   `railway config migrate undo`, turn autodeploy back on and stop.
+4. `railway config apply`. Don't redeploy yet.
+
+### 3. Delete the TOMLs
+
+Merge the PR that deletes `railway.toml` and `railway.cron.toml`, and nothing else.
+
+### 4. Deploy and check
+
+1. Turn automatic deploys back on for production `web` and `Cron for digest`, and redeploy both
+   on the deletion commit. Each web deploy is a short outage.
+2. Check production: `/api/health` answers, both services show the settings above and no Config
+   File path, and the next hourly cron run succeeds. `railway config plan` reports nothing to do.
+3. Preview: close and reopen any PR environments (existing ones keep their old paths), then check
+   one builds from the Dockerfile and seeds. A long `seed-preview` restore has to finish inside
+   the healthcheck's 300s, so watch the first one.
 
 ## Changing a setting
 

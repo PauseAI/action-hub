@@ -1,21 +1,12 @@
-import { project } from 'railway/iac'
+import { createRailwayContext, project, type ServiceNode } from 'railway/iac'
 import { describe, expect, it } from 'vitest'
 
 import program from './railway'
 
-type Resource = {
-  address: string
-  build?: Record<string, unknown>
-  deploy?: Record<string, unknown>
-  source?: Record<string, unknown>
-  variables?: Record<string, unknown>
-  volumeAttachments?: Record<string, { volume: string; mountPath: string }>
-}
-
+// Volumes carry none of a service's fields, so reading them as services only yields undefined.
 async function compile(environment: string) {
-  const ctx = { environment, isEnvironment: (name: string) => name === environment } as never
-  const graph = await program(ctx, project)
-  return Object.fromEntries((graph.resources as Resource[]).map((r) => [r.address, r]))
+  const graph = await program(createRailwayContext({ environment }), project)
+  return Object.fromEntries((graph.resources as ServiceNode[]).map((r) => [r.address, r]))
 }
 
 describe('.railway/railway.ts', () => {
