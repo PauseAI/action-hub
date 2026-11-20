@@ -80,3 +80,5 @@ orca.yaml
 
 # Ranked list of investments/ (npm run investments)
 /investments/ranked.txt
+# Written by `railway config migrate cutover`; `undo` reads it back.
+.railway/.cac-migration.json
