@@ -82,7 +82,8 @@ file is gone from the commit it deploys. That file is the web app's, so **no ser
 between clearing its path and deploying the commit that deletes the TOMLs**: cron would build the
 web `Dockerfile`. Scheduled cron runs reuse the image already built, so they are unaffected.
 
-Do it in one sitting, in this order.
+First merge the PR that adds `.railway/` and let it deploy as usual: the TOMLs still apply, so
+nothing changes. Then, from an up-to-date checkout of `main`, do the rest in one sitting.
 
 ### 1. Preview base environment (dashboard)
 
