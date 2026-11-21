@@ -17,7 +17,7 @@ async function openAsInstalledApp(context: BrowserContext): Promise<void> {
 async function headerHydrated(page: Page): Promise<void> {
   await expect(
     page
-      .getByRole('navigation', { name: 'Main' })
+      .getByRole('navigation', { name: 'Main', includeHidden: true })
       .getByRole('link', { name: 'Projects', includeHidden: true }),
   ).toBeAttached()
 }
