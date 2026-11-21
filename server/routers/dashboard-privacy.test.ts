@@ -566,12 +566,13 @@ describe('dashboard.get', () => {
     expect(d.waiting).toEqual({ projects: 2, matching: 1, quickTasks: 1 })
     expect(d.find).toBeNull()
 
-    // The holding pool has no chapter's projects, and no skills match nothing.
+    // The holding pool has no chapter's projects, and no skills match nothing, but its own
+    // quick tasks are open to whoever is in it.
+    await createQuickTask({ nationalChapterId: null })
     const pooled = await createVolunteer({ approvalStatus: 'needs_info', nationalChapterId: null })
-    expect((await clientAs(pooled).dashboard.get()).waiting).toMatchObject({
-      projects: 0,
-      matching: 0,
-    })
+    const pooledWaiting = (await clientAs(pooled).dashboard.get()).waiting
+    expect(pooledWaiting).toMatchObject({ projects: 0, matching: 0 })
+    expect(pooledWaiting?.quickTasks).toBeGreaterThan(0)
 
     // Members see the work itself; a rejected applicant is not waiting for anything.
     expect((await clientAs(await createMember(chapter)).dashboard.get()).waiting).toBeNull()

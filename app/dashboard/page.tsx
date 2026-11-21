@@ -470,6 +470,7 @@ export default function HomePage() {
             chapterName={user.chapter?.name ?? null}
             waiting={data.waiting}
             hasSkills={data.hasSkills}
+            needsInfo={user.approvalStatus === ApprovalStatus.needs_info}
           />
         )}
 

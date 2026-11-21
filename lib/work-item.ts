@@ -69,6 +69,8 @@ export function canViewWorkItem(
       const isDirectParticipant = Boolean(
         viewer && (viewer.isAdmin || viewer.id === item.creatorId || viewer.id === item.assigneeId),
       )
+      // Projects sit behind the approval gate, so an applicant sees only one they are part of.
+      if (viewer && !viewer.isApproved && !isDirectParticipant) return false
       if (item.teamId !== null && item.teamId !== undefined) {
         if (!isDirectParticipant && !privy?.team) return false
       }

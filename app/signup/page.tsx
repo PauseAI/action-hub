@@ -433,8 +433,11 @@ export default function SignupPage() {
       setSubmitted(true)
       sessionStorage.removeItem(DRAFT_KEY)
       sessionStorage.removeItem('google_pending_auth')
-      await setToken(data.token)
-      router.push('/dashboard')
+      if (await setToken(data.token)) router.push('/dashboard')
+      else
+        setError(
+          "Your application went in, but we couldn't sign you in just now. Sign in to carry on.",
+        )
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Signup failed')
     } finally {

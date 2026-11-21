@@ -66,6 +66,9 @@ describe('home', () => {
     const needsInfo = await createVolunteer({ approvalStatus: 'needs_info' })
     await renderApp(<HomePage />, { as: needsInfo, url: '/dashboard' })
     expect(await screen.findByRole('link', { name: 'Update application' })).toBeInTheDocument()
+    // The wait is on them, so the welcome doesn't promise a review within days.
+    expect(await screen.findByText(/Once you've updated your application/)).toBeInTheDocument()
+    expect(screen.queryByText(/usually reviews applications within a few days/)).toBeNull()
   })
 
   it('gives an applicant things to do while they wait', async () => {

@@ -136,6 +136,10 @@ describe('verify email', () => {
     ).token
     await renderApp(<VerifyEmailPage />, { url: `/verify-email?token=${token}` })
     await screen.findByText('Email confirmed!')
+    expect(screen.getByRole('link', { name: 'Browse projects' })).toHaveAttribute(
+      'href',
+      '/projects',
+    )
 
     cleanup()
     await renderApp(<VerifyEmailPage />, { url: `/verify-email?token=${token}` })
@@ -157,6 +161,23 @@ describe('verify email', () => {
     for (let i = 0; i < 60; i++) act(() => vi.advanceTimersByTime(1000))
     vi.useRealTimers()
     expect(screen.getByText('Email sent! Check your inbox.')).toBeInTheDocument()
+  })
+
+  it('sends a signed-in applicant back Home, since projects wait on approval', async () => {
+    const me = await createVolunteer({ emailConfirmed: false, approvalStatus: 'pending' })
+    await prisma.emailVerificationToken.create({
+      data: {
+        volunteerId: me.id,
+        token: 'verify-applicant',
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    })
+    await renderApp(<VerifyEmailPage />, { as: me, url: '/verify-email?token=verify-applicant' })
+    expect(await screen.findByRole('link', { name: 'Go to Home' })).toHaveAttribute(
+      'href',
+      '/dashboard',
+    )
+    expect(screen.queryByRole('link', { name: 'Browse projects' })).toBeNull()
   })
 
   it('resends to the address of a signed-in volunteer without asking for it', async () => {

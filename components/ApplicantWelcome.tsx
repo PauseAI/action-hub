@@ -76,11 +76,14 @@ export default function ApplicantWelcome({
   chapterName,
   waiting,
   hasSkills,
+  needsInfo = false,
 }: {
   name: string
   chapterName: string | null
   waiting: Waiting
   hasSkills: boolean
+  /** The team asked for more before they can review, so the wait is on the applicant. */
+  needsInfo?: boolean
 }) {
   const firstName = name.trim().split(/\s+/)[0]
   const summary = waitingSummary(waiting)
@@ -88,7 +91,11 @@ export default function ApplicantWelcome({
     <div className="flex flex-col gap-6 mb-8">
       <SectionCard
         title={firstName ? `Thanks for applying, ${firstName}!` : 'Thanks for applying!'}
-        description="A member of the team usually reviews applications within a few days, and we email you when yours is approved. You don't have to wait to start helping, though."
+        description={
+          needsInfo
+            ? "Once you've updated your application, a member of the team will review it and email you when it's approved. You don't have to wait to start helping, though."
+            : "A member of the team usually reviews applications within a few days, and we email you when yours is approved. You don't have to wait to start helping, though."
+        }
       >
         {summary && (
           <P className="rounded-md bg-accent/50 px-3 py-2 mb-4 text-sm">

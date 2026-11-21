@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { createVolunteer, createLocalGroup, createProject, createSkill } from '@/test/factories'
 import { renderApp } from '@/test/render'
 import { navigation } from '@/test/next-navigation'
+import { failNextFetch } from '@/test/rpc-fetch'
 import SignupPage from './page'
 
 import { google as googleAuth } from '@/test/fakes/google'
@@ -112,7 +113,7 @@ describe('signup with email and password', () => {
     expect(screen.getByLabelText('Your name')).toHaveValue('Ann Applicant')
   })
 
-  it('submits a full application, lands on the confirmation, and can resend the email', async () => {
+  it('submits a full application, is signed in and sent Home', async () => {
     const town = await createLocalGroup({ name: 'Signup Town', country: 'UK' })
     const needed = await createSkill({ name: 'Needed Skill' })
     const other = await createSkill({ name: 'Rare Skill' })
@@ -305,6 +306,21 @@ describe('signup with email and password', () => {
       where: { id: 1 },
       data: { requireApplicationApproval: true },
     })
+  })
+
+  it('says the application went in when signing in afterwards fails', async () => {
+    await renderApp(<SignupPage />)
+    await onStep('Account')
+    await accountStep('unlucky@example.com')
+    await aboutStep()
+    await toSkillsStep()
+    failNextFetch('auth/me')
+    await userEvent.click(screen.getByRole('button', { name: 'Submit application' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "Your application went in, but we couldn't sign you in just now.",
+    )
+    expect(navigation.push).not.toHaveBeenCalledWith('/dashboard')
+    expect(await prisma.volunteer.count({ where: { email: 'unlucky@example.com' } })).toBe(1)
   })
 
   it('bounces a signed-in visitor to the dashboard', async () => {
