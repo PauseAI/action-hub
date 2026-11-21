@@ -24,7 +24,7 @@ function removeEmptyMigrationDirs() {
 async function main() {
   removeEmptyMigrationDirs()
   if (process.env.RAILWAY_ENVIRONMENT_NAME === 'production') {
-    await runPreDeployBackup(libpqUrl(resolveDbUrl()))
+    await runPreDeployBackup(libpqUrl(resolveDbUrl()), join(process.cwd(), 'prisma', 'migrations'))
   }
   execSync('npx prisma migrate deploy', { stdio: 'inherit' })
 }

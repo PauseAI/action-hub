@@ -144,10 +144,16 @@ describe('readAgeIdentity and decryptDump', () => {
 
   it('prefers an identity held in BACKUP_AGE_IDENTITY, on one line or several', async () => {
     const ours = await generateIdentity()
-    const env = { BACKUP_AGE_IDENTITY: `# preview  ${ours}`, BACKUP_AGE_IDENTITY_FILE: '/nowhere' }
-    const identity = readAgeIdentity(env)!
-    expect(identity.source).toBe('BACKUP_AGE_IDENTITY')
-    expect(text(await decryptDump(await encryptTo(ours, 'PGDMP'), identity))).toBe('PGDMP')
+    const encrypted = await encryptTo(ours, 'PGDMP')
+    const keygen = `# created: 2026-11-21T00:00:00Z\n# public key: ${await identityToRecipient(ours)}\n${ours}\n`
+    for (const value of [ours, keygen]) {
+      const identity = readAgeIdentity({
+        BACKUP_AGE_IDENTITY: value,
+        BACKUP_AGE_IDENTITY_FILE: '/x',
+      })!
+      expect(identity.source).toBe('BACKUP_AGE_IDENTITY')
+      expect(text(await decryptDump(encrypted, identity))).toBe('PGDMP')
+    }
     expect(readAgeIdentity({})).toBeUndefined()
   })
 
