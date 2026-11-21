@@ -288,7 +288,7 @@ test.describe('Volunteer Profile', () => {
     ).toBeVisible()
   })
 
-  test("A lead sees a volunteer's projects and tasks, with their role on each", async ({
+  test("An admin sees a volunteer's projects and tasks, with their role on each", async ({
     volunteer,
     adminPage,
     baseUrl,

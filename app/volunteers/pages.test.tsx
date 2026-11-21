@@ -196,8 +196,9 @@ describe('volunteer profile', () => {
     const current = screen.getByRole('list', { name: 'Current projects' })
     expect(within(current).getByRole('link', { name: 'Led' })).toBeInTheDocument()
     expect(within(current).getByText('Owner')).toBeInTheDocument()
-    expect(within(current).getByText(/^Creator from /)).toBeInTheDocument()
     const past = screen.getByRole('list', { name: 'Past projects' })
+    expect(within(past).getByRole('link', { name: 'Pitched' })).toBeInTheDocument()
+    expect(within(past).getByText(/^Creator from /)).toBeInTheDocument()
     expect(
       within(past).getByText('Member from 2 Feb 2026 · Finished 9 Mar 2026'),
     ).toBeInTheDocument()

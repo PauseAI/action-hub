@@ -68,11 +68,28 @@ describe('projectHistory', () => {
       current: true,
       roles: [{ role: 'member', since: day(5), ended: false }],
     })
+    // Leaving overwrites when they joined, so an ended stint carries no date.
     expect(left).toMatchObject({
       current: false,
-      roles: [{ role: 'member', since: day(5), ended: true }],
+      roles: [{ role: 'member', since: null, ended: true }],
     })
-    expect(removed.roles).toEqual([{ role: 'member', since: day(2), ended: true }])
+    expect(removed.roles).toEqual([{ role: 'member', since: null, ended: true }])
+  })
+
+  it('counts an accepted bid to own as membership once someone else owns the project', () => {
+    const [entry] = projectHistory(
+      [row({ assigneeId: ME + 1, interests: [interest('want_to_own', 'accepted')] })],
+      ME,
+    )
+    expect(entry).toMatchObject({
+      current: true,
+      roles: [{ role: 'member', since: day(5), ended: false }],
+    })
+  })
+
+  it('leaves a proposer with no other part under past work', () => {
+    const [entry] = projectHistory([row({ creatorId: ME, assigneeId: ME + 1 })], ME)
+    expect(entry).toMatchObject({ current: false, roles: [{ role: 'creator', ended: false }] })
   })
 
   it('lists the tasks they led or helped on, done or left as past', () => {
@@ -119,13 +136,30 @@ describe('projectHistory', () => {
       ME,
     )
     expect(helperOnly.current).toBe(false)
+
+    // A helper who left between the task loading and its helpers loading is skipped.
+    const [raced] = projectHistory([row({ assigneeId: ME, children: [{ ...task, id: 13 }] })], ME)
+    expect(raced.tasks).toEqual([])
+
+    // An unfinished task on a finished project is not current work.
+    const [finished] = projectHistory(
+      [
+        row({
+          status: 'completed',
+          completedAt: day(9),
+          children: [{ ...task, id: 14, assigneeId: ME }],
+        }),
+      ],
+      ME,
+    )
+    expect(finished).toMatchObject({ current: false, tasks: [{ id: 14, current: false }] })
   })
 
   it('puts current work first, then the most recently active', () => {
     const ids = projectHistory(
       [
         row({ id: 1, creatorId: ME, status: 'completed', completedAt: day(10) }),
-        row({ id: 2, creatorId: ME, createdAt: day(2) }),
+        row({ id: 2, creatorId: ME, assigneeId: ME, createdAt: day(2) }),
         row({ id: 3, creatorId: ME, status: 'completed', completedAt: day(20) }),
         row({ id: 4, creatorId: ME, status: 'completed', createdAt: null }),
         row({

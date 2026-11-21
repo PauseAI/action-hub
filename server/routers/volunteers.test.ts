@@ -241,10 +241,23 @@ describe('volunteers.getById', () => {
     })
     // Another chapter's project stays out of sight of someone with no part in it.
     const abroad = await createProject({ nationalChapterId: away.id, assigneeId: vol.id })
+    // A draft is its creator's and admins' alone.
+    const draft = await createProject({ ...inHome, status: 'draft' })
+    await join(draft.id, 'want_to_contribute', 'accepted')
 
-    const { projects } = await clientAs(viewer).volunteers.getById({ id: vol.id })
+    // Who left or was taken off shows only to the volunteer and their chapter's staff.
+    const strangerView = await clientAs(viewer).volunteers.getById({ id: vol.id })
+    expect(strangerView.projects.map((p) => p.id).sort()).toEqual(
+      [deputised.id, joined.id, tasked.id].sort(),
+    )
+    expect(strangerView.projects.find((p) => p.id === tasked.id)!.tasks).toHaveLength(2)
+
+    const { projects } = await clientAs(vol).volunteers.getById({ id: vol.id })
     const byId = new Map(projects.map((p) => [p.id, p]))
-    expect([...byId.keys()].sort()).toEqual([deputised.id, joined.id, left.id, tasked.id].sort())
+    // Their own project abroad is theirs to see.
+    expect([...byId.keys()].sort()).toEqual(
+      [deputised.id, joined.id, left.id, tasked.id, abroad.id].sort(),
+    )
     expect(byId.get(deputised.id)).toMatchObject({
       current: true,
       roles: [{ role: 'deputy', ended: false }],
@@ -264,8 +277,30 @@ describe('volunteers.getById', () => {
     })
     expect(projects.at(-1)!.id).toBe(left.id)
 
+    const leadView = await clientAs(await createChapterLead(home)).volunteers.getById({
+      id: vol.id,
+    })
+    expect(leadView.projects.map((p) => p.id)).toContain(left.id)
+    expect(leadView.projects.map((p) => p.id)).not.toContain(draft.id)
+
     const adminView = await clientAs(await createAdmin()).volunteers.getById({ id: vol.id })
-    expect(adminView.projects.map((p) => p.id)).toContain(abroad.id)
+    expect(adminView.projects.map((p) => p.id)).toEqual(
+      expect.arrayContaining([abroad.id, draft.id]),
+    )
+  })
+
+  it('shows a draft to the volunteer who created it', async () => {
+    const chapter = await createChapter()
+    const vol = await createMember(chapter)
+    const draft = await createProject({
+      nationalChapterId: chapter.id,
+      status: 'draft',
+      creatorId: vol.id,
+    })
+    const own = await clientAs(vol).volunteers.getById({ id: vol.id })
+    expect(own.projects.map((p) => p.id)).toEqual([draft.id])
+    const other = await clientAs(await createMember(chapter)).volunteers.getById({ id: vol.id })
+    expect(other.projects).toEqual([])
   })
 
   it('reveals a hidden profile only to themselves, global admins, or an involving project owner', async () => {
@@ -339,10 +374,14 @@ describe('volunteers.updateMe and chapters', () => {
     expect(
       await clientAs(placed).volunteers.updateMe({ country: chapter.country, localGroup: null }),
     ).toMatchObject({ localGroup: null })
-    await expect(clientAs(placed).volunteers.updateMe({ country: 'Ghana' })).rejects.toMatchObject({
+    // Chapters take countries in order, so this test's depends on how many came before.
+    const elsewhere = chapter.country === 'Ghana' ? 'Kenya' : 'Ghana'
+    await expect(
+      clientAs(placed).volunteers.updateMe({ country: elsewhere }),
+    ).rejects.toMatchObject({
       message: expect.stringContaining('transfer'),
     })
-    const other = await createLocalGroup({ country: 'Kenya' })
+    const other = await createLocalGroup({ country: elsewhere })
     await expect(
       clientAs(placed).volunteers.updateMe({ localGroup: other.name }),
     ).rejects.toMatchObject({ message: "Choose one of your country's local groups" })

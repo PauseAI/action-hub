@@ -226,11 +226,26 @@ export const volunteersRouter = {
         skillName: se.skill.name,
       }))
 
+      const history = {
+        volunteerId: input.id,
+        seesEnded: vol.id === currentVolunteer.id || isAdmin,
+      }
       const [projects, completedTasks] = await Promise.all([
         prisma.workItem.findMany({
           where: {
-            ...historyWhere(input.id),
-            AND: [projectScopeWhere(currentVolunteer)],
+            ...historyWhere(history),
+            AND: [
+              projectScopeWhere(currentVolunteer),
+              // A draft is its creator's and admins' alone, as on the project page.
+              currentVolunteer.isAdmin
+                ? {}
+                : {
+                    OR: [
+                      { status: { not: ProjectStatus.draft } },
+                      { creatorId: currentVolunteer.id },
+                    ],
+                  },
+            ],
             status: {
               notIn: [
                 ProjectStatus.archived,
@@ -239,7 +254,7 @@ export const volunteersRouter = {
               ],
             },
           },
-          select: historySelect(input.id),
+          select: historySelect(history),
         }),
         prisma.workItem.findMany({
           where: {

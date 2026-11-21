@@ -15,7 +15,7 @@ const ROLE_LABELS: Record<ProjectRole | TaskRole, string> = {
   helper: 'Helper',
 }
 
-// The history is read by someone else, so nothing in it is the viewer's move.
+// Task badges are drawn as an onlooker sees them, even on the volunteer's own profile.
 const ONLOOKER = { isAssignee: false, canReview: false }
 
 function stintText({ role, since, ended }: RoleStint<ProjectRole | TaskRole>): string {
