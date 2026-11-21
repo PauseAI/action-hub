@@ -69,7 +69,7 @@ export function startDemoServer(flowName: string): Promise<void> {
   return (async () => {
     const sourceUrl = new URL(resolveDbUrl())
     const sourceDbName = databaseNameFromUrl(sourceUrl)
-    demoDbName = `catalyse_demo_${flowName.replace(/[^a-zA-Z0-9_]/g, '_')}`
+    demoDbName = `action_hub_demo_${flowName.replace(/[^a-zA-Z0-9_]/g, '_')}`
 
     await cloneDatabase(sourceUrl, sourceDbName, demoDbName)
     const demoDbUrl = urlForDatabase(sourceUrl, demoDbName)

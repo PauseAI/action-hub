@@ -1,8 +1,8 @@
-# Catalyse
+# Action Hub
 
 **Volunteer & Project Matching Platform for PauseAI**
 
-Catalyse connects volunteers with projects, matching skills to needs and enabling effective coordination across PauseAI initiatives.
+Action Hub connects volunteers with projects, matching skills to needs and enabling effective coordination across PauseAI initiatives.
 
 ## Features
 
@@ -33,7 +33,14 @@ Catalyse connects volunteers with projects, matching skills to needs and enablin
 - **Database**: PostgreSQL via Prisma ORM
 - **Email**: Resend SDK
 - **Auth**: Custom token-based + Google OAuth
-- **Hosting**: Railway
+- **Hosting**: Railway, served at https://action.pauseai.info. The Railway domain
+  `catalyse.up.railway.app` stays attached: `proxy.ts` sends its pages to the same path on
+  `APP_URL` with a 308, and answers `/api` itself so cron and MCP callers keep working.
+- **Scheduled jobs**: a separate Railway cron service (`Dockerfile.cron`) runs
+  `scripts/cron-trigger/trigger.mjs` hourly, which POSTs to `/api/cron/daily` with
+  `CRON_SECRET`. Set `CRON_HEALTHCHECK_URL` on that service to a healthchecks.io ping URL and
+  each run reports its start and result there, so a run that fails or never happens alerts.
+- Each service's deploy settings and variable names are in [docs/railway.md](docs/railway.md).
 
 ## Getting Started
 
@@ -64,6 +71,8 @@ cp .env.local.example .env.local
 
 Key variables:
 
+- `APP_URL` — the app's public origin, used for links in emails; in production
+  `https://action.pauseai.info`
 - `DATABASE_URL` — Postgres connection URL (e.g. `postgresql://postgres:postgres@localhost:5432/catalyse`)
 - `RESEND_API_KEY` — for email sending
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — for Google OAuth
@@ -190,7 +199,7 @@ Actions are pinned to commit SHAs with the version in a trailing comment; bump b
 ## Project Structure
 
 ```text
-catalyse/
+action-hub/
 ├── app/                    # App Router pages and API routes
 ├── components/             # Shared React components
 ├── docs/                   # Architecture notes
@@ -202,8 +211,8 @@ catalyse/
 ```
 
 `AGENTS.md` holds the working notes for coding agents and contributors, and
-`SELF-IMPROVE.md` is the backlog of things about the repo itself that made work
-harder than it needed to be, sorted by how often each has bitten.
+`investments/` the backlog of things about the repo itself that made work harder
+than it needed to be; `npm run investments` ranks it by how often each has bitten.
 
 ## License
 

@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/lib/auth-context'
 import { adminAreaName } from '@/lib/chapter-access'
+import { canSendCalls } from '@/lib/permissions'
 import { useRequiredActions } from '@/lib/required-actions-context'
 import { viewOf } from '@/components/required-actions/registry'
 import Button from '@/components/Button'
@@ -44,22 +45,22 @@ function MobileNavSection({ children, admin }: { children: React.ReactNode; admi
   )
 }
 
-/** "Catalyse" from `sm` up; on a phone, its initial in a tile, to leave room for the buttons. */
+/** "Action Hub" from `sm` up; on a phone, its initials in a tile, to leave room for the buttons. */
 function Wordmark({ href }: { href: string }) {
   return (
     <Link
       href={href}
-      aria-label="Catalyse"
+      aria-label="Action Hub"
       className="font-display text-2xl font-black text-primary no-underline flex items-center"
     >
       <span
         aria-hidden="true"
-        className="sm:hidden flex size-9 items-center justify-center rounded-lg bg-primary text-[#111827]"
+        className="sm:hidden flex size-9 items-center justify-center rounded-lg bg-primary text-base text-[#111827]"
       >
-        C
+        AH
       </span>
       <span aria-hidden="true" className="hidden sm:inline">
-        Catalyse
+        Action Hub
       </span>
     </Link>
   )
@@ -108,6 +109,7 @@ function WaitingBadge({ count, updates }: { count: number; updates: boolean }) {
 export default function Header() {
   const { user, loading, logout } = useAuth()
   const adminArea = user ? adminAreaName(user.access, user.chapter) : null
+  const coordinates = user ? canSendCalls(user) : false
   const { actions: requiredActions, show: showRequiredAction } = useRequiredActions()
   const firstAction = requiredActions[0]
   const pathname = usePathname()
@@ -244,6 +246,17 @@ export default function Header() {
                       >
                         Settings
                       </Link>
+                      <Link href="/calls" className="block px-4 py-3 text-brand-text no-underline">
+                        Calls for volunteers
+                      </Link>
+                      {coordinates && (
+                        <Link
+                          href="/coordinate"
+                          className="block px-4 py-3 text-brand-text no-underline"
+                        >
+                          Coordinate
+                        </Link>
+                      )}
                       {adminArea && (
                         <Link
                           href="/admin"
@@ -401,6 +414,8 @@ export default function Header() {
                   ))}
                   <MobileNavLink href={`/volunteers/${user.id}`}>My profile</MobileNavLink>
                   <MobileNavLink href="/settings">Settings</MobileNavLink>
+                  <MobileNavLink href="/calls">Calls for volunteers</MobileNavLink>
+                  {coordinates && <MobileNavLink href="/coordinate">Coordinate</MobileNavLink>}
 
                   {adminArea && (
                     <>

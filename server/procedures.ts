@@ -2,6 +2,7 @@ import { os, ORPCError } from '@orpc/server'
 import { ApprovalStatus } from '@/generated/prisma/enums'
 import { touchLastActive } from '@/lib/activity'
 import { actingOn, isStaff, type ChapterAccess } from '@/lib/chapter-access'
+import { canSendCalls } from '@/lib/permissions'
 import { prisma } from '@/lib/prisma'
 import { inputLimitViolation } from '@/lib/input-limits'
 import { canBypassMaintenance, isMaintenanceMode } from '@/lib/maintenance'
@@ -76,9 +77,21 @@ export const staffProcedure = base.use(({ context, next }) => {
 })
 
 /**
+ * Whoever may put out calls to volunteers (`call.send`): an approved, confirmed coordinator or a
+ * global admin.
+ */
+export const coordinatorProcedure = confirmedProcedure.use(({ context, next }) => {
+  if (!canSendCalls({ id: context.volunteer.id, access: context.access })) {
+    throw new ORPCError('FORBIDDEN')
+  }
+  return next({ context })
+})
+
+/**
  * Makes `context.volunteer.isAdmin` mean "an admin over this project": a global admin, or a
- * staff member of the project's chapter (`actingOn`, lib/chapter-access.ts). The project
- * procedures' admin checks then hold for a chapter's staff on its own projects, and nowhere else.
+ * staff member of the project's chapter (`actingOn`, lib/chapter-access.ts). What a person may
+ * do to a project is decided by `can` (lib/permissions.ts); this serves what may be seen, whose
+ * checks (`canViewWorkItem` and the project scope rule) still read `isAdmin`.
  */
 export const asProjectAdmin = os
   .$context<{ volunteer: NonNullable<Context['volunteer']>; access: ChapterAccess }>()

@@ -11,7 +11,7 @@ export type WelcomeEmailProps = {
 export function WelcomeEmail({ name, appUrl }: WelcomeEmailProps) {
   return (
     <EmailLayout>
-      <Heading as="h2">Welcome to Catalyse!</Heading>
+      <Heading as="h2">Welcome to Action Hub!</Heading>
       <Text>{`Hi ${name},`}</Text>
       <Text>
         Thanks for joining the PauseAI volunteer community! We&apos;re excited to have you.

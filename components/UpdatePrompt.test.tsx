@@ -21,7 +21,7 @@ async function returnToApp() {
   })
 }
 
-const prompt = () => screen.queryByText('A new version of Catalyse is available.')
+const prompt = () => screen.queryByText('A new version of Action Hub is available.')
 
 describe('UpdatePrompt', () => {
   afterEach(() => {
@@ -63,7 +63,7 @@ describe('UpdatePrompt', () => {
 
     vi.stubEnv('RAILWAY_GIT_COMMIT_SHA', 'bbb2222')
     await returnToApp()
-    expect(await screen.findByText('A new version of Catalyse is available.')).toBeInTheDocument()
+    expect(await screen.findByText('A new version of Action Hub is available.')).toBeInTheDocument()
   })
 
   it('Later hides it until a newer deploy still', async () => {

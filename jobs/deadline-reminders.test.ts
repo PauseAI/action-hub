@@ -58,7 +58,7 @@ describe('runDeadlineRemindersJob', () => {
     expect(await runDeadlineRemindersJob(now)).toMatchObject({ recipients: 2, emails: 2 })
     expect((await notes(sam.id, 'finish_by_today'))[0].title).toBe('“Book venue” is due today')
     const toSam = emails.lastTo('sam@example.org')!
-    expect(toSam.subject).toBe('Catalyse: 1 thing needs you today')
+    expect(toSam.subject).toBe('Action Hub: 1 thing needs you today')
     expect(toSam.html).toContain('Your tasks')
     const toOlive = emails.to('olive@example.org')
     expect(toOlive).toHaveLength(1)
@@ -305,7 +305,7 @@ describe('runDeadlineRemindersJob', () => {
     })
     const result = await runDeadlineRemindersJob(now)
     const sent = emails.lastTo('o5@example.org')!
-    expect(sent.subject).toBe('Catalyse: your daily summary')
+    expect(sent.subject).toBe('Action Hub: your daily summary')
     for (const text of [
       'Jo posted on “Leaflets”',
       'Someone posted on the project',

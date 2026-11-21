@@ -2,7 +2,7 @@
 // API calls and app code included, goes straight to the network and is never cached, so a
 // deploy is live on the next load. Rename CACHE when offline.html changes, so installed
 // copies fetch the new page.
-const CACHE = 'catalyse-offline-v1'
+const CACHE = 'action-hub-offline-v1'
 const OFFLINE_URL = '/offline.html'
 
 self.addEventListener('install', (event) => {

@@ -33,11 +33,11 @@ describe('daily summary', () => {
 
   it('counts what needs the person in the subject', () => {
     expect(summarySubject([line({ kind: 'overdue' }), line({ kind: 'activity' })])).toBe(
-      'Catalyse: 1 thing needs you today',
+      'Action Hub: 1 thing needs you today',
     )
     expect(summarySubject([line({ kind: 'overdue' }), line({ kind: 'due_today' })])).toBe(
-      'Catalyse: 2 things need you today',
+      'Action Hub: 2 things need you today',
     )
-    expect(summarySubject([line({ kind: 'activity' })])).toBe('Catalyse: your daily summary')
+    expect(summarySubject([line({ kind: 'activity' })])).toBe('Action Hub: your daily summary')
   })
 })

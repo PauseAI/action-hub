@@ -25,11 +25,11 @@ import { emails, linkParam } from '@/test/fakes/email'
 import { google } from '@/test/fakes/google'
 
 const subjects = {
-  confirm: 'Welcome to Catalyse: please confirm your email',
-  welcome: 'Welcome to Catalyse!',
-  reset: 'Reset your Catalyse password',
-  received: 'Your Catalyse application has been received',
-  approved: 'Your Catalyse application has been approved',
+  confirm: 'Welcome to Action Hub: please confirm your email',
+  welcome: 'Welcome to Action Hub!',
+  reset: 'Reset your Action Hub password',
+  received: 'Your Action Hub application has been received',
+  approved: 'Your Action Hub application has been approved',
 }
 const sentSubjects = () => emails.sent.map((e) => e.subject)
 
@@ -560,7 +560,7 @@ describe('verifyEmail / resendVerification', () => {
 
   it('locks out whoever pre-registered a listed address when its owner confirms it', async () => {
     // Anyone can sign up with an address they do not own. The owner, expecting mail
-    // from Catalyse, clicks the link from their own browser, signed out.
+    // from Action Hub, clicks the link from their own browser, signed out.
     const squatted = await createVolunteer({
       email: 'admin14@example.com',
       approvalStatus: 'pending',
@@ -791,6 +791,24 @@ describe('deleteAccount', () => {
     expect(sent).not.toContain(null)
   })
 
+  it('gives each affected project its own Inbox row, with one email for them all', async () => {
+    const me = await createVolunteer({ passwordHash: null, name: 'Leaver' })
+    const owner = await createVolunteer()
+    const a = await createProject({ assigneeId: owner.id, status: 'in_progress' })
+    const b = await createProject({ assigneeId: owner.id, status: 'in_progress' })
+    await createQuickTask({ contextProjectId: a.id, assigneeId: me.id, status: 'in_progress' })
+    await createQuickTask({ contextProjectId: b.id, assigneeId: me.id, status: 'in_progress' })
+    await clientAs(me).auth.deleteAccount({})
+    const rows = await prisma.notification.findMany({
+      where: { volunteerId: owner.id, type: 'account_deleted_impact' },
+    })
+    expect(rows.map((n) => n.link).sort()).toEqual(
+      [`/projects/${a.id}`, `/projects/${b.id}`].sort(),
+    )
+    await vi.waitFor(() => expect(emails.to(owner.email!)).toHaveLength(1))
+    expect(emails.lastTo(owner.email!).html).toContain(b.title)
+  })
+
   it('deletes a passwordless account without a password, and one with nothing to notify', async () => {
     const me = await createVolunteer({ passwordHash: null })
     expect((await clientAs(me).auth.deleteAccount({})).message).toContain('deleted')
@@ -804,11 +822,11 @@ describe('deleteAccount', () => {
     await createQuickTask({ contextProjectId: p.id, assigneeId: me.id })
     await createProject({ assigneeId: me.id })
     const error = vi.spyOn(logger, 'error').mockImplementation(() => logger)
-    vi.spyOn(prisma.notification, 'create').mockRejectedValue(new Error('db') as never)
+    vi.spyOn(prisma.notification, 'createManyAndReturn').mockRejectedValue(new Error('db') as never)
     emails.failAll()
     await clientAs(me).auth.deleteAccount({})
     expect(error).toHaveBeenCalledWith(expect.any(Error), '[NOTIFY ERROR]')
-    expect(error).toHaveBeenCalledWith(expect.any(Error), '[NOTIFY ERROR] email failed:')
+    await vi.waitFor(() => expect(error).toHaveBeenCalledWith(expect.any(Error), '[EMAIL ERROR]'))
     vi.restoreAllMocks()
   })
 })

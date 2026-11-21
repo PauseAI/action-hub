@@ -98,7 +98,7 @@ export const contactsRouter = {
         input.message.slice(0, 200),
         `/volunteers/${me.id}`,
         {
-          subject: `${me.name} would like to connect on Catalyse`,
+          subject: `${me.name} would like to connect on Action Hub`,
           message: html`<strong>${me.name}</strong>, a fellow volunteer, would like to connect with
             you. Accepting lets you both see each other's contact details and message each other.
             <div style="padding: 12px; background: #f7fafc; border-radius: 8px; margin: 16px 0;">

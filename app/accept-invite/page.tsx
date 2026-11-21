@@ -10,6 +10,7 @@ import { SECTION_CARD } from '@/lib/ui-classes'
 import Button from '@/components/Button'
 import { H2 } from '@/components/Heading'
 import { P } from '@/components/Text'
+import { SUPPORT_EMAIL } from '@/lib/support-email'
 
 function AcceptInviteContent() {
   const router = useRouter()
@@ -60,7 +61,7 @@ function AcceptInviteContent() {
       <div className={`${SECTION_CARD} mb-4 overflow-hidden wrap-break-word text-center`}>
         <H2>Chapter staff invite</H2>
         <P className="text-text-light my-4">
-          You&apos;ve been invited to help run a national chapter on Catalyse.
+          You&apos;ve been invited to help run a national chapter on Action Hub.
         </P>
         <P className="mb-6">Please log in or sign up with the invited email address to accept.</P>
         <Button href={`/login?redirect=${redirectUrl}`}>Log in</Button>
@@ -93,8 +94,8 @@ function AcceptInviteContent() {
       <P className="my-4 text-error">{errorMsg}</P>
       <P className="text-text-light text-sm mb-6">
         Need help? Contact{' '}
-        <a href="mailto:uk@pauseai.info" className="underline">
-          uk@pauseai.info
+        <a href={`mailto:${SUPPORT_EMAIL}`} className="underline">
+          {SUPPORT_EMAIL}
         </a>
         .
       </P>

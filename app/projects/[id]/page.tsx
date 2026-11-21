@@ -61,6 +61,7 @@ import SubmissionAskFields, {
   submissionAskPayload,
 } from '@/components/SubmissionAskFields'
 import { lateness } from '@/lib/lateness'
+import type { Permission } from '@/lib/permissions'
 import { awaitsOwnerReview } from '@/lib/task-review'
 import { isHttpUrl } from '@/lib/url'
 import {
@@ -85,7 +86,7 @@ import GanttChart, { inStartOrder } from '@/components/gantt/GanttChart'
 import type { GanttRow as GanttRowData, GanttUndatedRow } from '@/components/gantt/types'
 import GanttItemPanel from '@/components/gantt/GanttItemPanel'
 import GanttPlanMenu from '@/components/gantt/GanttPlanMenu'
-import { orpc } from '@/lib/orpc'
+import { orpc, rescheduleMutationOptions } from '@/lib/orpc'
 import { useToast } from '@/lib/toast'
 import { formatDateShort } from '@/lib/format-date'
 import BaselineDialog from '@/components/gantt/BaselineDialog'
@@ -258,8 +259,11 @@ function TaskTimeline({
   // The exact key the timeline query writes to, so the optimistic patch lands on the same entry.
   const timelineKey = orpc.projects.listTasks.queryOptions({ input: { projectId } }).queryKey
 
+  const isLastReschedule = () =>
+    queryClient.isMutating({ mutationKey: rescheduleMutationOptions().mutationKey }) === 1
+
   const reschedule = useMutation({
-    ...orpc.schedule.rescheduleItems.mutationOptions(),
+    ...rescheduleMutationOptions(),
     // Place the drag immediately, using the same scheduler the server will run. Without this the
     // bar snaps back the instant the pointer is released and only jumps forward on the refetch.
     onMutate: async (vars: {
@@ -306,11 +310,17 @@ function TaskTimeline({
       return { previous }
     },
     onError: (err: unknown, _vars, context) => {
-      // The server refused the move, so the bar belongs back where it was.
-      if (context?.previous) queryClient.setQueryData(timelineKey, context.previous)
+      // The server refused the move, so the bar belongs back where it was. A later drag still
+      // waiting to save was patched on top of this one; the refetch after it settles corrects both.
+      if (context?.previous && isLastReschedule()) {
+        queryClient.setQueryData(timelineKey, context.previous)
+      }
       onErr('reschedule')(err)
     },
-    onSettled: () => void invalidate(),
+    // A refetch while another drag waits to save would overwrite that drag's optimistic bar.
+    onSettled: () => {
+      if (isLastReschedule()) void invalidate()
+    },
   })
   const addDep = useMutation({
     ...orpc.dependencies.add.mutationOptions(),
@@ -1185,20 +1195,17 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const proposer = proposerDisplay(project)
   const isOwnerOrAdmin = isOwner || isAdmin
   const isDeputy = project.isDeputy
+  // What the server will let the viewer do here (lib/permissions.ts).
+  const may = (permission: Permission) => project.permissions.includes(permission)
   // A completed or archived project is read-only until its owner or an admin reopens it.
   const locked = TERMINAL_STATUSES.includes(project.status)
-  // A deputy runs the project's tasks and nothing else about it.
-  const canRunTasks = !locked && (isOwnerOrAdmin || isDeputy)
-  // A draft has no owner yet, so its creator manages its own tasks until they publish it.
-  const isDraftCreator = project.status === 'draft' && project.proposedById === user.id
-  const canManageProject = isOwnerOrAdmin || isDraftCreator
-  const canManageTasks = canRunTasks || isDraftCreator
+  const canRunTasks = !locked && may('task.assign')
+  const canManageProject = may('project.manage')
+  const canManageTasks = !locked && may('task.manage')
   const deputyIds = new Set(
     (project.helpers ?? []).filter((h) => h.isDeputy).map((h) => h.volunteerId),
   )
-  // Members (accepted helpers / team members) may add tasks even though they can't manage
-  // the project's schedule/baseline — server-computed in getById, see canCreateProjectTask.
-  const canCreateTasks = canManageTasks || project.canCreateTasks
+  const canCreateTasks = !locked && may('task.create')
 
   // Turning down or losing an invite leaves the way open to apply.
   const canApplyAgain =
@@ -1208,9 +1215,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
   // Until an admin approves it, a proposal's status is the admins' to change.
   // An owner takes a locked project back with Reopen; an admin keeps the picker, to archive it.
+  const anyStatus = may('project.changeAnyStatus')
   const canPickStatus =
-    isAdmin || (isOwner && !locked && !UNAPPROVED_STATUSES.includes(project.status))
-  const pickableStatuses = isAdmin ? [...OWNER_STATUSES, ...ADMIN_EXTRA_STATUSES] : OWNER_STATUSES
+    anyStatus ||
+    (may('project.changeStatus') && !locked && !UNAPPROVED_STATUSES.includes(project.status))
+  const pickableStatuses = anyStatus ? [...OWNER_STATUSES, ...ADMIN_EXTRA_STATUSES] : OWNER_STATUSES
   // Every status is pickable by someone now, but an owner viewing a project an admin put
   // into an admin-only status still needs the control to show its real current value.
   const statusOptions = pickableStatuses.some((o) => o.value === project.status)
@@ -1535,7 +1544,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const helperCount = (project.helpers ?? []).length
   // Requests the viewer can answer; an invite waits on the person invited.
   const waitingCount =
-    isOwnerOrAdmin && !locked
+    may('project.recruit') && !locked
       ? volunteerInterests.filter((i) => i.status === InterestStatus.pending).length
       : 0
   // Requests count too for the viewer who answers them, so the tab's number matches its bubble.
@@ -2147,7 +2156,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
   // Matches a task's WorkViewer: the project's "assignee" is its owner, and whoever can
   // replan a task here can also replan the project (owner, deputy or admin).
-  const projectViewer = { isAssignee: isOwner, canReview: isOwnerOrAdmin || isDeputy }
+  const projectViewer = { isAssignee: isOwner, canReview: may('task.manage') }
 
   const statusBlock = (
     <>
@@ -2173,7 +2182,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         })}
         viewer={projectViewer}
       />
-      {locked && isOwnerOrAdmin && (
+      {locked && may('project.changeStatus') && (
         <ReopenProjectButton projectId={project.id} title={project.title} />
       )}
       {project.isSeekingOwner && !leadRequestPending && <StatusFlag>Seeking owner</StatusFlag>}
@@ -2306,7 +2315,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             <ChangesRequestedBanner
               projectId={project.id}
               requests={project.reviewRequests}
-              canResubmit={isOwner || project.proposedById === user.id}
+              canResubmit={may('project.resubmit')}
               editHref={`/projects/${idParam}/edit`}
             />
           </div>
@@ -2619,7 +2628,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                     rowParts={(task) => {
                       const taskViewer = {
                         isAssignee: task.assignedToId === user.id,
-                        canReview: isOwnerOrAdmin || isDeputy,
+                        canReview: may('task.manage'),
                       }
                       const canAssign =
                         canRunTasks && task.status !== TaskStatus.completed && volunteers.length > 0

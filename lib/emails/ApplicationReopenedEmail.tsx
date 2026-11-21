@@ -18,10 +18,10 @@ export function ApplicationReopenedEmail({
 }: ApplicationReopenedEmailProps) {
   return (
     <EmailLayout>
-      <Heading as="h2">Your Catalyse application has been reopened</Heading>
+      <Heading as="h2">Your Action Hub application has been reopened</Heading>
       <Text>{`Hi ${name},`}</Text>
       <Text>
-        We&apos;ve reopened your application to join Catalyse PauseAI so it can be reviewed again.
+        We&apos;ve reopened your application to join PauseAI Action Hub so it can be reviewed again.
       </Text>
       {applicantNotes && (
         <div
