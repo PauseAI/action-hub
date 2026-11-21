@@ -5,6 +5,11 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import { ApprovalStatus } from '@/generated/prisma/enums'
 
+/** Approved, or an admin: past the approval gate that keeps applicants to Home. */
+export function isApprovedMember(user: { approvalStatus: string; isAdmin: boolean } | null) {
+  return Boolean(user && (user.approvalStatus === ApprovalStatus.approved || user.isAdmin))
+}
+
 export function useRequireAuth() {
   const router = useRouter()
   const auth = useAuth()
@@ -31,9 +36,7 @@ export const GLOBAL_ADMIN_NOTICE_URL = '/projects?notice=global-admin-only'
 export function useRequireApproved() {
   const router = useRouter()
   const auth = useAuth()
-  const isApproved = Boolean(
-    auth.user && (auth.user.approvalStatus === ApprovalStatus.approved || auth.user.isAdmin),
-  )
+  const isApproved = isApprovedMember(auth.user)
   useEffect(() => {
     if (auth.loading) return
     if (!auth.user) router.replace('/login')

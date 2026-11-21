@@ -101,6 +101,23 @@ describe('Header', () => {
     await waitFor(() => expect(navigation.push).toHaveBeenCalledWith('/login'))
   })
 
+  it('offers an applicant only Home, Inbox and their settings', async () => {
+    const applicant = await createVolunteer({
+      approvalStatus: 'pending',
+      locationConfirmedAt: new Date(),
+    })
+    await mount(applicant, '/dashboard')
+    const nav = await screen.findByRole('navigation', { name: 'Main' })
+    await waitFor(() => expect(navItems(nav).map((a) => a.textContent)).toEqual(['Home', 'Inbox']))
+    await userEvent.click(screen.getByRole('button', { name: applicant.name }))
+    expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'My profile' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Calls for volunteers' })).toBeNull()
+    await userEvent.click(screen.getByLabelText('Open menu'))
+    expect(screen.queryByRole('link', { name: 'Projects' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'My profile' })).toBeNull()
+  })
+
   it('counts what needs action and unread messages in the Inbox badge, not updates', async () => {
     const vol = await createVolunteer({ locationConfirmedAt: new Date() })
     await prisma.notification.createMany({
