@@ -13,7 +13,10 @@ function displayMode(installed: boolean) {
     addEventListener: (_: string, l: () => void) => listeners.add(l),
     removeEventListener: (_: string, l: () => void) => listeners.delete(l),
   }
-  window.matchMedia = vi.fn(() => mq) as never
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn(() => mq),
+  )
   return {
     install() {
       mq.matches = true
@@ -22,15 +25,22 @@ function displayMode(installed: boolean) {
   }
 }
 
-/** A Navigation API whose current entry sits at `index` in the session. */
-function sessionAt(index: number | null) {
-  const nav = Object.assign(new EventTarget(), {
-    currentEntry: index === null ? null : { index },
+/** A Navigation API whose current entry sits at `index` in the session, after `before`. */
+function sessionAt(index: number | null, before = '/projects') {
+  let current = index
+  const nav = Object.defineProperties(new EventTarget(), {
+    currentEntry: { get: () => (current === null ? null : { index: current }) },
+  })
+  Object.assign(nav, {
+    entries: () =>
+      Array.from({ length: (current ?? 0) + 1 }, (_, i) => ({
+        url: i === (current ?? 0) - 1 ? `http://localhost${before}` : null,
+      })),
   })
   Object.defineProperty(window, 'navigation', { value: nav, configurable: true })
   return {
     moveTo(next: number) {
-      nav.currentEntry = { index: next }
+      current = next
       nav.dispatchEvent(new Event('currententrychange'))
     },
   }
@@ -44,6 +54,7 @@ describe('BackButton', () => {
     Reflect.deleteProperty(window, 'navigation')
     Reflect.deleteProperty(navigator, 'standalone')
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   it('stays out of a browser tab, which has a back button of its own', async () => {
@@ -84,14 +95,36 @@ describe('BackButton', () => {
     expect(backLink()).toBeNull()
   })
 
-  it('without the Navigation API, judges by the length of the history', async () => {
+  it('without the Navigation API, always goes up to the parent', async () => {
     displayMode(true)
-    const length = vi.spyOn(window.history, 'length', 'get').mockReturnValue(1)
+    vi.spyOn(window.history, 'length', 'get').mockReturnValue(2)
     await renderApp(<BackButton />, { url: '/volunteers/4' })
     expect(backLink()).toHaveAttribute('href', '/volunteers')
-    length.mockReturnValue(2)
-    act(() => window.dispatchEvent(new PopStateEvent('popstate')))
-    expect(back()).toBeInTheDocument()
+    expect(back()).toBeNull()
+  })
+
+  it('does not go back to the sign-in page the session started on', async () => {
+    displayMode(true)
+    sessionAt(1, '/login')
+    await renderApp(<BackButton />, { url: '/dashboard' })
+    expect(back()).toBeNull()
+    expect(backLink()).toBeNull()
+  })
+
+  it('does not go back from a sign-in page, where signing out lands', async () => {
+    displayMode(true)
+    sessionAt(4, '/projects/7')
+    await renderApp(<BackButton />, { url: '/login' })
+    expect(back()).toBeNull()
+  })
+
+  it('does not count an earlier entry it cannot see', async () => {
+    displayMode(true)
+    sessionAt(2, '/projects')
+    Object.assign((window as unknown as { navigation: object }).navigation, { entries: () => [] })
+    await renderApp(<BackButton />, { url: '/projects/7' })
+    expect(back()).toBeNull()
+    expect(backLink()).toHaveAttribute('href', '/projects')
   })
 })
 

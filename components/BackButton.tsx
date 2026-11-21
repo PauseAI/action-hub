@@ -21,36 +21,47 @@ function isStandalone() {
   )
 }
 
-/** The parts of the Navigation API used here; TypeScript's DOM types do not include it yet. */
-type NavigationApi = EventTarget & { currentEntry: { index: number } | null }
+/** The parts of the Navigation API used here. */
+type NavigationApi = EventTarget & {
+  currentEntry: { index: number } | null
+  entries(): { url: string | null }[]
+}
 
 const navigationApi = () => (window as Window & { navigation?: NavigationApi }).navigation
 
+/** Sign-in pages send a signed-in user on, so neither going back to nor from one helps. */
+const AUTH_PAGES = new Set(['/login', '/signup'])
+
 function subscribeHistory(onChange: () => void) {
-  const target: EventTarget = navigationApi() ?? window
-  const event = navigationApi() ? 'currententrychange' : 'popstate'
-  target.addEventListener(event, onChange)
-  return () => target.removeEventListener(event, onChange)
+  const nav = navigationApi()
+  nav?.addEventListener('currententrychange', onChange)
+  return () => nav?.removeEventListener('currententrychange', onChange)
 }
 
-/** Whether this session has an earlier page of ours; without the Navigation API, a guess. */
+/**
+ * Whether the page before this one in the session is one of ours worth returning to. Without
+ * the Navigation API there is no telling (`history.length` counts pages ahead too), so no.
+ */
 function canGoBack() {
   const nav = navigationApi()
-  return nav ? (nav.currentEntry?.index ?? 0) > 0 : window.history.length > 1
+  const index = nav?.currentEntry?.index ?? 0
+  if (!nav || index === 0) return false
+  const url = nav.entries()[index - 1]?.url
+  return !!url && !AUTH_PAGES.has(new URL(url).pathname)
 }
 
 const never = () => false
 
 /**
  * An installed app has no browser chrome, so no back button of its own. Goes back through
- * the session's history, or, on the first page of it, up to the page's parent.
+ * the session's history, or, with nothing worth going back to, up to the page's parent.
  */
 export default function BackButton() {
   const pathname = usePathname()
   const standalone = useSyncExternalStore(subscribeStandalone, isStandalone, never)
   const hasHistory = useSyncExternalStore(subscribeHistory, canGoBack, never)
 
-  if (!standalone) return null
+  if (!standalone || AUTH_PAGES.has(pathname)) return null
   const parent = hasHistory ? null : parentPage(pathname)
   if (!hasHistory && !parent) return null
 
@@ -78,7 +89,8 @@ export default function BackButton() {
   } as const
 
   return parent ? (
-    <Button href={parent} {...props} />
+    // Replacing the entry keeps the parent first in the session, so its own Back goes up again.
+    <Button href={parent} replace {...props} />
   ) : (
     <Button onClick={() => window.history.back()} {...props} />
   )

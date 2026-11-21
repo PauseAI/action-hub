@@ -1,4 +1,4 @@
-import type { BrowserContext } from '@playwright/test'
+import type { BrowserContext, Page } from '@playwright/test'
 import { test, expect, readAdminToken } from '../fixtures'
 import { adminCreateProjectViaApi } from '../actions/projects'
 import { createApiClient } from '../client'
@@ -11,6 +11,15 @@ async function openAsInstalledApp(context: BrowserContext): Promise<void> {
     window.matchMedia = (query) =>
       query === '(display-mode: standalone)' ? matchMedia('(min-width: 0px)') : matchMedia(query)
   })
+}
+
+/** The header has rendered on the client, so a Back it would show is there to see. */
+async function headerHydrated(page: Page): Promise<void> {
+  await expect(
+    page
+      .getByRole('navigation', { name: 'Main' })
+      .getByRole('link', { name: 'Projects', includeHidden: true }),
+  ).toBeAttached()
 }
 
 async function projectWithTask(baseUrl: string) {
@@ -33,7 +42,7 @@ test.describe('Back in the installed app', () => {
     await expect(adminPage.getByRole('heading', { name: title })).toBeVisible({ timeout: 10_000 })
     await adminPage.getByRole('link', { name: taskTitle }).first().click()
     await expect(adminPage.getByRole('heading', { name: taskTitle })).toBeVisible()
-    await adminPage.waitForLoadState('networkidle')
+    await headerHydrated(adminPage)
     await expect(adminPage.getByRole('button', { name: 'Back', exact: true })).toHaveCount(0)
     await expect(adminPage.getByRole('link', { name: 'Back', exact: true })).toHaveCount(0)
   })
@@ -65,9 +74,12 @@ test.describe('Back in the installed app', () => {
       '/projects',
     )
 
+    // Going up replaces the first page, so the top-level Projects page has nothing behind it.
     await page.getByRole('link', { name: 'Back', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Back', exact: true })).toBeVisible()
+    await headerHydrated(page)
+    await expect(page.getByRole('button', { name: 'Back', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('link', { name: 'Back', exact: true })).toHaveCount(0)
   })
 
   test('a task opened from a notification goes back to its project', async ({
@@ -85,6 +97,10 @@ test.describe('Back in the installed app', () => {
     await page.getByRole('link', { name: 'Back', exact: true }).click()
     await expect(page.getByRole('heading', { name: title })).toBeVisible()
     await expect(page).toHaveURL(`${baseUrl}/projects/${projectId}`)
+    await expect(page.getByRole('link', { name: 'Back', exact: true })).toHaveAttribute(
+      'href',
+      '/projects',
+    )
   })
 
   test('the dashboard opened first has no Back', async ({ adminPage, baseUrl }) => {
@@ -92,7 +108,7 @@ test.describe('Back in the installed app', () => {
     const page = await adminPage.context().newPage()
     await page.goto(`${baseUrl}/dashboard`)
     await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible({ timeout: 10_000 })
-    await page.waitForLoadState('networkidle')
+    await headerHydrated(page)
     await expect(page.getByRole('button', { name: 'Back', exact: true })).toHaveCount(0)
     await expect(page.getByRole('link', { name: 'Back', exact: true })).toHaveCount(0)
   })
