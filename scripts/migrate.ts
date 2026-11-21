@@ -1,8 +1,9 @@
 import { execSync } from 'child_process'
 import { readdirSync, rmdirSync } from 'fs'
 import { join } from 'path'
-import { resolveDbUrl } from '../lib/db-url'
+import { libpqUrl, resolveDbUrl } from '../lib/db-url'
 import { logger } from '../lib/logger'
+import { runPreDeployBackup } from './pre-deploy-backup'
 
 process.env.DATABASE_URL = resolveDbUrl()
 
@@ -22,6 +23,9 @@ function removeEmptyMigrationDirs() {
 
 async function main() {
   removeEmptyMigrationDirs()
+  if (process.env.RAILWAY_ENVIRONMENT_NAME === 'production') {
+    await runPreDeployBackup(libpqUrl(resolveDbUrl()))
+  }
   execSync('npx prisma migrate deploy', { stdio: 'inherit' })
 }
 

@@ -6,8 +6,9 @@
  * (scripts/anonymise-db.ts). If the migration or the scrub fails the database is emptied again,
  * so raw prod data never outlives it. Refuses to touch the production environment.
  *
- * Needs BACKUP_AGE_IDENTITY_FILE, and to download, BACKUP_B2_READ_KEY_ID and
- * BACKUP_B2_READ_SECRET (BACKUP_B2_BUCKET optional), from the environment or the env file.
+ * Needs an age identity (BACKUP_AGE_IDENTITY_FILE, or BACKUP_AGE_IDENTITY; see readAgeIdentity),
+ * and to download, BACKUP_B2_READ_KEY_ID and BACKUP_B2_READ_SECRET (BACKUP_B2_BUCKET optional),
+ * from the environment or the env file.
  *
  * Usage:
  *   npx tsx scripts/fetch-prod-db.ts                       # reads variables from .env.backup
@@ -33,6 +34,7 @@ import {
   decryptDump,
   dumpTakenAt,
   newestDump,
+  readAgeIdentity,
 } from './prod-backup'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -161,10 +163,10 @@ async function main(): Promise<void> {
     process.exit(1)
   }
 
-  const identityFile = process.env.BACKUP_AGE_IDENTITY_FILE
-  if (!identityFile) {
+  const identity = readAgeIdentity()
+  if (!identity) {
     logger.error(
-      `BACKUP_AGE_IDENTITY_FILE must name a file holding Action Hub's age identity (Psono: "Action Hub - Object Storage (R2, B2, S3) Backup Encryption Key"). Add it to '${envFile}' or export it.`,
+      `BACKUP_AGE_IDENTITY_FILE must name a file holding Action Hub's age identity (Psono: "Action Hub - Object Storage (R2, B2, S3) Backup Encryption Key"), or BACKUP_AGE_IDENTITY hold an identity the dumps are encrypted to. Add one to '${envFile}' or export it.`,
     )
     process.exit(1)
   }
@@ -176,7 +178,7 @@ async function main(): Promise<void> {
 
   const dbUrl = libpqUrl(resolveDbUrl())
   logger.info('Decrypting...')
-  const dump = await decryptDump(encrypted, identityFile)
+  const dump = await decryptDump(encrypted, identity)
 
   try {
     logger.info(`Restoring into ${new URL(dbUrl).pathname.slice(1)}...`)

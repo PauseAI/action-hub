@@ -4,7 +4,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Encrypter, generateIdentity, identityToRecipient } from 'age-encryption'
 import { FakeB2 } from '@/test/fakes/b2'
-import { B2Reader, DEFAULT_BUCKET, decryptDump, dumpTakenAt, newestDump } from './prod-backup'
+import {
+  B2Reader,
+  DEFAULT_BUCKET,
+  decryptDump,
+  dumpTakenAt,
+  newestDump,
+  readAgeIdentity,
+} from './prod-backup'
 
 const file = (fileName: string, contentLength = 1) => ({ fileName, contentLength })
 
@@ -108,7 +115,7 @@ describe('B2Reader', () => {
   })
 })
 
-describe('decryptDump', () => {
+describe('readAgeIdentity and decryptDump', () => {
   let dir: string
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'age-'))
@@ -120,6 +127,7 @@ describe('decryptDump', () => {
     e.addRecipient(await identityToRecipient(identity))
     return e.encrypt(plaintext)
   }
+  const text = (bytes: Uint8Array) => new TextDecoder().decode(bytes)
 
   it('decrypts with an identity file as age-keygen writes it', async () => {
     const other = await generateIdentity()
@@ -129,23 +137,30 @@ describe('decryptDump', () => {
       path,
       `# created: 2026-11-18T00:00:00Z\n# public key: ${await identityToRecipient(ours)}\n${other}\n${ours}\n`,
     )
-    const plain = await decryptDump(await encryptTo(ours, 'PGDMP...'), path)
-    expect(new TextDecoder().decode(plain)).toBe('PGDMP...')
+    const identity = readAgeIdentity({ BACKUP_AGE_IDENTITY_FILE: path })!
+    expect(identity.source).toBe(path)
+    expect(text(await decryptDump(await encryptTo(ours, 'PGDMP...'), identity))).toBe('PGDMP...')
   })
 
-  it('fails without a key in the file, or with the wrong one, and never prints the key', async () => {
-    const empty = join(dir, 'empty.txt')
-    writeFileSync(empty, '# public key: age1...\n')
-    await expect(decryptDump(new Uint8Array(), empty)).rejects.toThrow(
-      `${empty} holds no AGE-SECRET-KEY line`,
-    )
+  it('prefers an identity held in BACKUP_AGE_IDENTITY, on one line or several', async () => {
+    const ours = await generateIdentity()
+    const env = { BACKUP_AGE_IDENTITY: `# preview  ${ours}`, BACKUP_AGE_IDENTITY_FILE: '/nowhere' }
+    const identity = readAgeIdentity(env)!
+    expect(identity.source).toBe('BACKUP_AGE_IDENTITY')
+    expect(text(await decryptDump(await encryptTo(ours, 'PGDMP'), identity))).toBe('PGDMP')
+    expect(readAgeIdentity({})).toBeUndefined()
+  })
+
+  it('fails without a key, or with the wrong one, and never prints the key', async () => {
+    await expect(
+      decryptDump(new Uint8Array(), { text: '# public key: age1...', source: 'key.txt' }),
+    ).rejects.toThrow('key.txt holds no AGE-SECRET-KEY')
 
     const wrong = await generateIdentity()
-    const path = join(dir, 'wrong.txt')
-    writeFileSync(path, `${wrong}\n`)
-    const err = await decryptDump(await encryptTo(await generateIdentity(), 'x'), path).catch(
-      (e: Error) => e,
-    )
+    const err = await decryptDump(await encryptTo(await generateIdentity(), 'x'), {
+      text: wrong,
+      source: 'BACKUP_AGE_IDENTITY',
+    }).catch((e: Error) => e)
     expect(String(err)).toMatch(/^Error: Could not decrypt the dump: /)
     expect(String(err)).not.toContain(wrong)
   })

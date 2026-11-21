@@ -19,7 +19,7 @@ what each service needs, so a standby host can match it; values are never writte
 | Restart policy | on failure, at most 3 retries                                                                                                                                     |
 | Draining       | 10s between SIGTERM and SIGKILL, so Next exits cleanly instead of being marked CRASHED                                                                            |
 | Domains        | `action.pauseai.info` (port 8080), and `catalyse.up.railway.app` (`proxy.ts` redirects its pages)                                                                 |
-| Volume         | `web-volume`, 500 MB, at `/data`: `jobs/backup.ts` keeps the last week of dumps there                                                                             |
+| Volume         | `web-volume`, 500 MB, at `/data`: `scripts/pre-deploy-backup.ts` keeps the last week of pre-deploy dumps there                                                    |
 
 Because the service mounts a volume, Railway never runs two of its deploys at once: the old
 container stops before the new one starts, so every web deploy is a short outage (start-up runs
@@ -30,9 +30,13 @@ Variables set on the service:
 - `DATABASE_URL`: also passed to the build, where `prisma generate` reads it
 - `APP_URL`, `CRON_SECRET`, `RESEND_API_KEY`: the app refuses to start in production without them
 - `FROM_EMAIL`, `REPLY_TO_EMAIL`, `GOOGLE_CLIENT_ID`, `ADMIN_EMAILS`
-- `B2_KEY_ID`, `B2_APP_KEY`, `B2_BUCKET_NAME`: the daily backup job's offsite copy, all or none
 - `NEXT_PUBLIC_GA_MEASUREMENT_ID`: build time only, inlined into the client bundle
 - `ALLOW_DB_RESTORE`: only on the preview base environment, never production
+- `BACKUP_B2_READ_KEY_ID`, `BACKUP_B2_READ_SECRET`, `BACKUP_AGE_IDENTITY`: only on the preview
+  base environment, so `seed-preview` can restore the newest nightly backup. The read-only key
+  is the bucket's, and the identity is a preview-only one, listed among the backup service's
+  `BACKUP_AGE_RECIPIENTS` so it can be revoked alone. Without all three a preview gets the dev
+  accounts only
 
 Railway provides `PORT`, `RAILWAY_ENVIRONMENT_NAME`, `RAILWAY_GIT_COMMIT_SHA` (build and runtime)
 and, when a volume is mounted, `RAILWAY_VOLUME_MOUNT_PATH`; a standby host has to set the ones

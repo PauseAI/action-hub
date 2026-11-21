@@ -8,7 +8,7 @@ import { seedDevAccounts } from './seed-dev-accounts'
 /**
  * Runs at container start, before migrations. Preview environments (Railway PR deploys) with
  * ALLOW_DB_RESTORE=1 get an anonymised copy of production so reviewers see realistic data, or,
- * where the backup read key and age identity are not set (see scripts/fetch-prod-db.ts), just
+ * where the backup read key and an age identity are not set (scripts/prod-backup.ts), just
  * the migrated schema and the dev accounts, so reviewers can still sign in. Only an empty
  * database is seeded: the container also restarts on failure and on every push to the PR, and
  * reviewers' changes should survive those. SEED_PREVIEW_FORCE=1 reseeds regardless.
@@ -18,7 +18,7 @@ const isProduction = process.env.RAILWAY_ENVIRONMENT_NAME === 'production'
 const canReadBackups = Boolean(
   process.env.BACKUP_B2_READ_KEY_ID &&
   process.env.BACKUP_B2_READ_SECRET &&
-  process.env.BACKUP_AGE_IDENTITY_FILE,
+  (process.env.BACKUP_AGE_IDENTITY || process.env.BACKUP_AGE_IDENTITY_FILE),
 )
 
 async function withClient<T>(fn: (db: Client) => Promise<T>): Promise<T> {

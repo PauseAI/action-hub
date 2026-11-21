@@ -47,9 +47,6 @@ describe('.railway/railway.ts', () => {
     expect(names('service.web')).toEqual([
       'ADMIN_EMAILS',
       'APP_URL',
-      'B2_APP_KEY',
-      'B2_BUCKET_NAME',
-      'B2_KEY_ID',
       'CRON_SECRET',
       'DATABASE_URL',
       'FROM_EMAIL',

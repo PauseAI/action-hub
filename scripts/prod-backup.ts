@@ -1,9 +1,9 @@
 /**
  * Reads production's nightly dumps, which PauseAI/infra's backup-image service uploads to B2 as
  * `backups/actionhub-<UTC time>.dump.age`: `pg_dump --format=custom` of the whole database,
- * encrypted with age. Reading takes the bucket's read-only key and Action Hub's age identity,
- * both kept in Psono. The identity is read from a file on the developer's machine and is never
- * a deployed variable.
+ * encrypted with age. Reading takes the bucket's read-only key and an age identity the dumps are
+ * encrypted to: Action Hub's own, kept in Psono and read from a file on a developer's machine,
+ * or, in the preview environment, a preview-only identity held in a variable.
  */
 
 import { readFileSync } from 'node:fs'
@@ -147,19 +147,34 @@ export class B2Reader {
   }
 }
 
+export interface AgeIdentity {
+  /** The identity as `age-keygen` writes it: comments and one or more `AGE-SECRET-KEY-` keys. */
+  text: string
+  /** Where it came from, for error messages: a file path or the variable's name. */
+  source: string
+}
+
 /**
- * Decrypts a dump with the age identity file at `identityPath` (as `age-keygen` writes it:
- * comments and one or more `AGE-SECRET-KEY-` lines). The plaintext stays in memory.
+ * The age identity from `BACKUP_AGE_IDENTITY` itself, for an environment that cannot hold a
+ * file (a Railway preview, with an identity of its own), or else from the file
+ * `BACKUP_AGE_IDENTITY_FILE` names.
  */
+export function readAgeIdentity(
+  env: Record<string, string | undefined> = process.env,
+): AgeIdentity | undefined {
+  if (env.BACKUP_AGE_IDENTITY)
+    return { text: env.BACKUP_AGE_IDENTITY, source: 'BACKUP_AGE_IDENTITY' }
+  const path = env.BACKUP_AGE_IDENTITY_FILE
+  return path ? { text: readFileSync(path, 'utf8'), source: path } : undefined
+}
+
+/** Decrypts a dump with `identity`. The plaintext stays in memory. */
 export async function decryptDump(
   encrypted: Uint8Array,
-  identityPath: string,
+  identity: AgeIdentity,
 ): Promise<Uint8Array> {
-  const keys = readFileSync(identityPath, 'utf8')
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.startsWith('AGE-SECRET-KEY-'))
-  if (!keys.length) throw new Error(`${identityPath} holds no AGE-SECRET-KEY line`)
+  const keys = identity.text.split(/\s+/).filter((t) => t.startsWith('AGE-SECRET-KEY-'))
+  if (!keys.length) throw new Error(`${identity.source} holds no AGE-SECRET-KEY`)
   const decrypter = new Decrypter()
   for (const key of keys) decrypter.addIdentity(key)
   try {
