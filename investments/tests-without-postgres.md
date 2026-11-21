@@ -12,4 +12,5 @@ A vitest project for tests that need no database, and a script that prints a CI 
 
 ## Hits
 
+- 2026-10-26: the bug report triage work was written in a host session that couldn't reach Postgres, and went to a PR with no unit or e2e run
 - 2026-10-28: the role-based access work wrote its access-matrix tests blind, pushed a draft PR to prove them, and read results from check-run annotations
