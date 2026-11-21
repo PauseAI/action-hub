@@ -1568,3 +1568,47 @@ model CallDismissal {
   @@index([volunteerId], map: "idx_call_dismissals_volunteer")
   @@map("call_dismissals")
 }
+
+enum EmailSuppressionReason {
+  bounce
+  complaint
+}
+
+/// An address the email provider reported as permanently undeliverable or as having marked our
+/// mail as spam. Nothing is sent to it while the row is live; deleting the row lifts it. Kept
+/// as a keyed hash (lib/email-suppression.ts), so it holds no address and cannot be matched
+/// against a list of addresses without the server's secret.
+model EmailSuppression {
+  id        Int                    @id @default(autoincrement())
+  emailHash String                 @unique @map("email_hash")
+  reason    EmailSuppressionReason
+  /// The provider's classification, e.g. "Permanent/General" or a complaint's feedback type.
+  detail    String?
+  createdAt DateTime               @default(now()) @map("created_at")
+  /// Null for a bounce, which stays until lifted; a complaint lapses after a year.
+  expiresAt DateTime?              @map("expires_at")
+
+  @@map("email_suppressions")
+}
+
+/// How many emails went to the provider in one clock hour, per bucket: `bulk`, `essential`, or
+/// one recipient's essential mail (`to:` and the recipient's keyed hash). Every process shares
+/// these counts, so the caps hold across the web and cron services.
+model EmailSendCount {
+  hour   DateTime
+  bucket String
+  count  Int      @default(0)
+
+  @@id([hour, bucket])
+  @@map("email_send_counts")
+}
+
+/// SNS messages already handled, so a repeat delivery or a replayed message does nothing.
+/// Kept only as long as a message's timestamp would still be accepted.
+model SnsMessage {
+  messageId  String   @id @map("message_id")
+  receivedAt DateTime @default(now()) @map("received_at")
+
+  @@index([receivedAt])
+  @@map("sns_messages")
+}

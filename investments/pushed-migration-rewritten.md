@@ -13,3 +13,4 @@ A line under "Database migrations" in `AGENTS.md`: once pushed, a migration is f
 ## Hits
 
 - 2026-11-11: the notification preferences PR regenerated its migration after the first push; the preview failed with `type "EmailDelivery" already exists`, then P3009 on every deploy, until its database was reset
+- 2026-11-18: ses-sender (#412) regenerated its migration twice after pushing (review rounds); the preview crashed on `type "EmailSuppressionReason" already exists` until the PR was closed and reopened for a fresh environment

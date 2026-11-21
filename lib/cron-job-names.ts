@@ -7,6 +7,7 @@ export const CRON_JOB_NAMES = [
   'csp-summary',
   'deadline-reminders',
   'notification-digest',
+  'email-housekeeping',
 ] as const
 
 export type CronJobName = (typeof CRON_JOB_NAMES)[number]
@@ -63,5 +64,10 @@ export const CRON_JOB_INFO: Record<CronJobName, CronJobInfo> = {
       'Emails each person whose local digest hour it is, and whose period has passed, everything they chose to get in their digest.',
     idempotent: true,
     every: 'hour',
+  },
+  'email-housekeeping': {
+    description: 'Drops email send counts and SNS message ids over a day old.',
+    idempotent: true,
+    every: 'day',
   },
 }
