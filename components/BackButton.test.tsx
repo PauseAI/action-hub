@@ -106,6 +106,7 @@ describe('parentPage', () => {
     ['/volunteers/4', '/volunteers'],
     ['/teams/2', '/teams'],
     ['/inbox/messages/5', '/inbox'],
+    ['/bugs/3', '/settings?tab=bug-reports'],
     ['/templates/new', '/templates'],
     ['/suggest/new', '/suggest'],
     ['/admin/applications/6', '/admin/applications'],
@@ -118,7 +119,7 @@ describe('parentPage', () => {
     expect(parentPage(path)).toBe(parent)
   })
 
-  it.each(['/dashboard', '/projects', '/inbox', '/admin', '/bugs/3', '/'])(
+  it.each(['/dashboard', '/projects', '/inbox', '/admin', '/local-groups/3', '/'])(
     '%s has no parent',
     (path) => {
       expect(parentPage(path)).toBeNull()

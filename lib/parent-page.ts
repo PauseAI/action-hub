@@ -6,6 +6,7 @@ const PARENTS: [RegExp, string][] = [
   [/^\/volunteers\/[^/]+$/, '/volunteers'],
   [/^\/teams\/[^/]+$/, '/teams'],
   [/^\/inbox\/messages\/[^/]+$/, '/inbox'],
+  [/^\/bugs\/[^/]+$/, '/settings?tab=bug-reports'],
   [/^\/templates\/new$/, '/templates'],
   [/^\/suggest\/new$/, '/suggest'],
   [/^\/admin\/(applications|chapters|projects|teams)\/[^/]+$/, '/admin/$1'],
