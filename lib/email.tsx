@@ -23,6 +23,8 @@ import { TaskFinalWarningEmail } from './emails/TaskFinalWarningEmail'
 import { TaskSurrenderedOwnerEmail } from './emails/TaskSurrenderedOwnerEmail'
 import { TaskSurrenderedAssigneeEmail } from './emails/TaskSurrenderedAssigneeEmail'
 import { DailySummaryEmail, type SummaryEmailSection } from './emails/DailySummaryEmail'
+import { NotificationDigestEmail } from './emails/NotificationDigestEmail'
+import type { DigestSection } from './notification-digest'
 
 export type { ChapterRoleInvite, DigestProject, SummaryEmailSection }
 
@@ -87,7 +89,7 @@ export async function sendWelcomeAndConfirmEmail({
   const confirmUrl = `${env.APP_URL}/verify-email?token=${token}`
   return sendEmail(
     to,
-    'Welcome to Catalyse: please confirm your email',
+    'Welcome to Action Hub: please confirm your email',
     await buildWelcomeAndConfirmHtml(name, confirmUrl),
   )
 }
@@ -105,7 +107,7 @@ export async function sendApplicationReceivedEmail({
 }): Promise<boolean> {
   return sendEmail(
     to,
-    'Your Catalyse application has been received',
+    'Your Action Hub application has been received',
     await buildApplicationReceivedHtml(name),
   )
 }
@@ -123,7 +125,7 @@ export async function sendApplicationApprovedEmail({
 }): Promise<boolean> {
   return sendEmail(
     to,
-    'Your Catalyse application has been approved',
+    'Your Action Hub application has been approved',
     await buildApplicationApprovedHtml(name, env.APP_URL),
   )
 }
@@ -148,7 +150,7 @@ export async function sendApplicationRejectedEmail({
 }): Promise<boolean> {
   return sendEmail(
     to,
-    'Update on your Catalyse application',
+    'Update on your Action Hub application',
     await buildApplicationRejectedHtml(name, applicantNotes),
   )
 }
@@ -180,7 +182,7 @@ export async function sendApplicationNeedsInfoEmail({
   const loginUrl = `${env.APP_URL}/login?email=${encodeURIComponent(to)}`
   return sendEmail(
     to,
-    'Action needed on your Catalyse application',
+    'Action needed on your Action Hub application',
     await buildApplicationNeedsInfoHtml(name, loginUrl, applicantNotes),
   )
 }
@@ -212,7 +214,7 @@ export async function sendApplicationReopenedEmail({
   const loginUrl = `${env.APP_URL}/login?email=${encodeURIComponent(to)}`
   return sendEmail(
     to,
-    'Your Catalyse application has been reopened',
+    'Your Action Hub application has been reopened',
     await buildApplicationReopenedHtml(name, loginUrl, applicantNotes),
   )
 }
@@ -235,7 +237,7 @@ export async function sendPendingApplicationsSummaryEmail({
   const plural = count === 1 ? 'application' : 'applications'
   return sendEmail(
     to,
-    `${count} pending ${plural} on Catalyse`,
+    `${count} pending ${plural} on Action Hub`,
     await buildPendingApplicationsSummaryHtml(count, env.APP_URL),
   )
 }
@@ -254,10 +256,14 @@ export async function sendPasswordResetEmail({
   name?: string
 }): Promise<boolean> {
   const resetUrl = `${env.APP_URL}/reset-password?token=${resetToken}`
-  return sendEmail(to, 'Reset your Catalyse password', await buildPasswordResetHtml(resetUrl, name))
+  return sendEmail(
+    to,
+    'Reset your Action Hub password',
+    await buildPasswordResetHtml(resetUrl, name),
+  )
 }
 
-export const ACCOUNT_MERGE_SUBJECT = 'Confirm merging your Catalyse accounts'
+export const ACCOUNT_MERGE_SUBJECT = 'Confirm merging your Action Hub accounts'
 
 /**
  * Sent to the address of the account being merged in, so a merge happens only once whoever
@@ -348,7 +354,7 @@ export async function sendWelcomeEmail({
   to: string
   name: string
 }): Promise<boolean> {
-  return sendEmail(to, 'Welcome to Catalyse!', await buildWelcomeHtml(name, env.APP_URL))
+  return sendEmail(to, 'Welcome to Action Hub!', await buildWelcomeHtml(name, env.APP_URL))
 }
 
 export function buildProjectNotificationHtml(
@@ -477,7 +483,7 @@ export async function sendLocalGroupSuggestionEmail({
 }
 
 /**
- * A message relayed from one volunteer to another. `threadUrl` is where to reply on Catalyse;
+ * A message relayed from one volunteer to another. `threadUrl` is where to reply on Action Hub;
  * `repliesByEmail` says whether the sender shared their address as the reply-to.
  */
 export function buildRelayMessageHtml(
@@ -505,7 +511,7 @@ export function buildRelayMessageHtml(
 
 /**
  * Emails a copy of a message. The sender's address is the reply-to only when they chose to
- * share it; otherwise the recipient replies on Catalyse.
+ * share it; otherwise the recipient replies on Action Hub.
  */
 export async function sendRelayMessage({
   to,
@@ -535,7 +541,7 @@ export async function sendRelayMessage({
     `${env.APP_URL}/inbox/messages/${threadId}`,
     replyTo !== null,
   )
-  return sendEmail(to, `[Catalyse] ${subject}`, html, replyTo ?? undefined)
+  return sendEmail(to, `[Action Hub] ${subject}`, html, replyTo ?? undefined)
 }
 
 export function buildDigestHtml(
@@ -560,7 +566,7 @@ export async function sendDigestEmail({
 }): Promise<boolean> {
   if (!projects.length) return false
   const html = await buildDigestHtml(name, env.APP_URL, projects, isMatch)
-  const subject = isMatch ? 'New projects matching your skills' : "What's new on Catalyse"
+  const subject = isMatch ? 'New projects matching your skills' : "What's new on Action Hub"
   return sendEmail(to, subject, html)
 }
 
@@ -800,4 +806,25 @@ export async function sendDailySummaryEmail({
   sections: SummaryEmailSection[]
 }): Promise<boolean> {
   return sendEmail(to, subject, await buildDailySummaryHtml(name, sections))
+}
+
+export function buildNotificationDigestHtml(
+  name: string,
+  sections: DigestSection[],
+): Promise<string> {
+  return render(<NotificationDigestEmail name={name} sections={sections} appUrl={env.APP_URL} />)
+}
+
+export async function sendNotificationDigestEmail({
+  to,
+  name,
+  subject,
+  sections,
+}: {
+  to: string
+  name: string
+  subject: string
+  sections: DigestSection[]
+}): Promise<boolean> {
+  return sendEmail(to, subject, await buildNotificationDigestHtml(name, sections))
 }

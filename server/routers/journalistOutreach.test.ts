@@ -111,10 +111,10 @@ describe('journalistOutreach sign-in', () => {
     await expect(as(token).journalistOutreach.current()).rejects.toMatchObject(expired)
   })
 
-  it('signs logged-in Catalyse users straight in as the same participant as their email link', async () => {
+  it('signs logged-in Action Hub users straight in as the same participant as their email link', async () => {
     const { participant } = await signIn('mixed@example.com')
     const volunteer = await createVolunteer({ email: 'Mixed@example.com' })
-    const res = await clientAs(volunteer).journalistOutreach.catalyseSignIn()
+    const res = await clientAs(volunteer).journalistOutreach.actionHubSignIn()
     expect(res.email).toBe('mixed@example.com')
     await expect(as(res.token).journalistOutreach.current()).resolves.toMatchObject({
       email: 'mixed@example.com',
@@ -125,20 +125,20 @@ describe('journalistOutreach sign-in', () => {
     expect(session.participantId).toBe(participant.id)
 
     const fresh = await createVolunteer()
-    await clientAs(fresh).journalistOutreach.catalyseSignIn()
+    await clientAs(fresh).journalistOutreach.actionHubSignIn()
     expect(
       await prisma.experimentalOutreachParticipant.count({ where: { email: fresh.email! } }),
     ).toBe(1)
 
-    await expect(anon().journalistOutreach.catalyseSignIn()).rejects.toMatchObject({
+    await expect(anon().journalistOutreach.actionHubSignIn()).rejects.toMatchObject({
       code: 'UNAUTHORIZED',
     })
     const noEmail = await createVolunteer({ email: null })
-    await expect(clientAs(noEmail).journalistOutreach.catalyseSignIn()).rejects.toMatchObject({
+    await expect(clientAs(noEmail).journalistOutreach.actionHubSignIn()).rejects.toMatchObject({
       code: 'BAD_REQUEST',
     })
     const unconfirmed = await createVolunteer({ emailConfirmed: false })
-    await expect(clientAs(unconfirmed).journalistOutreach.catalyseSignIn()).rejects.toMatchObject({
+    await expect(clientAs(unconfirmed).journalistOutreach.actionHubSignIn()).rejects.toMatchObject({
       code: 'FORBIDDEN',
     })
   })

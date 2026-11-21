@@ -9,7 +9,7 @@ import TextLink from '@/components/TextLink'
 export const metadata: Metadata = {
   title: 'Volunteer with PauseAI',
   description:
-    'Catalyse is the volunteer platform for PauseAI. Find campaign, policy, organising and creative work that matches your skills.',
+    'Action Hub is the volunteer platform for PauseAI. Find campaign, policy, organising and creative work that matches your skills.',
 }
 
 /**
@@ -48,7 +48,7 @@ export default function LandingPage() {
             */}
             <H1>Volunteer for PauseAI</H1>
             <P className="text-lg text-text-light mb-8">
-              Catalyse is the volunteer platform for PauseAI. It allows anyone to join projects or
+              Action Hub is the volunteer platform for PauseAI. It allows anyone to join projects or
               complete tasks that help advance our mission. You can also propose your own projects
               to get help from other volunteers on things that you want to work on.
             </P>
@@ -96,7 +96,7 @@ export default function LandingPage() {
       {/* How it works */}
       <section className="container py-12 md:py-16">
         <div className="max-w-3xl mb-8">
-          <H2>How Catalyse works</H2>
+          <H2>How Action Hub works</H2>
         </div>
         <ol className="grid grid-cols-1 md:grid-cols-3 gap-5 list-none p-0 m-0">
           {STEPS.map((step, i) => (
@@ -135,7 +135,7 @@ export default function LandingPage() {
               </li>
               <li>You can control what information other volunteers can see about you.</li>
               <li>
-                Catalyse is for coordinating volunteer tasks. To see upcoming events, see the{' '}
+                Action Hub is for coordinating volunteer tasks. To see upcoming events, see the{' '}
                 <TextLink href="https://luma.com/PauseAI" target="_blank" rel="noopener noreferrer">
                   calendar
                 </TextLink>

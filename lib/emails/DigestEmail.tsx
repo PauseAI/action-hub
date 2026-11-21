@@ -60,10 +60,10 @@ function ProjectCard({ project, appUrl }: { project: DigestProject; appUrl: stri
 export function DigestEmail({ name, appUrl, projects, isMatch = false }: DigestEmailProps) {
   const matchIntro = isMatch
     ? 'Here are new projects that match your skills:'
-    : "Here's what's new on Catalyse:"
+    : "Here's what's new on Action Hub:"
   return (
     <EmailLayout width={600}>
-      <Heading as="h2">Catalyse Project Update</Heading>
+      <Heading as="h2">Action Hub Project Update</Heading>
       <Text>{`Hi ${name},`}</Text>
       <Text>{matchIntro}</Text>
       {projects.map((p) => (

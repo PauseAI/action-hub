@@ -156,7 +156,7 @@ describe('email transports', () => {
   it('relays a message with a link to reply, and the sender as reply-to only if shared', async () => {
     const relay = { to: 'a@b.c', toName: 'A', fromName: 'B', subject: 'Hi', message: 'm' }
     await e.sendRelayMessage({ ...relay, replyTo: null, threadId: 7 })
-    expect(emails.last).toMatchObject({ subject: '[Catalyse] Hi', replyTo: undefined })
+    expect(emails.last).toMatchObject({ subject: '[Action Hub] Hi', replyTo: undefined })
     expect(emails.last.html).toContain(`${env.APP_URL}/inbox/messages/7`)
     expect(emails.last.html).not.toContain('reply to this email')
     await e.sendRelayMessage({ ...relay, replyTo: 'b@x', threadId: 7 })
@@ -170,7 +170,7 @@ describe('daily summary', () => {
     await e.sendDailySummaryEmail({
       to: 'owner@example.com',
       name: '<Olive>',
-      subject: 'Catalyse: 2 things need you today',
+      subject: 'Action Hub: 2 things need you today',
       sections: [
         { heading: 'Your tasks', lines: [{ text: '“Book <venue>” is due today', href: '/t/1' }] },
         {
@@ -186,7 +186,7 @@ describe('daily summary', () => {
       ],
     })
     const sent = emails.lastTo('owner@example.com')!
-    expect(sent.subject).toBe('Catalyse: 2 things need you today')
+    expect(sent.subject).toBe('Action Hub: 2 things need you today')
     expect(sent.html).toContain('Hi &lt;Olive&gt;')
     expect(sent.html).toContain('<h3 style="margin:24px 0 8px">Your tasks</h3>')
     // The projects share one heading, each named under it.

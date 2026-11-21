@@ -5,8 +5,9 @@ import SectionCard from '@/components/SectionCard'
 import { P } from '@/components/Text'
 import TrackRecord from '@/components/TrackRecord'
 import { plural } from '@/lib/plural'
+import { SUPPORT_EMAIL } from '@/lib/support-email'
 
-// Things anyone can do for PauseAI without an approved Catalyse account. The links are
+// Things anyone can do for PauseAI without an approved Action Hub account. The links are
 // PauseAI's own evergreen pages, so they stay right as campaigns and events come and go.
 const SUPPORTER_ACTIONS: { title: string; detail: string; href: string; action: string }[] = [
   {
@@ -68,7 +69,7 @@ function waitingSummary({ projects, matching, quickTasks }: Waiting): string | n
 
 /**
  * Home for someone whose application is still waiting on a review: what they can do for
- * PauseAI meanwhile, what Catalyse holds for them, and what PauseAI's work has achieved.
+ * PauseAI meanwhile, what Action Hub holds for them, and what PauseAI's work has achieved.
  */
 export default function ApplicantWelcome({
   name,
@@ -138,10 +139,17 @@ export default function ApplicantWelcome({
             </>
           )}
         </P>
+        <P className="text-sm text-text-light mt-2 mb-0">
+          Questions? Contact{' '}
+          <a href={`mailto:${SUPPORT_EMAIL}`} className="text-primary-text underline">
+            {SUPPORT_EMAIL}
+          </a>
+          .
+        </P>
       </SectionCard>
 
-      <section aria-labelledby="catalyse-tour">
-        <H2 id="catalyse-tour">What you&apos;ll find here</H2>
+      <section aria-labelledby="home-tour">
+        <H2 id="home-tour">What you&apos;ll find here</H2>
         <ol className="grid grid-cols-1 md:grid-cols-3 gap-5 list-none p-0 m-0">
           {TOUR.map((step) => (
             <li

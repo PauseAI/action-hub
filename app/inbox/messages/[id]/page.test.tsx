@@ -75,11 +75,11 @@ describe('conversation page', () => {
     await prisma.volunteer.update({ where: { id: ann.id }, data: { deletedAt: new Date() } })
     await userEvent.type(box, 'hello?')
     await userEvent.click(screen.getByRole('button', { name: 'Send reply' }))
-    expect(await screen.findByText('This volunteer has left Catalyse')).toBeInTheDocument()
+    expect(await screen.findByText('This volunteer has left Action Hub')).toBeInTheDocument()
     cleanup()
 
     await mount(threadId, bob)
-    expect(await screen.findByText(/Ann has left Catalyse/)).toBeInTheDocument()
+    expect(await screen.findByText(/Ann has left Action Hub/)).toBeInTheDocument()
     expect(screen.queryByLabelText('Write a reply')).toBeNull()
   })
 

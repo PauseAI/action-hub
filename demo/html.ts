@@ -47,9 +47,9 @@ export function buildEmailClientHtml(
       <div class="inbox-header">Inbox (1 unread)</div>
       <div class="email-item selected">
         <span class="time">Just now</span>
-        <div class="sender">Catalyse</div>
+        <div class="sender">Action Hub</div>
         <div class="subject">${subject}</div>
-        <div class="preview">Thanks for applying to join Catalyse...</div>
+        <div class="preview">Thanks for applying to join Action Hub...</div>
       </div>
     </div>
     <div class="email-pane">
@@ -80,7 +80,7 @@ export function buildTitleCardHtml(videoTitle: string): string {
     .title{font-size:42px;color:#e2e8f0;font-weight:400;text-align:center;opacity:0.85}
   </style></head><body>
   <div>
-    <div class="brand">${logoSvg}<span class="brand-name">Catalyse</span></div>
+    <div class="brand">${logoSvg}<span class="brand-name">Action Hub</span></div>
     <div class="title">${videoTitle}</div>
   </div>
   </body></html>`

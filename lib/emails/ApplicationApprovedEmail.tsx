@@ -12,9 +12,9 @@ export function ApplicationApprovedEmail({ name, appUrl }: ApplicationApprovedEm
   const loginUrl = `${appUrl}/login`
   return (
     <EmailLayout>
-      <Heading as="h2">Welcome to Catalyse!</Heading>
+      <Heading as="h2">Welcome to Action Hub!</Heading>
       <Text>{`Hi ${name},`}</Text>
-      <Text>Thank you for applying to join Catalyse PauseAI. Welcome to the community!</Text>
+      <Text>Thank you for applying to join PauseAI Action Hub. Welcome to the community!</Text>
       <Text>Your account has been approved and you can now sign in.</Text>
       <Section style={{ textAlign: 'center', margin: '32px 0' }}>
         <EmailButton href={loginUrl}>Sign In</EmailButton>

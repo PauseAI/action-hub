@@ -5,6 +5,7 @@ import { MutationObserver } from '@tanstack/react-query'
 import { prisma } from '@/lib/prisma'
 import { queryClient } from '@/lib/query-client'
 import {
+  createCoordinator,
   createVolunteer,
   createSuperAdmin,
   createChapter,
@@ -42,7 +43,7 @@ describe('Header', () => {
   it('shows login/signup when signed out, on desktop and in the mobile menu', async () => {
     await mount(null, '/')
     expect(await screen.findByRole('link', { name: 'Login' })).toHaveAttribute('href', '/login')
-    expect(screen.getByRole('link', { name: 'Catalyse' })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('link', { name: 'Action Hub' })).toHaveAttribute('href', '/')
     await userEvent.click(screen.getByLabelText('Open menu'))
     expect(document.body.style.overflow).toBe('hidden')
     expect(screen.getAllByRole('link', { name: 'Sign up' })).toHaveLength(2)
@@ -61,7 +62,7 @@ describe('Header', () => {
     expect(screen.getByRole('link', { name: 'Projects' })).toHaveClass('bg-primary')
     expect(screen.getByRole('link', { name: 'Projects' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('link', { name: 'People' })).not.toHaveClass('bg-primary')
-    expect(screen.getByRole('link', { name: 'Catalyse' })).toHaveAttribute('href', '/dashboard')
+    expect(screen.getByRole('link', { name: 'Action Hub' })).toHaveAttribute('href', '/dashboard')
     expect(screen.queryByText('Confirm your location')).toBeNull()
     await userEvent.click(nameButton)
     expect(screen.getByRole('link', { name: 'Global admin' })).toHaveAttribute('href', '/admin')
@@ -134,19 +135,25 @@ describe('Header', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
       const vol = await createVolunteer({ locationConfirmedAt: new Date() })
-      await mount(vol, '/projects')
-      const inbox = await screen.findByRole('link', { name: 'Inbox' })
       await prisma.notification.create({
         data: { volunteerId: vol.id, type: 'task_done', title: "Done: 'Leaflets'" },
       })
-      await act(() => vi.advanceTimersByTimeAsync(60_000))
+      await mount(vol, '/projects')
+      const inbox = await screen.findByRole('link', { name: /^Inbox/ })
+      // A tick that lands while the first count is still loading joins that request, which
+      // was made before the notification below, so let the first count show.
       expect(await within(inbox).findByRole('img', { name: 'New updates' })).toBeInTheDocument()
-
       await prisma.notification.create({
         data: { volunteerId: vol.id, type: 'mention', title: 'Sam mentioned you' },
       })
-      act(() => window.dispatchEvent(new Event('visibilitychange')))
+      await act(() => vi.advanceTimersByTimeAsync(60_000))
       await waitFor(() => expect(inbox).toHaveTextContent('Inbox, waiting for you: 1'))
+
+      await prisma.notification.create({
+        data: { volunteerId: vol.id, type: 'mention', title: 'Kim mentioned you' },
+      })
+      act(() => window.dispatchEvent(new Event('visibilitychange')))
+      await waitFor(() => expect(inbox).toHaveTextContent('Inbox, waiting for you: 2'))
     } finally {
       vi.useRealTimers()
     }
@@ -225,6 +232,26 @@ describe('Header', () => {
       `/volunteers/${vol.id}`,
     )
     expect(screen.queryByRole('link', { name: 'Privacy & data' })).toBeNull()
+  })
+
+  it('offers everyone the calls, and a coordinator the page to put them out, in both menus', async () => {
+    const coordinator = await createCoordinator(undefined, { locationConfirmedAt: new Date() })
+    await mount(coordinator, '/dashboard')
+    await userEvent.click(await screen.findByRole('button', { name: coordinator.name }))
+    expect(screen.getByRole('link', { name: 'Coordinate' })).toHaveAttribute('href', '/coordinate')
+    expect(screen.getByRole('link', { name: 'Calls for volunteers' })).toHaveAttribute(
+      'href',
+      '/calls',
+    )
+    await userEvent.click(screen.getByLabelText('Open menu'))
+    expect(screen.getAllByRole('link', { name: 'Coordinate' })).toHaveLength(2)
+
+    cleanup()
+    const vol = await createVolunteer({ locationConfirmedAt: new Date() })
+    await mount(vol, '/dashboard')
+    await userEvent.click(await screen.findByRole('button', { name: vol.name }))
+    expect(screen.getByRole('link', { name: 'Calls for volunteers' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Coordinate' })).toBeNull()
   })
 
   it("names a chapter's admin area for its staff, and offers none to a member", async () => {

@@ -9,6 +9,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRequireAuth } from '@/lib/hooks/auth'
 import { orpc } from '@/lib/orpc'
 import Button from '@/components/Button'
+import Count from '@/components/Count'
+import DashboardCalls from '@/components/DashboardCalls'
 import { DueChip, ProjectStatusBadge, WorkStatusBadge } from '@/components/StatusBadges'
 import { handedIn } from '@/lib/overdue'
 import WorkRow, { PersonAvatar, STRETCHED_LINK } from '@/components/WorkRow'
@@ -44,15 +46,6 @@ const LEGACY_HASHES: Record<string, string[]> = {
   '#tab-proposed': OTHER_FIRST,
   '#tab-applications': OTHER_FIRST,
   '#tab-suggested': ['find'],
-}
-
-function Count({ n }: { n: number }) {
-  if (n === 0) return null
-  return (
-    <span className="bg-chip text-chip-text text-xs px-2 py-0.5 rounded-full ml-2 align-middle">
-      {n}
-    </span>
-  )
 }
 
 function GettingStarted({
@@ -200,7 +193,7 @@ export default function HomePage() {
   })
 
   useEffect(() => {
-    document.title = 'Catalyse | Home'
+    document.title = 'Action Hub | Home'
   }, [])
 
   // Old `#tab-…` links open a section, then scroll to it once it exists; the notifications tab
@@ -408,7 +401,7 @@ export default function HomePage() {
       {welcome && (
         <Modal
           id="approval-welcome"
-          title="You're approved. Welcome to Catalyse!"
+          title="You're approved. Welcome to Action Hub!"
           isOpen
           onClose={() => dismissWelcome(welcome.notificationId)}
         >
@@ -494,6 +487,8 @@ export default function HomePage() {
                 </div>
               </section>
             )}
+
+            {(user.emailConfirmed || user.isAdmin) && <DashboardCalls />}
 
             {current.length === 0 && (
               <P className="text-text-light mb-8">
