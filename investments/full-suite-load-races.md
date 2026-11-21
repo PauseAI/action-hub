@@ -32,3 +32,4 @@ A test that races only under full-suite load fails one `check-all` run, passes 8
 - 2026-11-18: ses-sender's `check-all` (load average about 20 on 12 cores) timed out 17 tests across the access matrix, settings, bugs-triage, porting and primitives; rerun alone at that load, 16 still timed out; at load 5, 52/52 passed on the branch and on its base commit
 - 2026-11-18 (x2): a nudges-job change's `test:unit` timed out `projects-access` and `tasks-access` (two tests); alone on the base commit the pair failed five of 42 at 20 s
 - 2026-11-20 (x2): a Railway config change touching no app code: `check-all` timed out `tasks-access` and failed `app/coordinate/page.test.tsx` (the "Australia" checkbox not yet rendered), 8/8 alone; the `test:unit` rerun timed out `projects-access` instead
+- 2026-11-21: ses-sender's merge of main: `check-all` (load average about 17) timed out five `projects-access`/`tasks-access` tests; alone at that load, eight of 42 timed out
