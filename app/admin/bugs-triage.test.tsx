@@ -135,8 +135,9 @@ describe('admin bugs', () => {
     )
     await userEvent.click(within(openCard()).getByRole('button', { name: 'Post comment' }))
     await screen.findByText('Comment added')
+    // The count and the thread refetch separately, so wait for each.
     await within(openCard()).findByRole('button', { name: 'Discussion (1)', expanded: true })
-    expect(openCard()).toHaveTextContent('Looking at it now')
+    await within(openCard()).findByText('Looking at it now')
     expect(navigation.push).not.toHaveBeenCalled()
     await userEvent.click(within(openCard()).getByRole('button', { name: 'Discussion (1)' }))
     expect(openCard()).not.toHaveTextContent('Looking at it now')

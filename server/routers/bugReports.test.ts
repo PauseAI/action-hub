@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
-import { createVolunteer, createAdmin } from '@/test/factories'
+import { withoutAdminRights } from '@/lib/view-as'
+import { createVolunteer, createAdmin, createChapter, createChapterLead } from '@/test/factories'
 import { clientAs, anon } from '@/test/rpc'
 import { rateLimit } from '@/test/fakes/rate-limit'
 import { emails } from '@/test/fakes/email'
@@ -222,6 +223,38 @@ describe('bugReportComments', () => {
 })
 
 describe('admin.bugReports', () => {
+  it('lets only a global admin list, assign or unassign reports', async () => {
+    const admin = await createAdmin()
+    const volunteer = await createVolunteer()
+    const lead = await createChapterLead(await createChapter())
+    const { id } = await clientAs(volunteer).bugReports.create({
+      title: 'T',
+      description: 'Ten characters at least',
+    })
+    await prisma.bugReport.update({ where: { id }, data: { assigneeId: admin.id } })
+
+    const refused = [
+      clientAs(volunteer),
+      clientAs(lead),
+      clientAs(withoutAdminRights(admin), { viewingAsVolunteer: true }),
+    ]
+    for (const c of refused) {
+      await expect(c.admin.bugReports.list({})).rejects.toMatchObject({ code: 'FORBIDDEN' })
+      await expect(c.admin.bugReports.assign({ id, volunteerId: null })).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      })
+      await expect(
+        c.admin.bugReports.assign({ id, volunteerId: volunteer.id }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' })
+    }
+    await expect(anon().admin.bugReports.assign({ id, volunteerId: null })).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+    })
+    expect(await prisma.bugReport.findUnique({ where: { id } })).toMatchObject({
+      assigneeId: admin.id,
+    })
+  })
+
   it('lists with filters, assigns to approved volunteers, and updates status', async () => {
     const admin = await createAdmin()
     const reporter = await createVolunteer()
