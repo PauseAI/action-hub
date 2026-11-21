@@ -5,8 +5,8 @@ import { THEME_COLOR } from '@/lib/theme-color'
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: '/',
-    name: 'Catalyse | PauseAI Volunteer Platform',
-    short_name: 'Catalyse',
+    name: 'Action Hub | PauseAI Volunteer Platform',
+    short_name: 'Action Hub',
     description: 'PauseAI volunteer platform',
     start_url: '/dashboard',
     scope: '/',

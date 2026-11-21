@@ -383,7 +383,7 @@ export const adminApplicationsRouter = {
         await createNotification(
           volunteer.id,
           'application_approved',
-          'Approved: welcome to Catalyse',
+          'Approved: welcome to Action Hub',
           'Next: confirm your email and pick a first task.',
           volunteer.emailConfirmed ? '/projects' : '/verify-email',
         )

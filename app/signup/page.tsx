@@ -24,6 +24,7 @@ import {
 } from '@/lib/filter-options'
 import { OTHER_COUNTRY } from '@/lib/countries'
 import { useCountries } from '@/lib/hooks/countries'
+import { SUPPORT_EMAIL } from '@/lib/support-email'
 
 interface SelectedSkill {
   skillId: number
@@ -786,8 +787,8 @@ export default function SignupPage() {
             )}
             <P className="text-text-light text-sm mt-4">
               Questions? Contact{' '}
-              <a href="mailto:uk@pauseai.info" className="underline">
-                uk@pauseai.info
+              <a href={`mailto:${SUPPORT_EMAIL}`} className="underline">
+                {SUPPORT_EMAIL}
               </a>
             </P>
           </div>
@@ -807,7 +808,7 @@ export default function SignupPage() {
       )}
       <main className="container py-5 pb-15">
         <div className="max-w-2xl mx-auto">
-          <H1>{isGoogle ? 'Complete your application' : 'Join Catalyse'}</H1>
+          <H1>{isGoogle ? 'Complete your application' : 'Join Action Hub'}</H1>
           <P className="text-text-light mb-6">
             {isGoogle
               ? 'Your Google account is verified. Fill in your details to apply.'
@@ -990,7 +991,8 @@ export default function SignupPage() {
                   </label>
                   <P className="text-sm text-text-light mt-1 mb-0 ml-6">
                     Other volunteers can find you and ask to see your contact details. Turn this off
-                    and they can&apos;t.
+                    and they can&apos;t; your chapter&apos;s organisers and PauseAI&apos;s
+                    coordinators still can.
                   </P>
                 </div>
                 <div>

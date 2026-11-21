@@ -1,14 +1,15 @@
 import { z } from 'zod'
 import { ORPCError } from '@orpc/server'
-import { logger } from '@/lib/logger'
 import { prisma } from '@/lib/prisma'
 import { sendRelayMessage, isEmailConfigured } from '@/lib/email'
+import { emailIfChosen, heldForDigest, routeFor, type Route } from '@/lib/notify'
 import { checkRateLimit } from '@/lib/rate-limit'
-import { canReach } from '@/lib/contact'
+import { canReach, seesFullProfile } from '@/lib/contact'
 import { inChapter } from '@/lib/chapter-access'
+import { loadAccess } from '@/lib/chapter-access-server'
 import { projectScopeWhere } from '@/lib/work-item'
 import { authedProcedure, approvedProcedure } from '../procedures'
-import { WorkItemType } from '@/generated/prisma/enums'
+import { ApprovalStatus, WorkItemType } from '@/generated/prisma/enums'
 import type { Context } from '../context'
 
 const ContactSchema = z.object({
@@ -39,8 +40,8 @@ function limitSends(context: Pick<Context, 'request'>) {
 }
 
 /**
- * Stores one message in its conversation, tells the recipient in the Inbox, and emails them a
- * copy. `threadId` is null for a new conversation, which then becomes its own thread.
+ * Stores one message in its conversation with the recipient's Inbox notification, then emails
+ * them a copy if that is their choice for messages. `threadId` is null for a new conversation, which then becomes its own thread.
  */
 async function deliver(
   sender: Sender,
@@ -54,6 +55,12 @@ async function deliver(
     shareEmail: boolean
   },
 ) {
+  const title = `Message from ${sender.name}`
+  // A failed lookup still emails the copy: for a message, the email is the message itself.
+  const route: Route = (await routeFor(recipient.id, 'message_received', true)) ?? {
+    delivery: 'email',
+    to: recipient.email ? { name: recipient.name, email: recipient.email } : null,
+  }
   const created = await prisma.$transaction(async (tx) => {
     const row = await tx.message.create({
       data: {
@@ -66,32 +73,40 @@ async function deliver(
       },
     })
     const threadId = message.threadId ?? row.id
-    await tx.notification.create({
+    const note = await tx.notification.create({
       data: {
         volunteerId: recipient.id,
         type: 'message_received',
-        title: `Message from ${sender.name}`,
+        title,
         body: message.subject,
         link: `/inbox/messages/${threadId}`,
         entityId: threadId,
+        inDigest: heldForDigest(route),
       },
     })
-    return { id: row.id, threadId }
+    return { id: row.id, threadId, noteId: note.id }
   })
 
-  if (recipient.email && isEmailConfigured()) {
-    sendRelayMessage({
-      to: recipient.email,
-      toName: recipient.name,
-      fromName: sender.name,
-      replyTo: message.shareEmail ? sender.email : null,
-      subject: message.subject,
-      message: message.body,
-      projectTitle: message.projectTitle ?? undefined,
-      threadId: created.threadId,
-    }).catch((e) => logger.error(e, '[EMAIL ERROR]'))
-  }
-  return created
+  emailIfChosen(
+    route,
+    [created.noteId],
+    { title },
+    {
+      send: async (to, name) =>
+        isEmailConfigured() &&
+        sendRelayMessage({
+          to,
+          toName: name,
+          fromName: sender.name,
+          replyTo: message.shareEmail ? sender.email : null,
+          subject: message.subject,
+          message: message.body,
+          projectTitle: message.projectTitle ?? undefined,
+          threadId: created.threadId,
+        }),
+    },
+  )
+  return { id: created.id, threadId: created.threadId }
 }
 
 /** The first message of a thread the viewer takes part in, or NOT_FOUND. */
@@ -104,10 +119,28 @@ async function loadThread(threadId: number, viewerId: number) {
     },
     include: {
       from: {
-        select: { id: true, name: true, email: true, deletedAt: true, nationalChapterId: true },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          emailConfirmed: true,
+          isAdmin: true,
+          approvalStatus: true,
+          deletedAt: true,
+          nationalChapterId: true,
+        },
       },
       to: {
-        select: { id: true, name: true, email: true, deletedAt: true, nationalChapterId: true },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          emailConfirmed: true,
+          isAdmin: true,
+          approvalStatus: true,
+          deletedAt: true,
+          nationalChapterId: true,
+        },
       },
       relatedWorkItem: { select: { id: true, title: true } },
     },
@@ -115,6 +148,19 @@ async function loadThread(threadId: number, viewerId: number) {
   if (!root) throw new ORPCError('NOT_FOUND', { message: 'Conversation not found' })
   const other = root.fromVolunteerId === viewerId ? root.to : root.from
   return { root, other }
+}
+
+/**
+ * Whether a conversation can go on: both people in one chapter, or either of them one who may
+ * reach the other anywhere (seesFullProfile).
+ */
+async function canContinue(
+  me: Pick<Sender, 'id'> & { approvalStatus: ApprovalStatus | null },
+  access: Context['access'],
+  other: Awaited<ReturnType<typeof loadThread>>['other'],
+): Promise<boolean> {
+  if (inChapter(access, other.nationalChapterId) || seesFullProfile(access, other)) return true
+  return seesFullProfile(await loadAccess(other), me)
 }
 
 export const messagesRouter = {
@@ -186,8 +232,10 @@ export const messagesRouter = {
         subject: root.subject,
         with: { id: other.id, name: other.name },
         relatedProject: root.relatedWorkItem,
-        // A conversation from before chapters can cross them: it stays readable, not answerable.
-        canReply: other.deletedAt === null && inChapter(context.access, other.nationalChapterId),
+        // A conversation from before chapters can cross them: it stays readable, not answerable,
+        // unless one side is a global admin or coordinator.
+        canReply:
+          other.deletedAt === null && (await canContinue(context.volunteer, context.access, other)),
         messages: messages.map((m) => ({
           id: m.id,
           fromMe: m.fromVolunteerId === me,
@@ -211,9 +259,9 @@ export const messagesRouter = {
       const sender = context.volunteer
       const { root, other } = await loadThread(input.threadId, sender.id)
       if (other.deletedAt) {
-        throw new ORPCError('BAD_REQUEST', { message: 'This volunteer has left Catalyse' })
+        throw new ORPCError('BAD_REQUEST', { message: 'This volunteer has left Action Hub' })
       }
-      if (!inChapter(context.access, other.nationalChapterId)) {
+      if (!(await canContinue(context.volunteer, context.access, other))) {
         throw new ORPCError('BAD_REQUEST', {
           message: `${other.name} is in another national chapter, so you can no longer message them`,
         })

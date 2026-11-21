@@ -102,24 +102,24 @@ const SAMPLE_PROJECTS = [
 
 const EMAIL_PREVIEW_REGISTRY: Record<string, { subject: string; build: () => Promise<string> }> = {
   'welcome-google': {
-    subject: 'Welcome to Catalyse!',
+    subject: 'Welcome to Action Hub!',
     build: () => buildWelcomeHtml('Alex', env.APP_URL),
   },
   'welcome-and-confirm': {
-    subject: 'Welcome to Catalyse: please confirm your email',
+    subject: 'Welcome to Action Hub: please confirm your email',
     build: () =>
       buildWelcomeAndConfirmHtml('Alex', `${env.APP_URL}/verify-email?token=sample-token-abc123`),
   },
   'application-received': {
-    subject: 'Your Catalyse application has been received',
+    subject: 'Your Action Hub application has been received',
     build: () => buildApplicationReceivedHtml('Alex'),
   },
   'application-approved': {
-    subject: 'Your Catalyse application has been approved',
+    subject: 'Your Action Hub application has been approved',
     build: () => buildApplicationApprovedHtml('Alex', env.APP_URL),
   },
   'application-rejected': {
-    subject: 'Update on your Catalyse application',
+    subject: 'Update on your Action Hub application',
     build: () =>
       buildApplicationRejectedHtml(
         'Alex',
@@ -127,11 +127,11 @@ const EMAIL_PREVIEW_REGISTRY: Record<string, { subject: string; build: () => Pro
       ),
   },
   'pending-applications-summary': {
-    subject: '3 pending applications on Catalyse',
+    subject: '3 pending applications on Action Hub',
     build: () => buildPendingApplicationsSummaryHtml(3, env.APP_URL),
   },
   'password-reset': {
-    subject: 'Reset your Catalyse password',
+    subject: 'Reset your Action Hub password',
     build: () =>
       buildPasswordResetHtml(`${env.APP_URL}/reset-password?token=sample-token-abc123`, 'Alex'),
   },
@@ -190,7 +190,7 @@ const EMAIL_PREVIEW_REGISTRY: Record<string, { subject: string; build: () => Pro
       ),
   },
   'relay-message': {
-    subject: '[Catalyse] Collaboration on AI Safety Explainer Series',
+    subject: '[Action Hub] Collaboration on AI Safety Explainer Series',
     build: () =>
       buildRelayMessageHtml(
         'Alex',
@@ -207,7 +207,7 @@ const EMAIL_PREVIEW_REGISTRY: Record<string, { subject: string; build: () => Pro
     build: () => buildDigestHtml('Alex', env.APP_URL, SAMPLE_PROJECTS, true),
   },
   'digest-general': {
-    subject: "What's new on Catalyse",
+    subject: "What's new on Action Hub",
     build: () => buildDigestHtml('Alex', env.APP_URL, SAMPLE_PROJECTS, false),
   },
   'task-nudge': {

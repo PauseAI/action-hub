@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   static-checks:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       # Never connected to: `prisma.config.ts` refuses to load without a URL, and the
       # generated client is needed for typecheck.
@@ -38,6 +38,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run format:check
+      # Fails on any critical npm advisory, so a vulnerable dependency can't reach main unseen.
+      - run: npm run audit:critical
       # Static security audit of this file: dangerous triggers, template injection, unpinned
       # actions, broad permissions, leaked credentials. Runs the digest-pinned zizmor image.
       - uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
@@ -48,7 +50,7 @@ jobs:
           min-severity: low
 
   unit-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:18
@@ -80,7 +82,7 @@ jobs:
         run: npm run --silent coverage:report >> "$GITHUB_STEP_SUMMARY"
 
   e2e-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:18

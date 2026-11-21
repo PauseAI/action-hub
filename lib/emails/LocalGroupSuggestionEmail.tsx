@@ -5,7 +5,7 @@ import { EmailFooter } from './components/Footer'
 
 const LOCAL_GROUP_SUGGESTION_MESSAGES: Record<string, (groupName: string) => string> = {
   accepted: (g) =>
-    `Great news! Your suggestion <strong>"${g}"</strong> has been added as a new local group on Catalyse.`,
+    `Great news! Your suggestion <strong>"${g}"</strong> has been added as a new local group on Action Hub.`,
   merge: (g) =>
     `Your suggestion <strong>"${g}"</strong> has been merged with an existing local group.`,
   on_hold: (g) =>
@@ -44,7 +44,7 @@ export function LocalGroupSuggestionEmail({
         </Text>
       )}
       <Section style={{ textAlign: 'center', margin: '32px 0' }}>
-        <EmailButton href={appUrl}>Visit Catalyse</EmailButton>
+        <EmailButton href={appUrl}>Visit Action Hub</EmailButton>
       </Section>
       <EmailFooter appUrl={appUrl} />
     </EmailLayout>

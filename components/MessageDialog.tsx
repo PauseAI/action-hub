@@ -76,7 +76,7 @@ export default function MessageDialog({
     <Modal id={id} title={title} isOpen onClose={onClose}>
       <P className="text-sm text-text-light mb-4">
         {recipientName} will see this in their Inbox and get a copy by email. You can both reply on
-        Catalyse; your email address stays private unless you share it below.
+        Action Hub; your email address stays private unless you share it below.
       </P>
       {channels.length > 0 && (
         <div className="mb-5">

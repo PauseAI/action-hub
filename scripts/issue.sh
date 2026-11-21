@@ -47,7 +47,7 @@ if ! gh auth status >/dev/null 2>&1; then
 fi
 
 # Pre-flight: prevent concurrent sessions
-LOCKDIR="/tmp/catalyse-issue-session.lock"
+LOCKDIR="/tmp/action-hub-issue-session.lock"
 if ! mkdir "$LOCKDIR" 2>/dev/null; then
   echo "Error: another issue session is already running (lock at $LOCKDIR)." >&2
   echo "If you're sure none is running, remove the lock: rm -rf $LOCKDIR" >&2
@@ -98,7 +98,7 @@ ${GIT_DIFF_STAT}"
 No commits on this branch yet ahead of main."
   fi
 
-  PROMPT="You are resuming work on GitHub issue #${ISSUE_NUMBER} in the catalyse repository. A previous session was working on this issue but has ended. You are starting a fresh session to continue.
+  PROMPT="You are resuming work on GitHub issue #${ISSUE_NUMBER} in the action-hub repository. A previous session was working on this issue but has ended. You are starting a fresh session to continue.
 
 URL: ${ISSUE_URL}
 Title: ${ISSUE_TITLE}
@@ -191,7 +191,7 @@ else
     echo "Created branch: $BRANCH_NAME"
   fi
 
-  PROMPT="You are working on GitHub issue #${ISSUE_NUMBER} in the catalyse repository.
+  PROMPT="You are working on GitHub issue #${ISSUE_NUMBER} in the action-hub repository.
 
 URL: ${ISSUE_URL}
 Title: ${ISSUE_TITLE}

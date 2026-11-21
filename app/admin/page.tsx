@@ -85,7 +85,7 @@ export default function AdminLandingPage() {
           globalOnly: true,
         },
         { href: '/admin/required-actions', label: 'Outstanding actions', globalOnly: true },
-        { href: '/admin/team', label: 'Global admins', globalOnly: true },
+        { href: '/admin/team', label: 'Global admins and coordinators', globalOnly: true },
       ],
     },
     {
@@ -93,6 +93,7 @@ export default function AdminLandingPage() {
       links: [
         { href: '/admin/triage', label: 'Triage queue', count: counts?.pendingTriage },
         { href: '/admin/projects', label: 'Org projects' },
+        { href: '/admin/roles', label: 'Roles and permissions' },
       ],
     },
     {

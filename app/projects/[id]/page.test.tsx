@@ -84,7 +84,7 @@ describe('project page — visitor', () => {
     })
     await mount(project.id, me)
     await screen.findByRole('heading', { name: 'Visible project' })
-    expect(document.title).toBe('Catalyse | Visible project')
+    expect(document.title).toBe('Action Hub | Visible project')
     // Overview first: the description, skills and the doc link.
     expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('link', { name: 'Open project doc →' })).toHaveAttribute(
@@ -151,7 +151,7 @@ describe('project page — visitor', () => {
     // It says how the message is delivered, and Escape closes it with focus back on the button.
     expect(
       within(screen.getByRole('dialog', { name: 'Message owner' })).getByText(
-        `${owner.name} will see this in their Inbox and get a copy by email. You can both reply on Catalyse; your email address stays private unless you share it below.`,
+        `${owner.name} will see this in their Inbox and get a copy by email. You can both reply on Action Hub; your email address stays private unless you share it below.`,
       ),
     ).toBeInTheDocument()
     await userEvent.keyboard('{Escape}')
@@ -2118,8 +2118,8 @@ describe('project page — remaining edges', () => {
     const { clientAs } = await import('@/test/rpc')
     const file = await clientAs(owner).projects.exportPlan({ projectId: project.id })
     await mount(project.id, owner)
-    await screen.findByRole('heading', { name: 'Contact edge' })
-    await userEvent.click(screen.getByRole('button', { name: 'Export / Import' }))
+    // The first paint is the cached project as the last viewer saw it, with their permissions.
+    await userEvent.click(await screen.findByRole('button', { name: 'Export / Import' }))
     const edited = { ...file, project: { ...file.project, title: 'Imported title' } }
     fireEvent.change(screen.getByLabelText('Paste export JSON'), {
       target: { value: JSON.stringify(edited) },
