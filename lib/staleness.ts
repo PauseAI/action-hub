@@ -18,6 +18,11 @@ export function daysQuiet(updatedAt: Date | string | null, now = new Date()): nu
 export const TASK_REMINDER_AFTER_DAYS = 14
 export const TASK_FINAL_WARNING_AFTER_DAYS = 21
 export const TASK_RELEASE_AFTER_DAYS = 28
+/**
+ * The least notice the final warning gives before release: the gap the schedule above leaves
+ * between them, kept when the warning goes out late.
+ */
+export const TASK_RELEASE_NOTICE_DAYS = TASK_RELEASE_AFTER_DAYS - TASK_FINAL_WARNING_AFTER_DAYS
 
 /** The release rule as volunteers read it, on the task page and the privacy page. */
 export const TASK_INACTIVITY_RULE = `Post an update within ${TASK_REMINDER_AFTER_DAYS} days. With no update we'll remind you at ${TASK_REMINDER_AFTER_DAYS} days, warn you at ${TASK_FINAL_WARNING_AFTER_DAYS}, and release the task at ${TASK_RELEASE_AFTER_DAYS}.`

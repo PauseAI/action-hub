@@ -134,8 +134,8 @@ export const journalistOutreachRouter = {
       return { token: await createOutreachSession(participant.id), email: participant.email }
     }),
 
-  /** Anyone logged in to Catalyse skips the email link and joins as their account email. */
-  catalyseSignIn: authedProcedure.handler(async ({ context }) => {
+  /** Anyone logged in to Action Hub skips the email link and joins as their account email. */
+  actionHubSignIn: authedProcedure.handler(async ({ context }) => {
     const email = context.volunteer.email?.toLowerCase()
     if (!email) {
       throw new ORPCError('BAD_REQUEST', { message: 'Your account has no email address.' })

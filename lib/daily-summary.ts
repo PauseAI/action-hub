@@ -68,9 +68,9 @@ export function summarySections(lines: SummaryLine[]): SummarySection[] {
   return sections
 }
 
-/** "Catalyse: 3 things need you today", or a quieter subject when nothing is urgent. */
+/** "Action Hub: 3 things need you today", or a quieter subject when nothing is urgent. */
 export function summarySubject(lines: SummaryLine[]): string {
   const urgent = lines.filter((l) => URGENT.includes(l.kind)).length
-  if (urgent === 0) return 'Catalyse: your daily summary'
-  return `Catalyse: ${urgent} ${urgent === 1 ? 'thing needs' : 'things need'} you today`
+  if (urgent === 0) return 'Action Hub: your daily summary'
+  return `Action Hub: ${urgent} ${urgent === 1 ? 'thing needs' : 'things need'} you today`
 }

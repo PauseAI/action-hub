@@ -19,7 +19,7 @@ export const env = {
     return process.env.RESEND_API_KEY
   },
   get FROM_EMAIL(): string {
-    return process.env.FROM_EMAIL ?? 'Catalyse <noreply@pauseai.uk>'
+    return process.env.FROM_EMAIL ?? 'Action Hub <noreply@pauseai.uk>'
   },
   get REPLY_TO_EMAIL(): string | undefined {
     return process.env.REPLY_TO_EMAIL

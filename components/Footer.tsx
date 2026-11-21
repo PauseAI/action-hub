@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { orpc } from '@/lib/orpc'
+import { SUPPORT_EMAIL } from '@/lib/support-email'
 
 export default function Footer() {
   const { data: versionData } = useQuery({
@@ -11,7 +12,9 @@ export default function Footer() {
   })
   const sha = versionData?.sha && versionData.sha !== 'dev' ? versionData.sha.slice(0, 7) : null
   const prMatch =
-    typeof versionData?.env === 'string' ? versionData.env.match(/^catalyse-pr-(\d+)$/) : null
+    typeof versionData?.env === 'string'
+      ? versionData.env.match(/^(?:catalyse|action-hub)-pr-(\d+)$/)
+      : null
   const prNumber = prMatch ? parseInt(prMatch[1]) : null
 
   return (
@@ -21,7 +24,7 @@ export default function Footer() {
           Privacy &amp; Data
         </Link>
         <a
-          href="mailto:matilda@pauseai.info"
+          href={`mailto:${SUPPORT_EMAIL}`}
           className="underline hover:text-brand-text transition-colors"
         >
           Contact
@@ -36,7 +39,7 @@ export default function Footer() {
         </a>
         {prNumber && (
           <a
-            href={`https://github.com/PauseAI/catalyse/pull/${prNumber}`}
+            href={`https://github.com/PauseAI/action-hub/pull/${prNumber}`}
             target="_blank"
             rel="noopener noreferrer"
             className="underline hover:text-brand-text transition-colors"

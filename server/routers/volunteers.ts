@@ -1,14 +1,15 @@
 import { z } from 'zod'
 import { ORPCError } from '@orpc/server'
+import { saveDeliveries, unchoosableTypes } from '@/lib/notification-preferences'
 import { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
 import { groupIn, placement } from '@/lib/chapter-placement'
 import { redactVolunteer } from '@/lib/auth'
-import { UpdateVolunteerSchema } from '@/lib/schemas'
+import { TimeZoneSchema, UpdateVolunteerSchema } from '@/lib/schemas'
 import { projectScopeWhere } from '@/lib/work-item'
 import { historySelect, historyWhere, projectHistory } from '@/lib/volunteer-history'
 import { contactRelations } from '@/lib/contact'
-import { canAdminChapter } from '@/lib/chapter-access'
+import { canAdminChapter, seesEveryChapter } from '@/lib/chapter-access'
 import { peopleInfo, viewableVolunteers } from '@/lib/people'
 import { chapterFilter } from '@/lib/chapter-access-server'
 import { isActiveRecently } from '@/lib/activity'
@@ -27,7 +28,7 @@ export const volunteersRouter = {
       z.object({
         skillIds: z.array(z.number().int()).optional(),
         search: z.string().optional(),
-        /** A global admin's choice of chapter; everyone else sees their own. */
+        /** A global admin's or coordinator's choice of chapter; everyone else sees their own. */
         chapter: z.union([z.number().int(), z.literal('pool')]).optional(),
         localGroup: z.string().optional(),
         limit: z.number().int().min(1).max(100).optional().default(50),
@@ -36,8 +37,10 @@ export const volunteersRouter = {
     )
     .handler(async ({ input, context }) => {
       const currentVolunteer = context.volunteer
-      // The directory is the viewer's chapter's, and its staff see profiles hidden from it.
-      const isAdmin = canAdminChapter(context.access, context.access.chapterId)
+      // The directory is the viewer's chapter's, and its staff see profiles hidden from it. A
+      // global admin or coordinator sees every chapter's, hidden profiles included.
+      const seesAll = seesEveryChapter(context.access)
+      const seesHidden = seesAll || canAdminChapter(context.access, context.access.chapterId)
 
       // A global admin sees, and searches by, each volunteer's login address, and sees which
       // accounts are marked as another's duplicate.
@@ -67,8 +70,8 @@ export const volunteersRouter = {
 
       const where: Record<string, unknown> = {
         deletedAt: null,
-        nationalChapterId: chapterFilter(context.access, input.chapter),
-        ...(isAdmin ? {} : { consentMakeProfileVisibleInDirectory: true }),
+        nationalChapterId: chapterFilter(context.access, input.chapter, seesAll),
+        ...(seesHidden ? {} : { consentMakeProfileVisibleInDirectory: true }),
         approvalStatus: ApprovalStatus.approved,
         ...(input.skillIds && input.skillIds.length > 0
           ? { skills: { some: { skillId: { in: input.skillIds } } } }
@@ -128,7 +131,7 @@ export const volunteersRouter = {
           otherSkills: v.otherSkills,
           localGroup: v.group?.name ?? null,
           createdAt: v.createdAt,
-          hiddenFromDirectory: isAdmin ? !v.consentMakeProfileVisibleInDirectory : false,
+          hiddenFromDirectory: seesHidden ? !v.consentMakeProfileVisibleInDirectory : false,
           skills: v.skills.map((vs) => ({
             id: vs.skill.id,
             categoryId: vs.skill.categoryId,
@@ -192,7 +195,8 @@ export const volunteersRouter = {
       const isAdmin = canAdminChapter(context.access, vol.nationalChapterId)
 
       // Contact details go only to people who work with the volunteer, or whom they have
-      // accepted a contact request from (lib/contact.ts); their chapter's staff see them too.
+      // accepted a contact request from; their chapter's staff and coordinators see them too
+      // (lib/contact.ts).
       const [relations, incoming] = await Promise.all([
         contactRelations(currentVolunteer, context.access, [vol.id]),
         prisma.contactRequest.findFirst({
@@ -309,6 +313,17 @@ export const volunteersRouter = {
     return { message: 'Application resubmitted for review' }
   }),
 
+  /** Records the browser's time zone for someone who has none yet; a chosen one is kept. */
+  detectTimeZone: authedProcedure
+    .input(z.object({ timeZone: TimeZoneSchema }))
+    .handler(async ({ input, context }) => {
+      const { count } = await prisma.volunteer.updateMany({
+        where: { id: context.volunteer.id, timeZone: null },
+        data: { timeZone: input.timeZone },
+      })
+      return { saved: count > 0 }
+    }),
+
   updateMe: authedProcedure.input(UpdateVolunteerSchema).handler(async ({ input, context }) => {
     const volunteer = context.volunteer
     const data: Record<string, unknown> = { updatedAt: new Date() }
@@ -325,8 +340,10 @@ export const volunteersRouter = {
       'location',
       'otherSkills',
       'emailDigest',
-      'emailMutedCategories',
       'dailySummary',
+      'timeZone',
+      'digestFrequency',
+      'digestHour',
       'applicationMessage',
     ] as const
     for (const field of scalarFields) {
@@ -370,8 +387,25 @@ export const volunteersRouter = {
     }
 
     const skillIds = input.skillIds
+    const preferences = input.notificationPreferences
+    if (preferences) {
+      const refused = unchoosableTypes(preferences)
+      if (refused.length > 0) {
+        throw new ORPCError('BAD_REQUEST', {
+          message: `These notifications have no choice to make: ${refused.join(', ')}`,
+        })
+      }
+    }
 
     const [vol] = await prisma.$transaction(async (tx) => {
+      if (preferences) {
+        await saveDeliveries(
+          tx,
+          volunteer.id,
+          { isTechnicalAdmin: !!volunteer.isTechnicalAdmin },
+          preferences,
+        )
+      }
       const updated = await tx.volunteer.update({
         where: { id: volunteer.id },
         data,
