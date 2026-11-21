@@ -1,5 +1,5 @@
 // Calls /api/cron/daily once and exits non-zero if it fails. Run hourly by the cron service
-// (railway.cron.toml), which carries only Node and this file, so it imports nothing but Node.
+// (.railway/railway.ts), which carries only Node and this file, so it imports nothing but Node.
 //
 // Environment:
 //   CRON_SECRET            required; sent as the bearer token
