@@ -303,8 +303,10 @@ describe('admin.bugReports', () => {
       assigneeId: null,
       commentCount: 0,
     })
-    await c.bugReportComments.add({ bugReportId: id, content: 'On it' })
+    const comment = await c.bugReportComments.add({ bugReportId: id, content: 'On it' })
     expect((await c.admin.bugReports.list({ category: 'feature' }))[0].commentCount).toBe(1)
+    await c.bugReportComments.delete({ id: comment.id })
+    expect((await c.admin.bugReports.list({ category: 'feature' }))[0].commentCount).toBe(0)
 
     await expect(c.admin.bugReports.update({ id: 999_999 })).rejects.toMatchObject({
       code: 'NOT_FOUND',

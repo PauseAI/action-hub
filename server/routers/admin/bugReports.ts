@@ -47,7 +47,7 @@ export const adminBugReportsRouter = {
         include: {
           reporter: { select: { name: true } },
           assignee: { select: { name: true } },
-          _count: { select: { comments: true } },
+          _count: { select: { comments: { where: { deletedAt: null } } } },
         },
         orderBy: { createdAt: 'desc' },
       })

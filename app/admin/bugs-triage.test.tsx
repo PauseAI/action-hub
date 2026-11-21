@@ -113,8 +113,10 @@ describe('admin bugs', () => {
       assigneeId: null,
     })
 
-    // Picking the status a report already has changes nothing.
+    // Picking the status a report already has changes nothing; closing it is left to its page.
     await userEvent.click(screen.getByRole('button', { name: 'Status of Broken button' }))
+    expect(screen.queryByRole('option', { name: 'Resolved' })).toBeNull()
+    expect(screen.queryByRole('option', { name: "Won't fix" })).toBeNull()
     await userEvent.click(screen.getByRole('option', { name: 'Open' }))
     await userEvent.click(screen.getByRole('button', { name: 'Status of Broken button' }))
     await userEvent.click(screen.getByRole('option', { name: 'In progress' }))
@@ -176,7 +178,7 @@ describe('admin bugs', () => {
     )!
     await userEvent.click(within(again).getByRole('button', { name: 'Status of Fragile' }))
     localStorage.setItem('authToken', 'stale')
-    await userEvent.click(screen.getByRole('option', { name: "Won't fix" }))
+    await userEvent.click(screen.getByRole('option', { name: 'In progress' }))
     await screen.findByText('Unauthorized')
   })
 })

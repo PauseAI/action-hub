@@ -75,6 +75,9 @@ function exportReportsAsMarkdown(reports: BugReports): void {
 
 const CATEGORY_OPTIONS = [{ value: 'all', label: 'All' }, ...BUG_CATEGORY_OPTIONS] as const
 
+/** Closing a report emails its reporter with the resolution notes, so it is done on the report's page. */
+const CLOSING_STATUSES = new Set<string>(['resolved', 'wont_fix'])
+
 const STATUS_SECTIONS = BUG_STATUS_OPTIONS.map((s) => ({
   status: s.value,
   label: s.label,
@@ -106,7 +109,8 @@ export default function AdminBugsPage() {
 
   const statusMutation = useMutation({
     ...orpc.admin.bugReports.update.mutationOptions(),
-    onSuccess: () => {
+    onSuccess: (_data, { status }) => {
+      if (status) showToast(`Moved to ${bugStatusLabel(status)}`, 'success')
       void queryClient.invalidateQueries({ queryKey: listQuery.queryKey })
     },
     onError: (err: unknown) => {
@@ -197,15 +201,7 @@ export default function AdminBugsPage() {
                       report={r}
                       viewerId={user.id}
                       onNavigate={() => router.push(`/bugs/${r.id}`)}
-                      onStatusChange={(status) =>
-                        statusMutation.mutate(
-                          { id: r.id, status },
-                          {
-                            onSuccess: () =>
-                              showToast(`Moved to ${bugStatusLabel(status)}`, 'success'),
-                          },
-                        )
-                      }
+                      onStatusChange={(status) => statusMutation.mutate({ id: r.id, status })}
                     />
                   ))}
                 </div>
@@ -285,7 +281,9 @@ function BugReportCard({
               label="Status"
               ariaLabel={`Status of ${r.title}`}
               value={r.status}
-              options={BUG_STATUS_OPTIONS}
+              options={BUG_STATUS_OPTIONS.filter(
+                (s) => !CLOSING_STATUSES.has(s.value) || s.value === r.status,
+              )}
               onChange={(status) => status !== r.status && onStatusChange(status)}
             />
           </div>
