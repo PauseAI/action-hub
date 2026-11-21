@@ -32,3 +32,4 @@ A test that races only under full-suite load fails one `check-all` run, passes 8
 - 2026-11-18: `check-all` failed five e2e tests in `38` and `39` (a 5 s `lagDays` poll, a 500 from `projects.getById`, missing elements), in a change touching neither; both files passed 16/16 run alone
 - 2026-11-18 (x2): a nudges-job change's `test:unit` timed out `projects-access` and `tasks-access` (two tests); alone on the base commit the pair failed five of 42 at 20 s
 - 2026-11-20 (x2): a Railway config change touching no app code: `check-all` timed out `tasks-access` and failed `app/coordinate/page.test.tsx` (the "Australia" checkbox not yet rendered), 8/8 alone; the `test:unit` rerun timed out `projects-access` instead
+- 2026-11-21: a backup change touching no router: `check-all` timed out 40 tests in 14 unrelated files (host load average about 23 on 12 cores); rerun alone at load 12, `projects-access` and `tasks-access` still timed out nine
