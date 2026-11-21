@@ -1,7 +1,8 @@
 import path from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
 
-function loadEnvFile(filePath: string): void {
+/** Sets each `KEY=value` in `filePath` that the environment does not already hold. */
+export function loadEnvFile(filePath: string): void {
   if (!existsSync(filePath)) return
   for (const line of readFileSync(filePath, 'utf8').split('\n')) {
     const trimmed = line.trim()
@@ -41,4 +42,25 @@ export function resolveDbUrl(): string {
   const url = override ?? process.env.DATABASE_URL
   if (!url) throw new Error('DATABASE_URL is not set')
   return url
+}
+
+// Prisma accepts pool and driver options in the URL that libpq rejects as unknown.
+const PRISMA_ONLY_PARAMS = [
+  'schema',
+  'pgbouncer',
+  'connection_limit',
+  'pool_timeout',
+  'socket_timeout',
+  'statement_cache_size',
+  'sslcert',
+  'sslidentity',
+  'sslpassword',
+  'sslaccept',
+]
+
+/** `prismaUrl` without the options only Prisma understands, for `pg` and the libpq tools. */
+export function libpqUrl(prismaUrl: string): string {
+  const url = new URL(prismaUrl)
+  for (const p of PRISMA_ONLY_PARAMS) url.searchParams.delete(p)
+  return url.toString()
 }

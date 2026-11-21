@@ -8,8 +8,7 @@
  */
 
 import { Client } from 'pg'
-import { libpqUrl } from '../jobs/backup'
-import { resolveDbUrl } from '../lib/db-url'
+import { libpqUrl, resolveDbUrl } from '../lib/db-url'
 import { logger } from '../lib/logger'
 import { databaseName, markDisposable } from './disposable-db'
 

@@ -50,7 +50,7 @@ Action Hub connects volunteers with projects, matching skills to needs and enabl
 - npm
 - A PostgreSQL 18 server. `docker compose up -d` starts one matching CI and production; a
   native install (Homebrew, apt, Postgres.app) works too — set `DATABASE_URL` accordingly.
-  `pg_dump`/`pg_restore` are needed for `fetch-prod-db` and the backup job; `local-setup`
+  `pg_dump`/`pg_restore` are needed for `fetch-prod-db` and the pre-deploy backup; `local-setup`
   installs them if missing (`npm run install:pg-tools`: Homebrew on macOS, apt/dnf/pacman/apk on Linux).
 
 ### Installation
@@ -106,7 +106,14 @@ The local dev database is a copy of prod, restored into whatever `DATABASE_URL` 
 npm run fetch-prod-db && npm run migrate
 ```
 
-`fetch-prod-db` downloads the latest prod `pg_dump` from B2, **drops and recreates the `public` schema** of the target database, and restores into it. It then runs the same scrub as `anonymise-db` (PII replaced, dev accounts seeded) and empties the database again if that fails, so raw prod data is never left behind. Every account gets the same known password, so an anonymised copy must not sit behind a public URL. `anonymise-db` alone re-scrubs a database that is already restored. `scripts/anonymise-columns.ts` records how each text column is treated, and a test fails when a new column is missing from it. Both scripts refuse to run when `RAILWAY_ENVIRONMENT_NAME=production`, and `fetch-prod-db` refuses in any Railway environment unless `ALLOW_DB_RESTORE=1` is set (set it only on the preview base environment). `migrate` runs `prisma migrate deploy`, which applies any unapplied migration files in order without drift-checking.
+Production is backed up nightly by PauseAI/infra's `backup-image` service: it uploads an age-encrypted `pg_dump` to the `pauseai-actionhub-backups` B2 bucket (see that repo's `backup-image/README.md`). Before each production migration, `migrate` also dumps the database to the web service's volume, kept a week, never uploaded (`scripts/pre-deploy-backup.ts`). `fetch-prod-db` downloads the newest one, decrypts it in memory, **drops and recreates the `public` schema** of the target database, and restores into it. It needs, from the environment or a gitignored env file (`.env.backup` by default, `--env <file>` for another):
+
+- `BACKUP_AGE_IDENTITY_FILE`: path to a file holding Action Hub's age identity, from Psono ("Action Hub - Object Storage (R2, B2, S3) Backup Encryption Key"). Keep it outside the repo, readable only by you. `BACKUP_AGE_IDENTITY` holds an identity's text instead, for an environment that cannot hold a file (the preview base environment, which has its own identity; see `docs/railway.md`).
+- `BACKUP_B2_READ_KEY_ID` and `BACKUP_B2_READ_SECRET`: the bucket's read-only key, "actionhub-backup-read" in Psono. `BACKUP_B2_BUCKET` overrides the bucket.
+
+`--file <dump.age>` restores a dump already downloaded (from the Backblaze web UI, say) instead, and then only the identity is needed.
+
+After the restore it runs the same scrub as `anonymise-db` (PII replaced, dev accounts seeded) and empties the database again if that fails, so raw prod data is never left behind. Every account gets the same known password, so an anonymised copy must not sit behind a public URL. `anonymise-db` alone re-scrubs a database that is already restored. `scripts/anonymise-columns.ts` records how each text column is treated, and a test fails when a new column is missing from it. Both scripts refuse to run when `RAILWAY_ENVIRONMENT_NAME=production`, and `fetch-prod-db` refuses in any Railway environment unless `ALLOW_DB_RESTORE=1` is set (set it only on the preview base environment); `seed-preview` runs it in an empty preview database only where `BACKUP_B2_READ_KEY_ID`, `BACKUP_B2_READ_SECRET` and an identity (`BACKUP_AGE_IDENTITY` or `BACKUP_AGE_IDENTITY_FILE`) are all set, and otherwise migrates it and seeds just the dev accounts (password `password1`). `migrate` runs `prisma migrate deploy`, which applies any unapplied migration files in order without drift-checking.
 
 Each unit test file gets its own copy of the schema (`vitest_*`), made either by cloning a template database migrated once per run (`TEST_DB_MODE=clone`, needs a role with `CREATEDB`) or by replaying the migrations into a schema (`TEST_DB_MODE=schema`). Cloning is faster only on the `db-test` server, so the default is `clone` when `TEST_DATABASE_URL` is set and `schema` otherwise. E2E workers use the schemas `e2e_<n>`. Both go to `TEST_DATABASE_URL` when set, else `DATABASE_URL`; neither touches `public` of your dev data. `docker compose up -d` also starts `db-test` on port 5433, an in-memory Postgres with durability off that is only safe because it holds nothing but test data. Set `TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/catalyse_test` in `.env.local` to use it.
 
@@ -191,7 +198,6 @@ Actions are pinned to commit SHAs with the version in a trailing comment; bump b
 | `test:e2e:headed`  | Run e2e tests with a visible browser, single worker                                                                                             |
 | `test:e2e:ui`      | Open Playwright UI mode for interactive test debugging                                                                                          |
 | `snapshots`        | Run the e2e suite with every test photographed and build `snapshots/index.html`, a visual diff gallery; see `e2e/snapshots/README.md`           |
-| `cron:backup`      | Run the database backup cron job                                                                                                                |
 | `demo`             | Run the demo data seeding script                                                                                                                |
 | `demo:snapshot`    | Take a snapshot of the current demo state                                                                                                       |
 | `demo:compare`     | Compare current demo state against snapshot                                                                                                     |

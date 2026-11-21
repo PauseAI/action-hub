@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { Client } from 'pg'
 import { prisma } from '@/lib/prisma'
-import { resolveDbUrl } from '@/lib/db-url'
+import { libpqUrl, resolveDbUrl } from '@/lib/db-url'
 import { createVolunteer, createAdmin, createProject, createStaffInvite } from '@/test/factories'
 import { createSession } from '@/lib/auth'
-import { libpqUrl } from '../jobs/backup'
 import { COLUMN_TREATMENT, REDACTED } from './anonymise-columns'
 import { anonymise } from './anonymise-db'
 

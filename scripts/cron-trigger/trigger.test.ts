@@ -60,11 +60,11 @@ describe('cron trigger', () => {
   })
 
   it('pings fail and exits 1 when a job reports an error in a 200 response', async () => {
-    const body = '{"digest":{"sent":3},"backup":{"error":"Error: B2 down"}}'
+    const body = '{"digest":{"sent":3},"nudges":{"error":"Error: SMTP down"}}'
     const f = fakeFetch({ [CRON_URL]: { status: 200, body } })
     expect(await run({ env: env(), fetch: f.fetch, log: fakeLog().log })).toBe(1)
     expect(f.urls()).toEqual([`${HC}/start`, CRON_URL, `${HC}/fail`])
-    expect(f.calls[2].body).toBe(`HTTP 200, jobs failed: backup\n${body}`)
+    expect(f.calls[2].body).toBe(`HTTP 200, jobs failed: nudges\n${body}`)
   })
 
   it('pings fail when a job counts failures of its own', async () => {

@@ -1,5 +1,4 @@
 import { finishCronRun, recordCronRun, type CronTriggerSource } from '@/lib/cron-audit'
-import { runBackupJobOrFail } from '@/jobs/backup'
 import { runDigestJob } from '@/jobs/digest'
 import { runNudgesJob } from '@/jobs/nudges'
 import { runApplicationsSummaryJob, runApplicationsAnonymisationJob } from '@/jobs/applications'
@@ -20,7 +19,6 @@ export { CRON_JOB_NAMES, type CronJobName } from '@/lib/cron-job-names'
 export type CronJobRunners = Record<CronJobName, () => Promise<unknown>>
 
 const realRunners: CronJobRunners = {
-  backup: runBackupJobOrFail,
   digest: runDigestJob,
   nudges: runNudgesJob,
   'applications-summary': runApplicationsSummaryJob,

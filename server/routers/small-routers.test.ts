@@ -84,9 +84,12 @@ describe('admin.cronRuns', () => {
     expect(await c.admin.cronRuns.list({})).toHaveLength(2)
     expect(await c.admin.cronRuns.list({ jobName: 'digest' })).toHaveLength(1)
     expect(await c.admin.cronRuns.list({ status: 'error' })).toHaveLength(1)
-    cronJobs.returns('backup', { ok: true })
-    expect(await c.admin.cronRuns.run({ jobName: 'backup' })).toEqual({ result: { ok: true } })
-    expect(await c.admin.cronRuns.list({ jobName: 'backup', status: 'success' })).toHaveLength(1)
+    cronJobs.returns('csp-summary', { ok: true })
+    expect(await c.admin.cronRuns.run({ jobName: 'csp-summary' })).toEqual({ result: { ok: true } })
+    expect(await c.admin.cronRuns.list({ jobName: 'csp-summary', status: 'success' })).toHaveLength(
+      1,
+    )
+    await expect(c.admin.cronRuns.run({ jobName: 'backup' } as never)).rejects.toThrow()
   })
 })
 

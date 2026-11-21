@@ -66,14 +66,7 @@ describe('validateEnv', () => {
   })
 
   it('passes a fully configured production environment', async () => {
-    ;(
-      await loadEnv({
-        ...SAFE_PROD,
-        B2_KEY_ID: undefined,
-        B2_APP_KEY: undefined,
-        B2_BUCKET_NAME: undefined,
-      })
-    ).validateEnv()
+    ;(await loadEnv(SAFE_PROD)).validateEnv()
   })
 
   it('lists every missing variable and unsafe stub', async () => {
@@ -85,12 +78,9 @@ describe('validateEnv', () => {
       STUB_GOOGLE: 'true',
       STUB_EMAIL: 'true',
       DISABLE_RATE_LIMIT: 'true',
-      B2_KEY_ID: 'id',
-      B2_APP_KEY: '',
-      B2_BUCKET_NAME: '',
     })
     expect(() => validateEnv()).toThrow(
-      /APP_URL[\s\S]*CRON_SECRET[\s\S]*RESEND_API_KEY[\s\S]*STUB_GOOGLE[\s\S]*STUB_EMAIL[\s\S]*DISABLE_RATE_LIMIT[\s\S]*B2_APP_KEY[\s\S]*B2_BUCKET_NAME/,
+      /APP_URL[\s\S]*CRON_SECRET[\s\S]*RESEND_API_KEY[\s\S]*STUB_GOOGLE[\s\S]*STUB_EMAIL[\s\S]*DISABLE_RATE_LIMIT/,
     )
   })
 })
