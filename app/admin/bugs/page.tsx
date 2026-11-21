@@ -275,7 +275,7 @@ function BugReportCard({
         onKeyDown={(e) => e.stopPropagation()}
       >
         <div className="flex gap-2 items-end flex-wrap">
-          <div className="w-40">
+          <div className="w-50">
             <FilterDropdown
               id={`status-bug-${r.id}`}
               label="Status"
