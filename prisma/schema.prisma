@@ -82,6 +82,7 @@ enum ChapterAuditAction {
   JOINED_FROM_POOL
   COORDINATOR_APPOINTED
   COORDINATOR_REMOVED
+  PROFILE_PICTURE_REMOVED
 }
 
 /// One country's members and the people who run it. A volunteer with no chapter is in the
@@ -1271,6 +1272,7 @@ model Volunteer {
   templatesCreated                        Template[]               @relation("TemplateCreatedBy")
   sessions                                Session[]
   apiTokens                               ApiToken[]
+  profilePicture                          ProfilePicture?
 
   @@index([country], map: "idx_volunteers_country")
   @@index([nationalChapterId], map: "idx_volunteers_chapter")
@@ -1279,6 +1281,20 @@ model Volunteer {
   @@index([authToken], map: "idx_volunteers_auth_token")
   @@index([email], map: "idx_volunteers_email")
   @@map("volunteers")
+}
+
+/// A volunteer's picture, re-encoded as a square WebP thumbnail (lib/profile-picture.ts). Kept
+/// apart from Volunteer so the many queries that read a whole volunteer row never load it.
+model ProfilePicture {
+  volunteerId Int       @id @map("volunteer_id")
+  /// Random, and new on every upload: the picture is served at a URL only someone shown it knows,
+  /// cached forever.
+  publicId    String    @unique @map("public_id")
+  data        Bytes
+  createdAt   DateTime  @default(now()) @map("created_at")
+  volunteer   Volunteer @relation(fields: [volunteerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@map("profile_pictures")
 }
 
 model Session {
@@ -1567,4 +1583,48 @@ model CallDismissal {
   @@id([callId, volunteerId])
   @@index([volunteerId], map: "idx_call_dismissals_volunteer")
   @@map("call_dismissals")
+}
+
+enum EmailSuppressionReason {
+  bounce
+  complaint
+}
+
+/// An address the email provider reported as permanently undeliverable or as having marked our
+/// mail as spam. Nothing is sent to it while the row is live; deleting the row lifts it. Kept
+/// as a keyed hash (lib/email-suppression.ts), so it holds no address and cannot be matched
+/// against a list of addresses without the server's secret.
+model EmailSuppression {
+  id        Int                    @id @default(autoincrement())
+  emailHash String                 @unique @map("email_hash")
+  reason    EmailSuppressionReason
+  /// The provider's classification, e.g. "Permanent/General" or a complaint's feedback type.
+  detail    String?
+  createdAt DateTime               @default(now()) @map("created_at")
+  /// Null for a bounce, which stays until lifted; a complaint lapses after a year.
+  expiresAt DateTime?              @map("expires_at")
+
+  @@map("email_suppressions")
+}
+
+/// How many emails went to the provider in one clock hour, per bucket: `bulk`, `essential`, or
+/// one recipient's essential mail (`to:` and the recipient's keyed hash). Every process shares
+/// these counts, so the caps hold across the web and cron services.
+model EmailSendCount {
+  hour   DateTime
+  bucket String
+  count  Int      @default(0)
+
+  @@id([hour, bucket])
+  @@map("email_send_counts")
+}
+
+/// SNS messages already handled, so a repeat delivery or a replayed message does nothing.
+/// Kept only as long as a message's timestamp would still be accepted.
+model SnsMessage {
+  messageId  String   @id @map("message_id")
+  receivedAt DateTime @default(now()) @map("received_at")
+
+  @@index([receivedAt])
+  @@map("sns_messages")
 }

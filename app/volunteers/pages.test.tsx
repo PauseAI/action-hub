@@ -5,10 +5,12 @@ import { prisma } from '@/lib/prisma'
 import {
   createChapter,
   createMember,
+  createChapterLead,
   connect,
   createVolunteer,
   createAdmin,
   createProject,
+  createTask,
   createQuickTask,
   createSkill,
   createLocalGroup,
@@ -147,6 +149,27 @@ describe('volunteer profile', () => {
     })
     await createProject({ title: 'Led', assigneeId: vol.id })
     await createProject({ title: 'Pitched', creatorId: vol.id })
+    const finished = await createProject({
+      title: 'Finished',
+      status: 'completed',
+      completedAt: new Date(Date.UTC(2026, 2, 9, 12)),
+    })
+    await prisma.workItemInterest.create({
+      data: {
+        workItemId: finished.id,
+        volunteerId: vol.id,
+        interestType: 'want_to_contribute',
+        status: 'accepted',
+        respondedAt: new Date(Date.UTC(2026, 1, 2, 12)),
+      },
+    })
+    const task = await createTask(finished.id, {
+      title: 'Wrote the copy',
+      status: 'completed',
+      assigneeId: vol.id,
+      claimedAt: new Date(Date.UTC(2026, 1, 3, 12)),
+      completedAt: new Date(Date.UTC(2026, 2, 1, 12)),
+    })
     await renderApp(<VolunteerDetailPage params={Promise.resolve({ id: String(vol.id) })} />, {
       as: me,
     })
@@ -171,9 +194,23 @@ describe('volunteer profile', () => {
     expect(screen.getByText('evenings')).toBeInTheDocument()
     expect(screen.getByText('Verified skills')).toBeInTheDocument()
     expect(screen.getByText('Done task')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Led' })).toBeInTheDocument()
-    expect(screen.getByText('Project owner')).toBeInTheDocument()
-    expect(screen.getByText('Proposer')).toBeInTheDocument()
+    const current = screen.getByRole('list', { name: 'Current projects' })
+    expect(within(current).getByRole('link', { name: 'Led' })).toBeInTheDocument()
+    expect(within(current).getByText('Owner')).toBeInTheDocument()
+    const past = screen.getByRole('list', { name: 'Past projects' })
+    expect(within(past).getByRole('link', { name: 'Pitched' })).toBeInTheDocument()
+    expect(within(past).getByText(/^Creator from /)).toBeInTheDocument()
+    expect(
+      within(past).getByText('Member from 2 Feb 2026 · Finished 9 Mar 2026'),
+    ).toBeInTheDocument()
+    const tasks = within(past).getByRole('list', { name: 'Tasks on Finished' })
+    expect(within(tasks).getByRole('link', { name: 'Wrote the copy' })).toHaveAttribute(
+      'href',
+      `/projects/${finished.id}/tasks/${task.id}`,
+    )
+    expect(
+      within(tasks).getByText('Assignee from 3 Feb 2026 · finished 1 Mar 2026'),
+    ).toBeInTheDocument()
   })
 
   it('offers a message to someone the viewer is connected with, but not to themselves', async () => {
@@ -290,6 +327,49 @@ describe('volunteer profile', () => {
       'href',
       `/volunteers/${kept.id}`,
     )
+  })
+
+  async function showPictureToLead(name: string) {
+    const chapter = await createChapter()
+    const member = await createMember(chapter, { name })
+    await prisma.profilePicture.create({
+      data: { volunteerId: member.id, publicId: `picture-${member.id}`, data: new Uint8Array([1]) },
+    })
+    await renderApp(<VolunteerDetailPage params={Promise.resolve({ id: String(member.id) })} />, {
+      as: await createChapterLead(chapter),
+    })
+    await screen.findByRole('heading', { name })
+    return { member, open: await screen.findByRole('button', { name: 'Remove picture' }) }
+  }
+  const confirmRemoval = async () =>
+    userEvent.click(
+      within(await screen.findByRole('dialog', { name: 'Remove profile picture?' })).getByRole(
+        'button',
+        { name: 'Remove picture' },
+      ),
+    )
+
+  it("lets the volunteer's chapter staff take down their picture", async () => {
+    const { member, open } = await showPictureToLead('Pic Member')
+    await userEvent.click(open)
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    await userEvent.click(open)
+    await confirmRemoval()
+    expect(await screen.findByText('Picture removed')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Remove picture' })).toBeNull())
+    expect(await prisma.profilePicture.count({ where: { volunteerId: member.id } })).toBe(0)
+  })
+
+  it('shows the profile as it is when someone else took the picture down first', async () => {
+    const { member, open } = await showPictureToLead('Gone Member')
+    await prisma.profilePicture.delete({ where: { volunteerId: member.id } })
+    await userEvent.click(open)
+    await confirmRemoval()
+    expect(await screen.findByText('They have no picture')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Remove picture' })).toBeNull())
   })
 
   it('shows a minimal profile, and a not-found state', async () => {

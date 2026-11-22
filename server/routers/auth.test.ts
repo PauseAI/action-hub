@@ -1,3 +1,4 @@
+import { suppressAddresses, suppressionKey } from '@/lib/email-suppression'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { logger } from '@/lib/logger'
 import { prisma } from '@/lib/prisma'
@@ -741,6 +742,14 @@ describe('deleteAccount and chapters', () => {
 })
 
 describe('deleteAccount', () => {
+  it('keeps the suppression of an address the account never confirmed', async () => {
+    const squatter = await createVolunteer({ emailConfirmed: false })
+    await suppressAddresses([squatter.email!], 'complaint', 'abuse')
+    await clientAs(squatter).auth.deleteAccount({ password: TEST_PASSWORD })
+    expect(await prisma.emailSuppression.count()).toBe(1)
+    await prisma.emailSuppression.deleteMany()
+  })
+
   it('requires the password when one is set, scrubs the account, and warns affected owners and admins', async () => {
     const me = await createVolunteer({ name: 'Leaver' })
     const owner = await createVolunteer()
@@ -755,6 +764,8 @@ describe('deleteAccount', () => {
     const mine = await createProject({ assigneeId: me.id, status: 'in_progress' })
     await createProject({ assigneeId: me.id, status: 'completed' })
 
+    await suppressAddresses([me.email!], 'complaint', 'abuse')
+    await suppressAddresses(['someone-else@example.com'], 'complaint', 'abuse')
     const c = clientAs(me)
     await expect(c.auth.deleteAccount({})).rejects.toMatchObject({
       message: 'Password is incorrect',
@@ -769,6 +780,10 @@ describe('deleteAccount', () => {
     expect(row.deletedAt).not.toBeNull()
     expect(await prisma.deletionRequest.count({ where: { volunteerId: me.id } })).toBe(1)
     expect(await prisma.session.count({ where: { volunteerId: me.id } })).toBe(0)
+    // Their suppression goes with the account; nobody else's does.
+    expect(await prisma.emailSuppression.findMany({ select: { emailHash: true } })).toEqual([
+      { emailHash: suppressionKey('someone-else@example.com') },
+    ])
 
     const ownerNotes = await prisma.notification.findMany({
       where: { volunteerId: owner.id, type: 'account_deleted_impact' },

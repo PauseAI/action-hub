@@ -74,7 +74,33 @@ Key variables:
 - `APP_URL` — the app's public origin, used for links in emails; in production
   `https://action.pauseai.info`
 - `DATABASE_URL` — Postgres connection URL (e.g. `postgresql://postgres:postgres@localhost:5432/catalyse`)
-- `RESEND_API_KEY` — for email sending
+- `RESEND_API_KEY` — for email sending through Resend (the default provider)
+- `EMAIL_PROVIDER` — `resend` (default) or `ses`. With `ses`, mail goes through Amazon SES and
+  these are needed too (PauseAI/infra's `ses-app-setup.sh` writes the first four to a file):
+  - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` — read by the AWS SDK
+  - `SES_CONFIGURATION_SET` — named on every send, so SES applies the app's suppression,
+    reputation alarms and pause switch, and publishes its bounces and complaints
+  - `SES_FEEDBACK_TOPIC_ARN` — the SNS topic (`ses-<app>-feedback`) whose bounce and complaint
+    notifications `POST /api/email/sns` accepts. Permanent bounces and complaints go on
+    `email_suppressions` and get no more mail (a complaint for a year, a bounce until lifted);
+    deleting a row, or the confirmed account, lifts it. Only SHA-256 signatures are accepted, so
+    set the topic to sign with them:
+
+    ```bash
+    aws sns set-topic-attributes --topic-arn <arn> --attribute-name SignatureVersion --attribute-value 2
+    ```
+
+  - `EMAIL_HASH_SECRET` — a random secret keying the hashes suppressed addresses are kept under
+    (`openssl rand -hex 32`); changing it forgets every suppression
+
+- `FROM_EMAIL` — the sender; with SES it must be set, on the verified domain:
+  `Action Hub <noreply@action.pauseai.info>`
+- `EMAIL_HOURLY_CAP` — with `ses`, the most emails sent in one clock hour across every process
+  (default 500); beyond it mail is dropped and logged. Keep it above the number of people a
+  digest or call reaches.
+- `EMAIL_ESSENTIAL_HOURLY_CAP` — with `ses`, the same for essential mail (password reset, signup
+  confirmation, account merge, outreach login), kept apart from the cap above (default 200), plus
+  five an hour to any one address
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — for Google OAuth
 - `STUB_EMAIL=true` — suppress real emails in development
 

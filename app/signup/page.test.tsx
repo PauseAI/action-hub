@@ -1,10 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor, fireEvent, act, cleanup } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { prisma } from '@/lib/prisma'
 import { createVolunteer, createLocalGroup, createProject, createSkill } from '@/test/factories'
 import { renderApp } from '@/test/render'
 import { navigation } from '@/test/next-navigation'
+import { failNextFetch } from '@/test/rpc-fetch'
 import SignupPage from './page'
 
 import { google as googleAuth } from '@/test/fakes/google'
@@ -38,8 +39,6 @@ async function toSkillsStep() {
 }
 
 beforeEach(() => sessionStorage.clear())
-// A test that fails while its clock is faked would otherwise leave every later test hanging.
-afterEach(() => vi.useRealTimers())
 
 describe('signup with email and password', () => {
   it('shows the steps, and fills Contact email from the sign-up email', async () => {
@@ -114,7 +113,7 @@ describe('signup with email and password', () => {
     expect(screen.getByLabelText('Your name')).toHaveValue('Ann Applicant')
   })
 
-  it('submits a full application, lands on the confirmation, and can resend the email', async () => {
+  it('submits a full application, is signed in and sent Home', async () => {
     const town = await createLocalGroup({ name: 'Signup Town', country: 'UK' })
     const needed = await createSkill({ name: 'Needed Skill' })
     const other = await createSkill({ name: 'Rare Skill' })
@@ -166,10 +165,9 @@ describe('signup with email and password', () => {
     expect(screen.queryByText(/Allow project owners to contact me/)).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: 'Submit application' }))
 
-    await screen.findByRole('heading', { name: 'Application received' })
-    const done = screen.getByRole('status')
-    expect(done).toHaveTextContent('usually reviews applications within a few days')
-    expect(done).toHaveTextContent('ann.applicant@example.com')
+    // The applicant is signed in and sent Home, where the wait has things to do in it.
+    await waitFor(() => expect(navigation.push).toHaveBeenCalledWith('/dashboard'))
+    expect(localStorage.getItem('authToken')).toBeTruthy()
     const row = await prisma.volunteer.findFirstOrThrow({
       where: { email: 'ann.applicant@example.com' },
       include: { skills: true },
@@ -195,16 +193,6 @@ describe('signup with email and password', () => {
     })
     expect(row.skills.map((s) => s.skillId).sort()).toEqual([needed.id, other.id].sort())
     expect(sessionStorage.getItem('signup_draft')).toBeNull()
-
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    fireEvent.click(screen.getByRole('button', { name: 'Resend confirmation email' }))
-    // The resend is a real request, so under load it can take longer than waitFor's default second.
-    await vi.waitFor(() => expect(screen.getByText(/request another in 60s/)).toBeInTheDocument(), {
-      timeout: 10_000,
-    })
-    for (let i = 0; i < 60; i++) act(() => vi.advanceTimersByTime(1000))
-    vi.useRealTimers()
-    expect(screen.getByText('Email sent! Check your inbox.')).toBeInTheDocument()
   })
 
   it('clears a preferred contact method when its field is emptied, and picks a city with no local group', async () => {
@@ -320,6 +308,21 @@ describe('signup with email and password', () => {
     })
   })
 
+  it('says the application went in when signing in afterwards fails', async () => {
+    await renderApp(<SignupPage />)
+    await onStep('Account')
+    await accountStep('unlucky@example.com')
+    await aboutStep()
+    await toSkillsStep()
+    failNextFetch('auth/me')
+    await userEvent.click(screen.getByRole('button', { name: 'Submit application' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "Your application went in, but we couldn't sign you in just now.",
+    )
+    expect(navigation.push).not.toHaveBeenCalledWith('/dashboard')
+    expect(await prisma.volunteer.count({ where: { email: 'unlucky@example.com' } })).toBe(1)
+  })
+
   it('bounces a signed-in visitor to the dashboard', async () => {
     const vol = await createVolunteer()
     await renderApp(<SignupPage />, { as: vol })
@@ -407,8 +410,8 @@ describe('signup with Google', () => {
     await type('Other skills', 'o')
     await userEvent.click(screen.getByLabelText('Allow Google Analytics (recommended)'))
     await userEvent.click(screen.getByRole('button', { name: 'Submit application' }))
-    await screen.findByRole('heading', { name: 'Application received' })
-    expect(screen.getByRole('status')).toHaveTextContent('Your Google email is already confirmed.')
+    await waitFor(() => expect(navigation.push).toHaveBeenCalledWith('/dashboard'))
+    expect(sessionStorage.getItem('google_pending_auth')).toBeNull()
     const row = await prisma.volunteer.findFirstOrThrow({ where: { email: 'stub@example.com' } })
     expect(row).toMatchObject({
       name: 'Stub User',

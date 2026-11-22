@@ -65,6 +65,8 @@ export const MERGE_REFERENCES = {
   'notification_digests.volunteer_id': 'move',
   'notification_preferences.volunteer_id': 'move',
   'password_reset_tokens.volunteer_id': 'delete',
+  // The kept account's own picture wins over the merged one's.
+  'profile_pictures.volunteer_id': 'move',
   'project_deputies.appointed_by_id': 'move',
   'project_deputies.volunteer_id': 'move',
   'project_review_requests.requested_by_id': 'move',

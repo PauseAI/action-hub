@@ -84,3 +84,77 @@ describe('validateEnv', () => {
     )
   })
 })
+
+describe('email provider settings', () => {
+  it('defaults to Resend with a 500-an-hour cap, and reads SES settings', () => {
+    const { env } = loadEnv({
+      EMAIL_PROVIDER: undefined,
+      EMAIL_HOURLY_CAP: undefined,
+      EMAIL_ESSENTIAL_HOURLY_CAP: undefined,
+      SES_FEEDBACK_TOPIC_ARN: undefined,
+      SES_CONFIGURATION_SET: undefined,
+      AWS_REGION: undefined,
+    })
+    expect(env.EMAIL_PROVIDER).toBe('resend')
+    expect(env.EMAIL_HOURLY_CAP).toBe(500)
+    expect(env.EMAIL_ESSENTIAL_HOURLY_CAP).toBe(200)
+    expect(env.SES_FEEDBACK_TOPIC_ARN).toBeUndefined()
+    expect(env.SES_CONFIGURATION_SET).toBeUndefined()
+    expect(env.AWS_REGION).toBeUndefined()
+
+    loadEnv({
+      EMAIL_PROVIDER: ' SES ',
+      EMAIL_HOURLY_CAP: '20',
+      SES_FEEDBACK_TOPIC_ARN: ' arn:a ',
+      SES_CONFIGURATION_SET: 'action-hub',
+      AWS_REGION: 'eu-west-1',
+    })
+    expect(env.EMAIL_PROVIDER).toBe('ses')
+    expect(env.EMAIL_HOURLY_CAP).toBe(20)
+    expect(env.SES_FEEDBACK_TOPIC_ARN).toBe('arn:a')
+    expect(env.SES_CONFIGURATION_SET).toBe('action-hub')
+    expect(env.AWS_REGION).toBe('eu-west-1')
+  })
+
+  it('treats a cap that is not a whole number of emails as the default', () => {
+    for (const value of ['lots', '-1', '2.5', '']) {
+      expect(loadEnv({ EMAIL_HOURLY_CAP: value }).env.EMAIL_HOURLY_CAP, value).toBe(500)
+    }
+    expect(loadEnv({ EMAIL_HOURLY_CAP: '0' }).env.EMAIL_HOURLY_CAP).toBe(0)
+  })
+
+  it('requires the AWS settings, not a Resend key, when sending through SES', () => {
+    const ses = {
+      ...SAFE_PROD,
+      EMAIL_PROVIDER: 'ses',
+      RESEND_API_KEY: '',
+      AWS_REGION: 'eu-west-1',
+      AWS_ACCESS_KEY_ID: 'id',
+      AWS_SECRET_ACCESS_KEY: 'secret',
+      SES_CONFIGURATION_SET: 'action-hub',
+      EMAIL_HASH_SECRET: 'secret',
+      FROM_EMAIL: 'Action Hub <noreply@action.pauseai.info>',
+      SES_FEEDBACK_TOPIC_ARN: 'arn:aws:sns:eu-west-1:1:ses-action-hub-feedback',
+    }
+    loadEnv(ses).validateEnv()
+    const { validateEnv } = loadEnv({
+      ...ses,
+      AWS_REGION: '',
+      AWS_ACCESS_KEY_ID: '',
+      AWS_SECRET_ACCESS_KEY: '',
+      SES_CONFIGURATION_SET: '',
+      EMAIL_HASH_SECRET: '',
+      FROM_EMAIL: '',
+      SES_FEEDBACK_TOPIC_ARN: '',
+    })
+    expect(() => validateEnv()).toThrow(
+      /AWS_REGION[\s\S]*AWS_ACCESS_KEY_ID[\s\S]*AWS_SECRET_ACCESS_KEY[\s\S]*SES_CONFIGURATION_SET[\s\S]*EMAIL_HASH_SECRET[\s\S]*FROM_EMAIL[\s\S]*SES_FEEDBACK_TOPIC_ARN/,
+    )
+    expect(() => validateEnv()).not.toThrow(/RESEND_API_KEY/)
+  })
+
+  it('refuses a provider it does not know', () => {
+    const { validateEnv } = loadEnv({ ...SAFE_PROD, EMAIL_PROVIDER: 'postmark' })
+    expect(() => validateEnv()).toThrow(/EMAIL_PROVIDER: must be resend or ses/)
+  })
+})

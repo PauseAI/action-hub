@@ -1,3 +1,4 @@
+import { liftSuppression } from '@/lib/email-suppression'
 import { ORPCError } from '@orpc/server'
 import { randomBytes } from 'crypto'
 import { z } from 'zod'
@@ -758,6 +759,10 @@ export const authRouter = {
       })
       await sendAccountDeletionNotifications(context.volunteer.id, context.volunteer.name)
       await deleteAllSessions(context.volunteer.id)
+      // Only an address they proved is theirs: anyone can sign up with someone else's.
+      if (context.volunteer.email && context.volunteer.emailConfirmed) {
+        await liftSuppression(context.volunteer.email)
+      }
       await prisma.volunteer.update({
         where: { id: context.volunteer.id },
         data: {
@@ -777,6 +782,7 @@ export const authRouter = {
         },
       })
       await prisma.volunteerSkill.deleteMany({ where: { volunteerId: context.volunteer.id } })
+      await prisma.profilePicture.deleteMany({ where: { volunteerId: context.volunteer.id } })
       // A coordinator's role goes with the account, and their open calls close.
       const { count: wasCoordinator } = await prisma.coordinator.deleteMany({
         where: { volunteerId: context.volunteer.id },
