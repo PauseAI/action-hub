@@ -23,6 +23,10 @@ export const COLUMN_TREATMENT: Record<string, Record<string, Treatment>> = {
   admin_notes: { content: 'redact', category: 'keep' },
   api_tokens: { name: 'rows-deleted', token_hash: 'rows-deleted' },
   anonymised_emails: { email_hash: 'token' },
+  email_suppressions: { email_hash: 'token', detail: 'keep' },
+  // `bulk`, `essential`, or `to:` and a recipient's keyed hash.
+  email_send_counts: { bucket: 'token' },
+  sns_messages: { message_id: 'keep' },
   bug_report_comments: { content: 'redact' },
   calls: { title: 'redact', body: 'redact' },
   call_responses: { message: 'redact' },
@@ -68,6 +72,8 @@ export const COLUMN_TREATMENT: Record<string, Record<string, Treatment>> = {
   notifications: { type: 'keep', title: 'redact', body: 'null', link: 'keep' },
   notification_preferences: { type: 'keep' },
   password_reset_tokens: { token: 'token' },
+  // Real people's faces.
+  profile_pictures: { public_id: 'rows-deleted' },
   project_review_requests: { message: 'redact' },
   rejected_applications: { email_hash: 'token', admin_notes: 'redact', applicant_notes: 'redact' },
   schema_migrations: { filename: 'keep' },

@@ -46,6 +46,11 @@ describe('canViewWorkItem', () => {
     expect(canViewWorkItem(hidden, other)).toBe(false)
   })
 
+  it('shows an applicant only a project they are part of', () => {
+    expect(canViewWorkItem(project, pending)).toBe(false)
+    expect(canViewWorkItem({ ...project, creatorId: pending.id }, pending)).toBe(true)
+  })
+
   it('restricts a team project to participants and team-privy viewers', () => {
     const teamProject = { ...project, teamId: 9 }
     expect(canViewWorkItem(teamProject, other)).toBe(false)

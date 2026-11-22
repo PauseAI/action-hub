@@ -37,6 +37,7 @@ import {
 } from '@/lib/filter-options'
 import { useCountries } from '@/lib/hooks/countries'
 import PersonName from '@/components/PersonName'
+import ProfilePictureSettings from '@/components/ProfilePictureSettings'
 
 type TabKey = 'profile' | 'account' | 'notifications' | 'privacy' | 'bug-reports'
 
@@ -512,6 +513,8 @@ function SettingsPageContent() {
             </P>
           </SectionCard>
         )}
+
+        {activeTab === 'profile' && <ProfilePictureSettings id={user.id} name={user.name} />}
 
         {activeTab === 'profile' && (
           <SectionCard as="form" title="Details" onSubmit={handleSave}>

@@ -1,7 +1,10 @@
 import type { RuntimeDataModel } from '@prisma/client/runtime/library'
 import { prisma } from '@/lib/prisma'
 import { hashEmail, isSuperAdmin } from '@/lib/auth'
+import { suppressionKey } from '@/lib/email-suppression'
+import { env } from '@/lib/env'
 import type { Volunteer } from '@/generated/prisma/client'
+import { PICTURE_CONTENT_TYPE } from '@/lib/profile-picture'
 
 /**
  * The data-subject export (GDPR Articles 15 and 20), built from the Prisma schema. Every way a row
@@ -24,8 +27,11 @@ export interface UserLink {
   name: string
   model: string
   foreignKey: string
-  matchBy: 'id' | 'email' | 'emailHash' | 'participant'
+  matchBy: 'id' | 'email' | 'emailHash' | 'suppressionKey' | 'participant'
 }
+
+/** Models whose email hash is keyed with EMAIL_HASH_SECRET (lib/email-suppression.ts). */
+const KEYED_HASH_MODELS = new Set(['EmailSuppression'])
 
 /**
  * Rows a person gets in their export: about them, made by them, or sent to them. Notes admins
@@ -57,6 +63,7 @@ export const EXPORTED_LINKS: readonly string[] = [
   'DeletionRequest.volunteerId',
   'DistinctAccountPair.volunteerA',
   'DistinctAccountPair.volunteerB',
+  'EmailSuppression.emailHash',
   'EmailVerificationToken.volunteer',
   'ExperimentalJournalist.claimedBy',
   'ExperimentalJournalist.contactedBy',
@@ -123,6 +130,7 @@ export const OMITTED_LINKS: Readonly<Record<string, string>> = {
   'Volunteer.duplicateOf':
     "an admin's guess at the same person, until both accounts confirm a merge",
   'Volunteer.reviewer': 'applications reviewed for other people',
+  'ProfilePicture.volunteer': 'exported as `profilePicture`, the image as a data URL',
   'VolunteerSkill.volunteer': 'exported as `skills`',
   'WorkItem.reviewedBy': STAFF_ACTION,
   'WorkItemInterest.invitedBy': 'invites to other people',
@@ -134,6 +142,7 @@ export const SECRET_FIELDS: Readonly<Record<string, readonly string[]>> = {
   AdminInvite: ['inviteToken'],
   AnonymisedEmail: ['emailHash'],
   ApiToken: ['tokenHash'],
+  EmailSuppression: ['emailHash'],
   EmailVerificationToken: ['token'],
   ExperimentalOutreachLoginToken: ['tokenHash'],
   ExperimentalOutreachSession: ['tokenHash'],
@@ -178,7 +187,7 @@ export function userLinks(dataModel: DataModel): UserLink[] {
       } else if (model !== USER_MODEL && EMAIL.test(f.name)) {
         link(f.name, f.name, 'email')
       } else if (model !== USER_MODEL && EMAIL_HASH.test(f.name)) {
-        link(f.name, f.name, 'emailHash')
+        link(f.name, f.name, KEYED_HASH_MODELS.has(model) ? 'suppressionKey' : 'emailHash')
       }
     }
   }
@@ -281,6 +290,10 @@ export async function linkedRecords(
     if (l.matchBy === 'id') return { [l.foreignKey]: subject.id }
     if (email === null) return null
     if (l.matchBy === 'emailHash') return { [l.foreignKey]: hashEmail(email) }
+    // Without the secret no suppression can have been stored, so there is nothing to match.
+    if (l.matchBy === 'suppressionKey') {
+      return env.EMAIL_HASH_SECRET ? { [l.foreignKey]: suppressionKey(email) } : null
+    }
     if (l.matchBy === 'participant')
       return { [l.foreignKey]: { in: participants.map((p) => p.id) } }
     return { [l.foreignKey]: byAddress }
@@ -313,10 +326,11 @@ export async function exportProfile(volunteerId: number) {
       group: { select: { name: true } },
       chapter: { select: { name: true } },
       skills: { include: { skill: { include: { category: true } } } },
+      profilePicture: { select: { data: true, createdAt: true } },
     },
   })
   if (!vol) return null
-  const { group, chapter, skills, ...columns } = vol
+  const { group, chapter, skills, profilePicture, ...columns } = vol
   const skillsData = skills.map((vs) => ({
     id: vs.skill.id,
     categoryId: vs.skill.categoryId,
@@ -336,5 +350,9 @@ export async function exportProfile(volunteerId: number) {
       hasPassword: Boolean(vol.passwordHash),
     },
     skills: skillsData,
+    profilePicture: profilePicture && {
+      image: `data:${PICTURE_CONTENT_TYPE};base64,${Buffer.from(profilePicture.data).toString('base64')}`,
+      uploadedAt: profilePicture.createdAt,
+    },
   }
 }

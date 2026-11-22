@@ -73,6 +73,11 @@ function sendEmail(to: string, subject: string, html: string, replyTo?: string):
   return emailTransport().send({ to, subject, html, replyTo })
 }
 
+/** For mail one person asked for and is waiting on: kept out of the bulk cap (GuardedTransport). */
+function sendEssentialEmail(to: string, subject: string, html: string): Promise<boolean> {
+  return emailTransport().send({ to, subject, html, essential: true })
+}
+
 export function buildWelcomeAndConfirmHtml(name: string, confirmUrl: string): Promise<string> {
   return render(<WelcomeAndConfirmEmail name={name} confirmUrl={confirmUrl} appUrl={env.APP_URL} />)
 }
@@ -87,7 +92,7 @@ export async function sendWelcomeAndConfirmEmail({
   name: string
 }): Promise<boolean> {
   const confirmUrl = `${env.APP_URL}/verify-email?token=${token}`
-  return sendEmail(
+  return sendEssentialEmail(
     to,
     'Welcome to Action Hub: please confirm your email',
     await buildWelcomeAndConfirmHtml(name, confirmUrl),
@@ -256,7 +261,7 @@ export async function sendPasswordResetEmail({
   name?: string
 }): Promise<boolean> {
   const resetUrl = `${env.APP_URL}/reset-password?token=${resetToken}`
-  return sendEmail(
+  return sendEssentialEmail(
     to,
     'Reset your Action Hub password',
     await buildPasswordResetHtml(resetUrl, name),
@@ -283,7 +288,11 @@ export async function sendAccountMergeEmail({
   token: string
 }): Promise<boolean> {
   const confirmUrl = `${env.APP_URL}/merge-accounts?token=${token}`
-  return sendEmail(to, ACCOUNT_MERGE_SUBJECT, await buildAccountMergeHtml(confirmUrl, name))
+  return sendEssentialEmail(
+    to,
+    ACCOUNT_MERGE_SUBJECT,
+    await buildAccountMergeHtml(confirmUrl, name),
+  )
 }
 
 export function buildOutreachLoginHtml(loginUrl: string): Promise<string> {
@@ -298,7 +307,7 @@ export async function sendOutreachLoginEmail({
   loginToken: string
 }): Promise<boolean> {
   const loginUrl = `${env.APP_URL}/people-for-a-pause-protest-journalist-outreach/verify?token=${loginToken}`
-  return sendEmail(
+  return sendEssentialEmail(
     to,
     'Your People for a Pause outreach link',
     await buildOutreachLoginHtml(loginUrl),

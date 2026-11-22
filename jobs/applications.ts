@@ -1,3 +1,4 @@
+import { liftSuppression } from '@/lib/email-suppression'
 import { prisma } from '@/lib/prisma'
 import { chapterCarers } from '@/lib/chapter-access-server'
 import { sendPendingApplicationsSummaryEmail } from '@/lib/email'
@@ -66,6 +67,7 @@ export async function runApplicationsAnonymisationJob(): Promise<Record<string, 
     select: {
       id: true,
       email: true,
+      emailConfirmed: true,
       rejectedAt: true,
       applicationAdminNotes: true,
       applicationApplicantNotes: true,
@@ -76,6 +78,8 @@ export async function runApplicationsAnonymisationJob(): Promise<Record<string, 
 
   let anonymised = 0
   for (const v of toAnonymise) {
+    // Only an address they proved is theirs, as on account deletion.
+    if (v.email && v.emailConfirmed) await liftSuppression(v.email)
     if (v.email) {
       const emailHash = hashEmail(v.email)
       await prisma.rejectedApplication.create({

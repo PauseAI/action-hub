@@ -3,6 +3,12 @@ type EnvError = { var: string; reason: string }
 const flag = (value: string | undefined): boolean =>
   ['1', 'true', 'yes'].includes((value ?? '').toLowerCase())
 
+const DEFAULT_EMAIL_HOURLY_CAP = 500
+const DEFAULT_EMAIL_ESSENTIAL_HOURLY_CAP = 200
+
+const wholeNumber = (value: string | undefined, fallback: number): number =>
+  /^\d+$/.test(value ?? '') ? Number(value) : fallback
+
 /**
  * Typed view of the process environment. Each property reads `process.env` when accessed,
  * so a value changed after start-up (in tests, or by a script setting up its own) is seen
@@ -23,6 +29,34 @@ export const env = {
   },
   get REPLY_TO_EMAIL(): string | undefined {
     return process.env.REPLY_TO_EMAIL
+  },
+  /** `resend` or `ses`; validateEnv refuses anything else in production. */
+  get EMAIL_PROVIDER(): string {
+    return (process.env.EMAIL_PROVIDER || 'resend').trim().toLowerCase()
+  },
+  /** Most non-essential emails handed to SES in one clock hour, across every process. */
+  get EMAIL_HOURLY_CAP(): number {
+    return wholeNumber(process.env.EMAIL_HOURLY_CAP, DEFAULT_EMAIL_HOURLY_CAP)
+  },
+  /** Most essential emails (password resets, confirmations) handed to SES in one clock hour. */
+  get EMAIL_ESSENTIAL_HOURLY_CAP(): number {
+    return wholeNumber(process.env.EMAIL_ESSENTIAL_HOURLY_CAP, DEFAULT_EMAIL_ESSENTIAL_HOURLY_CAP)
+  },
+  /** Keys the hashes that suppressed addresses are stored under. */
+  get EMAIL_HASH_SECRET(): string | undefined {
+    return process.env.EMAIL_HASH_SECRET || undefined
+  },
+  /** The AWS SDK reads the same variable, with AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. */
+  get AWS_REGION(): string | undefined {
+    return process.env.AWS_REGION || undefined
+  },
+  /** Applied to every SES send, so SES publishes its bounce and complaint events. */
+  get SES_CONFIGURATION_SET(): string | undefined {
+    return process.env.SES_CONFIGURATION_SET || undefined
+  },
+  /** The SNS topic whose bounce and complaint notifications /api/email/sns accepts. */
+  get SES_FEEDBACK_TOPIC_ARN(): string | undefined {
+    return process.env.SES_FEEDBACK_TOPIC_ARN?.trim() || undefined
   },
   /** Defaults on outside production, so a fresh dev checkout never tries to send email. */
   get STUB_EMAIL(): boolean {
@@ -71,7 +105,29 @@ export function validateEnv(): void {
     errors.push({ var: 'CRON_SECRET', reason: 'required to authenticate cron endpoints' })
   }
 
-  if (!env.RESEND_API_KEY) {
+  if (env.EMAIL_PROVIDER === 'ses') {
+    const reason = 'required to send email through SES'
+    const required = [
+      'AWS_REGION',
+      'AWS_ACCESS_KEY_ID',
+      'AWS_SECRET_ACCESS_KEY',
+      'SES_CONFIGURATION_SET',
+      'EMAIL_HASH_SECRET',
+      // The default sender is not on the domain SES verified, so every send would be refused.
+      'FROM_EMAIL',
+    ] as const
+    for (const name of required) {
+      if (!process.env[name]) errors.push({ var: name, reason })
+    }
+    if (!env.SES_FEEDBACK_TOPIC_ARN) {
+      errors.push({
+        var: 'SES_FEEDBACK_TOPIC_ARN',
+        reason: 'required to stop mailing bounced addresses',
+      })
+    }
+  } else if (env.EMAIL_PROVIDER !== 'resend') {
+    errors.push({ var: 'EMAIL_PROVIDER', reason: 'must be resend or ses' })
+  } else if (!env.RESEND_API_KEY) {
     errors.push({ var: 'RESEND_API_KEY', reason: 'required to send emails' })
   }
 

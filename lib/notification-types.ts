@@ -246,6 +246,7 @@ const TYPES: Record<string, TypeInfo> = {
   bug_report_comment_reply: { label: 'An admin replies on your bug report', default: 'in_app' },
   bug_report_resolved: { label: 'Your bug report is resolved', default: 'email' },
   chapter_joined: { label: 'Someone joins your chapter', default: 'in_app' },
+  profile_picture_removed: { label: 'Your profile picture is taken down', default: 'in_app' },
   csp_violation_summary: {
     label: 'Daily count of blocked scripts (CSP violations)',
     default: 'email',

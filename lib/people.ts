@@ -2,6 +2,7 @@ import { prisma } from './prisma'
 import { isSuperAdmin } from './auth'
 import { canAdminChapter, inChapter, type ChapterAccess } from './chapter-access'
 import { contactRelations, projectIdsOf, seesFullProfile } from './contact'
+import { profilePictureUrl } from './profile-picture'
 import {
   InterestStatus,
   TeamJoinRequestStatus,
@@ -112,6 +113,8 @@ export type PersonInfo = {
   role: StaffRole | null
   /** The chapter a lead or deputy runs, and its country as the Country table stores it. */
   chapter: { name: string; country: string } | null
+  /** Where their profile picture is served, or null to show initials. */
+  picture: string | null
 }
 
 /** What a name shown to the viewer links to and is badged with, for each of `targetIds`. */
@@ -135,14 +138,24 @@ export async function peopleInfo(
         chapterDeputyRole: {
           select: { chapter: { select: { id: true, name: true, country: true } } },
         },
+        profilePicture: { select: { publicId: true } },
       },
     }),
   ])
   const byId = new Map(rows.map((v) => [v.id, v]))
   return ids.map((id) => {
     const v = byId.get(id)
-    const info: PersonInfo = { id, canView: viewable.has(id), role: null, chapter: null }
+    const info: PersonInfo = {
+      id,
+      canView: viewable.has(id),
+      role: null,
+      chapter: null,
+      picture: null,
+    }
     if (!v) return info
+    // A face is shown only to whoever may open the profile it belongs to.
+    if (v.profilePicture && info.canView)
+      info.picture = profilePictureUrl(v.profilePicture.publicId)
     // As in loadAccess, a staff role counts only in the chapter the person belongs to.
     const deputyOf = v.chapterDeputyRole?.chapter
     if (v.isAdmin && isSuperAdmin(v)) info.role = 'admin'

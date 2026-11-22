@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/lib/auth-context'
+import { isApprovedMember } from '@/lib/hooks/auth'
 import { adminAreaName } from '@/lib/chapter-access'
 import { canSendCalls } from '@/lib/permissions'
 import { useRequiredActions } from '@/lib/required-actions-context'
@@ -13,7 +14,8 @@ import Button from '@/components/Button'
 import { orpc } from '@/lib/orpc'
 import { ThemeToggle } from './ThemeToggle'
 import BugReportDialog from './BugReportDialog'
-import { PersonInitials } from './WorkItemHeader'
+import Avatar from './Avatar'
+import BackButton from './BackButton'
 
 function MobileNavLink({
   href,
@@ -68,19 +70,27 @@ function Wordmark({ href }: { href: string }) {
 /** `path` is `base` or a page below it. */
 const under = (path: string, base: string) => path === base || path.startsWith(`${base}/`)
 
-type NavItem = { href: string; label: string; active: (path: string) => boolean }
+// `members`: behind the approval gate, so not offered to an applicant.
+type NavItem = {
+  href: string
+  label: string
+  active: (path: string) => boolean
+  members?: boolean
+}
 
 const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'Home', active: (p) => p === '/dashboard' },
   {
     href: '/projects',
     label: 'Projects',
+    members: true,
     active: (p) => under(p, '/projects') || under(p, '/templates') || under(p, '/suggest'),
   },
-  { href: '/quick-tasks', label: 'Tasks', active: (p) => under(p, '/quick-tasks') },
+  { href: '/quick-tasks', label: 'Tasks', members: true, active: (p) => under(p, '/quick-tasks') },
   {
     href: '/volunteers',
     label: 'People',
+    members: true,
     active: (p) => under(p, '/volunteers') || under(p, '/teams') || under(p, '/suggest-team'),
   },
   { href: '/inbox', label: 'Inbox', active: (p) => under(p, '/inbox') },
@@ -109,6 +119,8 @@ export default function Header() {
   const { user, loading, logout } = useAuth()
   const adminArea = user ? adminAreaName(user.access, user.chapter) : null
   const coordinates = user ? canSendCalls(user) : false
+  const member = isApprovedMember(user)
+  const navItems = NAV_ITEMS.filter((item) => member || !item.members)
   const { actions: requiredActions, show: showRequiredAction } = useRequiredActions()
   const firstAction = requiredActions[0]
   const pathname = usePathname()
@@ -177,13 +189,16 @@ export default function Header() {
     <>
       <header className="bg-surface border-b border-brand-border py-4 sticky top-0 z-[100]">
         <div className="container flex justify-between items-center gap-2 flex-nowrap xl:gap-4">
-          <Wordmark href={homeHref} />
+          <div className="flex items-center gap-2">
+            <BackButton />
+            <Wordmark href={homeHref} />
+          </div>
 
           <nav aria-label="Main" className="hidden xl:flex gap-2 flex-wrap">
             {mounted &&
               !loading &&
               user &&
-              NAV_ITEMS.map(({ href, label, active }) => (
+              navItems.map(({ href, label, active }) => (
                 <Button
                   key={href}
                   href={href}
@@ -220,7 +235,7 @@ export default function Header() {
                     className="rounded-full cursor-pointer border-0 bg-transparent p-0 hover:opacity-80"
                     onClick={() => setUserMenuOpen((o) => !o)}
                   >
-                    <PersonInitials name={user.name} size="md" />
+                    <Avatar id={user.id} name={user.name} size="md" />
                   </button>
                   {userMenuOpen && (
                     <div
@@ -230,21 +245,28 @@ export default function Header() {
                       <div className="px-4 py-3 border-b border-brand-border font-semibold text-brand-text">
                         {user.name}
                       </div>
-                      <Link
-                        href={`/volunteers/${user.id}`}
-                        className="block px-4 py-3 text-brand-text no-underline"
-                      >
-                        My profile
-                      </Link>
+                      {member && (
+                        <Link
+                          href={`/volunteers/${user.id}`}
+                          className="block px-4 py-3 text-brand-text no-underline"
+                        >
+                          My profile
+                        </Link>
+                      )}
                       <Link
                         href="/settings"
                         className="block px-4 py-3 text-brand-text no-underline"
                       >
                         Settings
                       </Link>
-                      <Link href="/calls" className="block px-4 py-3 text-brand-text no-underline">
-                        Calls for volunteers
-                      </Link>
+                      {member && (
+                        <Link
+                          href="/calls"
+                          className="block px-4 py-3 text-brand-text no-underline"
+                        >
+                          Calls for volunteers
+                        </Link>
+                      )}
                       {coordinates && (
                         <Link
                           href="/coordinate"
@@ -380,7 +402,7 @@ export default function Header() {
           {/* Nav links */}
           <div className="flex-1 overflow-y-auto">
             {user &&
-              NAV_ITEMS.map(({ href, label, active }) => (
+              navItems.map(({ href, label, active }) => (
                 <MobileNavLink key={href} href={href} active={active(pathname)}>
                   {label}
                   {href === '/inbox' && <WaitingBadge count={waiting} updates={newUpdates} />}
@@ -393,7 +415,7 @@ export default function Header() {
                 <>
                   <MobileNavSection>Account</MobileNavSection>
                   <div className="flex items-center gap-3 px-5 py-4 border-b border-brand-border font-semibold text-brand-text">
-                    <PersonInitials name={user.name} size="md" />
+                    <Avatar id={user.id} name={user.name} size="md" />
                     {user.name}
                   </div>
                   {requiredActions.map((action) => (
@@ -408,9 +430,11 @@ export default function Header() {
                       {viewOf(action).label}
                     </button>
                   ))}
-                  <MobileNavLink href={`/volunteers/${user.id}`}>My profile</MobileNavLink>
+                  {member && (
+                    <MobileNavLink href={`/volunteers/${user.id}`}>My profile</MobileNavLink>
+                  )}
                   <MobileNavLink href="/settings">Settings</MobileNavLink>
-                  <MobileNavLink href="/calls">Calls for volunteers</MobileNavLink>
+                  {member && <MobileNavLink href="/calls">Calls for volunteers</MobileNavLink>}
                   {coordinates && <MobileNavLink href="/coordinate">Coordinate</MobileNavLink>}
 
                   {adminArea && (
