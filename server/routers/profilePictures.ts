@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { canAdminChapter } from '@/lib/chapter-access'
 import { audit } from '@/lib/chapter-roles'
 import { notifyUser } from '@/lib/notify'
+import { checkRateLimit } from '@/lib/rate-limit'
 import { MAX_DATA_URL_LENGTH, profilePictureUrl } from '@/lib/profile-picture'
 import { newPublicId, toProfilePicture } from '@/lib/profile-picture-server'
 import { ChapterAuditAction } from '@/generated/prisma/enums'
@@ -12,9 +13,15 @@ import { authedProcedure, staffProcedure } from '../procedures'
 export const profilePicturesRouter = {
   /** Replaces the caller's picture; the old one's URL stops working. */
   upload: authedProcedure
-    .input(z.object({ picture: z.string().max(MAX_DATA_URL_LENGTH) }))
+    .input(z.object({ pictureDataUrl: z.string().max(MAX_DATA_URL_LENGTH) }))
     .handler(async ({ input, context }) => {
-      const data = await toProfilePicture(input.picture)
+      // Each upload is decoded in full, so a burst of them could exhaust the server's memory.
+      const { allowed, retryAfterMs } = checkRateLimit(context.request, 'profile-picture-upload', {
+        limit: 10,
+        windowMs: 10 * 60_000,
+      })
+      if (!allowed) throw new ORPCError('TOO_MANY_REQUESTS', { cause: { retryAfterMs } })
+      const data = await toProfilePicture(input.pictureDataUrl)
       const publicId = newPublicId()
       const volunteerId = context.volunteer.id
       await prisma.profilePicture.upsert({

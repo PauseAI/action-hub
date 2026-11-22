@@ -60,4 +60,21 @@ describe('ProfilePictureSettings', () => {
     ).toBeInTheDocument()
     await waitFor(async () => expect(await pictureOf(me.id)).toBeNull())
   })
+
+  it('says so when the browser cannot read the chosen file', async () => {
+    const me = await createVolunteer()
+    const read = vi.spyOn(FileReader.prototype, 'readAsDataURL').mockImplementation(function (
+      this: FileReader,
+    ) {
+      this.onerror?.(new ProgressEvent('error') as ProgressEvent<FileReader>)
+    })
+    try {
+      await renderApp(<ProfilePictureSettings id={me.id} name={me.name} />, { as: me })
+      await screen.findByRole('button', { name: 'Upload picture' })
+      await userEvent.upload(fileInput(), new File(['x'], 'offline.png', { type: 'image/png' }))
+      expect(await screen.findByText('That file could not be read')).toBeInTheDocument()
+    } finally {
+      read.mockRestore()
+    }
+  })
 })

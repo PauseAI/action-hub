@@ -18,7 +18,7 @@ const LONGER_FIELDS: Record<string, number> = {
   file: 2_000_000,
   csv: 2_000_000,
   // A profile picture as a data URL, bounded by its own schema.
-  picture: MAX_DATA_URL_LENGTH,
+  pictureDataUrl: MAX_DATA_URL_LENGTH,
 }
 
 /** The first limit the input breaks, as a message for the caller, or null if it breaks none. */

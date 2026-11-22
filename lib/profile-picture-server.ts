@@ -6,9 +6,10 @@ import { MAX_UPLOAD_BYTES } from './profile-picture'
 /** Side of the square thumbnail stored and served, in pixels: twice the largest avatar shown. */
 export const PICTURE_SIZE = 256
 /** Refuses an image that decodes to more pixels than this, however small its file. */
-const MAX_INPUT_PIXELS = 40_000_000
-/** Formats as sharp names them; `heif` covers AVIF. */
+export const MAX_INPUT_PIXELS = 40_000_000
+/** Formats as sharp names them; `heif` covers AVIF, and HEIC, which sharp cannot decode. */
 const ACCEPTED_FORMATS = new Set(['jpeg', 'png', 'webp', 'gif', 'heif'])
+const FORMAT_MESSAGE = 'Upload a JPEG, PNG, WebP, GIF or AVIF image'
 
 function refuse(message: string): never {
   throw new ORPCError('BAD_REQUEST', { message })
@@ -22,17 +23,26 @@ function refuse(message: string): never {
  */
 export async function toProfilePicture(dataUrl: string): Promise<Uint8Array<ArrayBuffer>> {
   const base64 = /^data:[^,]*;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl)?.[1]
-  if (base64 === undefined) refuse('Upload a JPEG, PNG, WebP, GIF or AVIF image')
+  if (base64 === undefined) refuse(FORMAT_MESSAGE)
   const input = Buffer.from(base64, 'base64')
   if (input.length > MAX_UPLOAD_BYTES) {
     refuse(`Pictures must be ${MAX_UPLOAD_BYTES / 1024 / 1024} MB or smaller`)
   }
-  const image = sharp(input, { limitInputPixels: MAX_INPUT_PIXELS })
-  const metadata = await image.metadata().catch(() => null)
-  if (!metadata?.format || !ACCEPTED_FORMATS.has(metadata.format)) {
-    refuse('Upload a JPEG, PNG, WebP, GIF or AVIF image')
+  // Only the header is read here; the decode below enforces the pixel limit again.
+  const metadata = await sharp(input, { limitInputPixels: false })
+    .metadata()
+    .catch(() => null)
+  if (
+    !metadata?.format ||
+    !ACCEPTED_FORMATS.has(metadata.format) ||
+    (metadata.format === 'heif' && metadata.compression !== 'av1')
+  ) {
+    refuse(FORMAT_MESSAGE)
   }
-  return image
+  if (metadata.width * metadata.height > MAX_INPUT_PIXELS) {
+    refuse(`Pictures must be ${MAX_INPUT_PIXELS / 1_000_000} megapixels or smaller`)
+  }
+  return sharp(input, { limitInputPixels: MAX_INPUT_PIXELS })
     .rotate()
     .resize(PICTURE_SIZE, PICTURE_SIZE, { fit: 'cover' })
     .webp({ quality: 80 })

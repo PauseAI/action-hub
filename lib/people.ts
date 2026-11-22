@@ -153,7 +153,9 @@ export async function peopleInfo(
       picture: null,
     }
     if (!v) return info
-    if (v.profilePicture) info.picture = profilePictureUrl(v.profilePicture.publicId)
+    // A face is shown only to whoever may open the profile it belongs to.
+    if (v.profilePicture && info.canView)
+      info.picture = profilePictureUrl(v.profilePicture.publicId)
     // As in loadAccess, a staff role counts only in the chapter the person belongs to.
     const deputyOf = v.chapterDeputyRole?.chapter
     if (v.isAdmin && isSuperAdmin(v)) info.role = 'admin'

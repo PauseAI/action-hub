@@ -14,9 +14,10 @@ import { ACCEPTED_TYPES, MAX_UPLOAD_BYTES } from '@/lib/profile-picture'
 const MAX_MB = MAX_UPLOAD_BYTES / 1024 / 1024
 
 function asDataUrl(file: Blob): Promise<string> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(new Error('That file could not be read'))
     reader.readAsDataURL(file)
   })
 }
@@ -58,7 +59,8 @@ export default function ProfilePictureSettings({ id, name }: { id: number; name:
       showToast(`Pictures must be ${MAX_MB} MB or smaller`, 'error')
       return
     }
-    upload.mutate({ picture: await asDataUrl(file) })
+    const pictureDataUrl = await asDataUrl(file).catch(onError)
+    if (pictureDataUrl) upload.mutate({ pictureDataUrl })
   }
 
   return (

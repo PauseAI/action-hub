@@ -158,7 +158,10 @@ export const volunteersRouter = {
         context.volunteer.approvalStatus === ApprovalStatus.approved || context.volunteer.isAdmin
       return approved
         ? people
-        : people.map((p) => ({ ...p, canView: p.id === context.volunteer.id }))
+        : people.map((p) => {
+            const own = p.id === context.volunteer.id
+            return { ...p, canView: own, picture: own ? p.picture : null }
+          })
     }),
 
   getById: approvedProcedure

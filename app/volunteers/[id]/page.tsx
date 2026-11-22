@@ -34,8 +34,12 @@ function RemovePicture({ volunteerId, name }: { volunteerId: number; name: strin
       showToast('Picture removed', 'success')
       void queryClient.invalidateQueries({ queryKey: ['person'] })
     },
-    onError: (err: unknown) =>
-      showToast(err instanceof Error ? err.message : 'Failed to remove the picture', 'error'),
+    onError: (err: unknown) => {
+      showToast(err instanceof Error ? err.message : 'Failed to remove the picture', 'error')
+      // Someone else may have taken it down first; show the profile as it now is.
+      setOpen(false)
+      void queryClient.invalidateQueries({ queryKey: ['person'] })
+    },
   })
   return (
     <>
