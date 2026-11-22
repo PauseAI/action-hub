@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { useMutation } from '@tanstack/react-query'
 import { orpc } from '@/lib/orpc'
 import { useAuth } from '@/lib/auth-context'
+import { isApprovedMember } from '@/lib/hooks/auth'
 import Button from '@/components/Button'
 import ResendConfirmation from '@/components/ResendConfirmation'
 import { H1 } from '@/components/Heading'
@@ -82,8 +83,21 @@ function VerifyEmailContent() {
           Your email address has been confirmed. Your application is now under review, we&#39;ll
           notify you by email once it&#39;s been assessed.
         </P>
-        <P className="text-text-light mb-6">In the meantime, you can browse available projects.</P>
-        <Button href="/projects">Browse projects</Button>
+        {user && !isApprovedMember(user) ? (
+          <>
+            <P className="text-text-light mb-6">
+              In the meantime, Home has things you can do for PauseAI today.
+            </P>
+            <Button href="/dashboard">Go to Home</Button>
+          </>
+        ) : (
+          <>
+            <P className="text-text-light mb-6">
+              In the meantime, you can browse available projects.
+            </P>
+            <Button href="/projects">Browse projects</Button>
+          </>
+        )}
       </div>
     )
   }

@@ -45,7 +45,8 @@ interface AuthContextValue {
   user: User | null
   token: string | null
   loading: boolean
-  setToken: (token: string) => Promise<void>
+  /** Signs in with `token`; resolves to the account, or null when it could not be loaded. */
+  setToken: (token: string) => Promise<User | null>
   logout: () => Promise<void>
   refreshUser: () => Promise<void>
 }
@@ -115,6 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .catch(() => {})
         }
       }
+      return vol
     },
     [fetchMe],
   )

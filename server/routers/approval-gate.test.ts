@@ -76,6 +76,20 @@ describe('a pending volunteer', () => {
     })
   })
 
+  it("cannot read a project's or its task's comments, unless the project is their own", async () => {
+    const project = await createProject({ isSeekingHelp: true })
+    const task = await createTask(project.id)
+    const me = await pending()
+    const c = clientAs(me)
+    for (const workItemId of [project.id, task.id]) {
+      await expect(c.workItemComments.list({ workItemId })).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+      })
+    }
+    const own = await createProject({ creatorId: me.id })
+    await expect(c.workItemComments.list({ workItemId: own.id })).resolves.toBeDefined()
+  })
+
   it('cannot send a message', async () => {
     const recipient = await createVolunteer()
     await expect(

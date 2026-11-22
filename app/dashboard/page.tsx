@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ResendConfirmation from '@/components/ResendConfirmation'
+import ApplicantWelcome from '@/components/ApplicantWelcome'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRequireAuth } from '@/lib/hooks/auth'
 import { orpc } from '@/lib/orpc'
@@ -461,6 +462,16 @@ export default function HomePage() {
 
         {data.gettingStarted && (
           <GettingStarted steps={data.gettingStarted} email={user.email ?? null} />
+        )}
+
+        {data.waiting && (
+          <ApplicantWelcome
+            name={user.name}
+            chapterName={user.chapter?.name ?? null}
+            waiting={data.waiting}
+            hasSkills={data.hasSkills}
+            needsInfo={user.approvalStatus === ApprovalStatus.needs_info}
+          />
         )}
 
         {isMember && (
