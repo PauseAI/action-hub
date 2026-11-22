@@ -33,6 +33,8 @@ const ACTION_LABELS: Record<ChapterAuditAction, string> = {
   PROFILE_PICTURE_REMOVED: 'removed a profile picture:',
   ROLE_INVITE_ACCEPTED: 'accepted a staff invite:',
   JOINED_FROM_POOL: 'joined from the holding pool',
+  COORDINATOR_APPOINTED: 'made a coordinator:',
+  COORDINATOR_REMOVED: 'removed a coordinator:',
 }
 
 const NONE = ''
@@ -332,7 +334,7 @@ export default function AdminChapterPage({ params }: { params: Promise<{ id: str
             {events.map((e) => (
               <li key={e.id}>
                 <span className="text-text-light">{formatDate(e.createdAt)}</span>{' '}
-                {e.actorName ?? 'Catalyse'} {ACTION_LABELS[e.action]}{' '}
+                {e.actorName ?? 'Action Hub'} {ACTION_LABELS[e.action]}{' '}
                 {e.action !== ChapterAuditAction.JOINED_FROM_POOL && e.targetName}
               </li>
             ))}

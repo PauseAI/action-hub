@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest'
+import { suppressionKey } from '@/lib/email-suppression'
+import { describe, it, expect, vi } from 'vitest'
 import {
   EXPORTED_COLUMNS,
   EXPORTED_LINKS,
@@ -246,6 +247,14 @@ const rowFor: Record<string, (who: Person, other: Person) => Promise<Row>> = {
     prisma.adminNote.create({ data: { volunteerId: who.id, authorId: other.id, content: 'note' } }),
   'AnonymisedEmail.emailHash': (who) =>
     prisma.anonymisedEmail.create({ data: { emailHash: hashEmail(who.email!) } }),
+  'EmailSuppression.emailHash': (who) =>
+    prisma.emailSuppression.create({
+      data: {
+        emailHash: suppressionKey(who.email!),
+        reason: 'bounce',
+        detail: 'Permanent/General',
+      },
+    }),
   'ApiToken.volunteer': (who) =>
     prisma.apiToken.create({
       data: { volunteerId: who.id, name: 'n', tokenHash: `h${nextSeq()}` },
@@ -260,6 +269,17 @@ const rowFor: Record<string, (who: Person, other: Person) => Promise<Row>> = {
       data: { bugReportId: report.id, authorId: who.id, content: 'c' },
     })
   },
+  'Call.sender': (who) => prisma.call.create({ data: { senderId: who.id, title: 't', body: 'b' } }),
+  'CallDismissal.volunteer': async (who, other) => {
+    const call = await prisma.call.create({ data: { senderId: other.id, title: 't', body: 'b' } })
+    return prisma.callDismissal.create({ data: { callId: call.id, volunteerId: who.id } })
+  },
+  'CallResponse.volunteer': async (who, other) => {
+    const call = await prisma.call.create({ data: { senderId: other.id, title: 't', body: 'b' } })
+    return prisma.callResponse.create({
+      data: { callId: call.id, volunteerId: who.id, message: 'm' },
+    })
+  },
   'ChapterAuditEvent.targetVolunteer': (who, other) =>
     prisma.chapterAuditEvent.create({
       data: { action: 'LEAD_APPOINTED', actorId: other.id, targetVolunteerId: who.id },
@@ -268,6 +288,8 @@ const rowFor: Record<string, (who: Person, other: Person) => Promise<Row>> = {
     prisma.chapterDeputy.create({
       data: { nationalChapterId: (await createChapter()).id, volunteerId: who.id },
     }),
+  'Coordinator.volunteer': (who, other) =>
+    prisma.coordinator.create({ data: { volunteerId: who.id, appointedById: other.id } }),
   'ChapterTransferRequest.volunteer': (who) =>
     prisma.chapterTransferRequest.create({ data: { volunteerId: who.id, toCountry: 'FR' } }),
   'ContactRequest.from': (who, other) =>
@@ -345,6 +367,12 @@ const rowFor: Record<string, (who: Person, other: Person) => Promise<Row>> = {
   'NationalChapter.lead': (who) => createChapter({ leadId: who.id }),
   'Notification.volunteer': (who) =>
     prisma.notification.create({ data: { volunteerId: who.id, type: 't', title: 't' } }),
+  'NotificationDigest.volunteer': (who) =>
+    prisma.notificationDigest.create({ data: { volunteerId: who.id, sentOn: new Date() } }),
+  'NotificationPreference.volunteer': (who) =>
+    prisma.notificationPreference.create({
+      data: { volunteerId: who.id, type: 'mention', delivery: 'email' },
+    }),
   'PasswordResetToken.volunteer': (who) =>
     prisma.passwordResetToken.create({
       data: { volunteerId: who.id, token: `p${nextSeq()}`, expiresAt: new Date() },
@@ -418,8 +446,9 @@ describe('every exported link', () => {
   it("returns the person's rows under each link, and no one else's", async () => {
     const me = await createVolunteer()
     const other = await createVolunteer()
-    // A row's id, or for a pair with no id of its own, the two people it pairs.
-    const key = (r: Row) => String(r.id ?? [r.volunteerAId, r.volunteerBId])
+    // A row's id, or for a row with no id of its own, the columns of its primary key.
+    const key = (r: Row) =>
+      String(r.id ?? ('callId' in r ? [r.callId, r.volunteerId] : [r.volunteerAId, r.volunteerBId]))
     const mine: Record<string, string> = {}
     const theirs: Record<string, string> = {}
     for (const link of EXPORTED_LINKS) {
@@ -466,6 +495,17 @@ describe('every exported link', () => {
       expect(Object.keys(row).sort(), link).toEqual(
         [...EXPORTED_COLUMNS[`ExperimentalJournalist.${link}`]].sort(),
       )
+    }
+  })
+
+  it('still exports without EMAIL_HASH_SECRET, which Resend runs without', async () => {
+    const me = await createVolunteer()
+    vi.stubEnv('EMAIL_HASH_SECRET', '')
+    try {
+      const { EmailSuppression } = await linkedRecords(me)
+      expect(EmailSuppression.emailHash).toEqual([])
+    } finally {
+      vi.unstubAllEnvs()
     }
   })
 

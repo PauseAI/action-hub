@@ -33,13 +33,13 @@ async function recordApplicantSignup(engine: DemoEngine, browser: Browser): Prom
 
   await engine.showTitleCard(`${BASE_URL}/`, buildTitleCardHtml(meta.title))
   await engine.narrate(
-    "Let me walk you through Catalyse. We'll see how a volunteer applies, and how an admin reviews and approves their application",
+    "Let me walk you through Action Hub. We'll see how a volunteer applies, and how an admin reviews and approves their application",
   )
   await engine.dismissTitleCard(600)
   await engine.placeCursor()
   await engine.pause(300)
 
-  await engine.narrate('Catalyse connects AI safety projects with volunteers')
+  await engine.narrate('Action Hub connects AI safety projects with volunteers')
 
   await engine.narrate('New applicants start with their account details', async () => {
     await engine.navigateTo(`${BASE_URL}/signup`)
@@ -202,14 +202,14 @@ async function recordApplicantPending(engine: DemoEngine, browser: Browser): Pro
   const confirmUrl = `${BASE_URL}/verify-email?token=${_verifyToken}`
   const emailHtml = buildWelcomeAndConfirmHtml(APPLICANT.name, confirmUrl)
   await showEmailClient(engine, page, {
-    subject: 'Confirm your Catalyse email address',
+    subject: 'Welcome to Action Hub: please confirm your email',
     from: NOREPLY_EMAIL,
     to: APPLICANT.email,
     bodyHtml: emailHtml,
   })
 
   await engine.narrate(
-    "Alex checks their email. There's a verification email from Catalyse",
+    "Alex checks their email. There's a verification email from Action Hub",
     async () => {
       const emailItem = page.locator('.email-item.selected')
       await engine.mouseMoveTo(emailItem)

@@ -1,3 +1,4 @@
+import { liftSuppression } from '@/lib/email-suppression'
 import { ORPCError } from '@orpc/server'
 import { randomBytes } from 'crypto'
 import { z } from 'zod'
@@ -29,7 +30,7 @@ import {
 } from '@/lib/email'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { verifyGoogleToken } from '@/lib/google-auth'
-import { notifyChapterStaff } from '@/lib/notify'
+import { notifyChapterStaff, notifyUserOfEach } from '@/lib/notify'
 import { placement } from '@/lib/chapter-placement'
 import {
   SignupSchema,
@@ -41,7 +42,13 @@ import {
 } from '@/lib/schemas'
 import { publicProcedure, authedProcedure } from '../procedures'
 import { env } from '@/lib/env'
-import { ApprovalStatus, ProjectStatus, WorkItemType } from '@/generated/prisma/enums'
+import {
+  ApprovalStatus,
+  ChapterAuditAction,
+  ProjectStatus,
+  WorkItemType,
+} from '@/generated/prisma/enums'
+import { audit } from '@/lib/chapter-roles'
 
 // Google sign-in is stubbed when asked, or when no client id is set outside production.
 const stubGoogle = () => env.STUB_GOOGLE || (!env.GOOGLE_CLIENT_ID && env.NODE_ENV !== 'production')
@@ -123,74 +130,60 @@ async function sendAccountDeletionNotifications(deletedId: number, deletedName: 
 
   const { sendProjectNotificationEmail } = await import('@/lib/email')
   for (const [recipientId, r] of Object.entries(recipients)) {
-    const rid = Number(recipientId)
-    for (const p of r.taskProjects) {
-      const word = p.taskCount === 1 ? 'task' : 'tasks'
-      await prisma.notification
-        .create({
-          data: {
-            volunteerId: rid,
-            type: 'account_deleted_impact',
-            title: `${deletedName} has deleted their account`,
-            body: `${p.taskCount} ${word} in '${p.projectTitle}' assigned to ${deletedName} need a new assignee.`,
-            link: `/projects/${p.projectId}`,
-          },
-        })
-        .catch((e) => logger.error(e, '[NOTIFY ERROR]'))
-    }
-    for (const p of r.ownerlessProjects) {
-      await prisma.notification
-        .create({
-          data: {
-            volunteerId: rid,
-            type: 'account_deleted_impact',
-            title: `${deletedName} has deleted their account`,
-            body: `'${p.projectTitle}' needs a new owner.`,
-            link: `/projects/${p.projectId}`,
-          },
-        })
-        .catch((e) => logger.error(e, '[NOTIFY ERROR]'))
-    }
-    if (r.email) {
-      const allProjects = [...r.taskProjects, ...r.ownerlessProjects]
-      const msgParts = [html`<p><strong>${deletedName}</strong> has deleted their account.</p>`]
-      if (r.taskProjects.length)
-        msgParts.push(
-          html`<p>The following tasks need a new assignee:</p>
-            <ul>
-              ${rawHtml(
-                r.taskProjects
-                  .map(
-                    (p) =>
-                      html`<li>
-                        ${p.taskCount} ${p.taskCount === 1 ? 'task' : 'tasks'} in
-                        <strong>${p.projectTitle}</strong>
-                      </li>`,
-                  )
-                  .join(''),
-              )}
-            </ul>`,
-        )
-      if (r.ownerlessProjects.length)
-        msgParts.push(
-          html`<p>The following projects need a new owner:</p>
-            <ul>
-              ${rawHtml(
-                r.ownerlessProjects
-                  .map((p) => html`<li><strong>${p.projectTitle}</strong></li>`)
-                  .join(''),
-              )}
-            </ul>`,
-        )
-      await sendProjectNotificationEmail({
-        to: r.email,
-        name: r.name,
-        subject: `${deletedName} has deleted their account`,
-        message: msgParts.join(''),
-        projectTitle: allProjects[0].projectTitle,
-        projectId: allProjects[0].projectId,
-      }).catch((e) => logger.error(e, '[NOTIFY ERROR] email failed:'))
-    }
+    const allProjects = [...r.taskProjects, ...r.ownerlessProjects]
+    const title = `${deletedName} has deleted their account`
+    const items = [
+      ...r.taskProjects.map((p) => ({
+        title,
+        body: `${p.taskCount} ${p.taskCount === 1 ? 'task' : 'tasks'} in '${p.projectTitle}' assigned to ${deletedName} need a new assignee.`,
+        link: `/projects/${p.projectId}`,
+      })),
+      ...r.ownerlessProjects.map((p) => ({
+        title,
+        body: `'${p.projectTitle}' needs a new owner.`,
+        link: `/projects/${p.projectId}`,
+      })),
+    ]
+    const msgParts = [html`<p><strong>${deletedName}</strong> has deleted their account.</p>`]
+    if (r.taskProjects.length)
+      msgParts.push(
+        html`<p>The following tasks need a new assignee:</p>
+          <ul>
+            ${rawHtml(
+              r.taskProjects
+                .map(
+                  (p) =>
+                    html`<li>
+                      ${p.taskCount} ${p.taskCount === 1 ? 'task' : 'tasks'} in
+                      <strong>${p.projectTitle}</strong>
+                    </li>`,
+                )
+                .join(''),
+            )}
+          </ul>`,
+      )
+    if (r.ownerlessProjects.length)
+      msgParts.push(
+        html`<p>The following projects need a new owner:</p>
+          <ul>
+            ${rawHtml(
+              r.ownerlessProjects
+                .map((p) => html`<li><strong>${p.projectTitle}</strong></li>`)
+                .join(''),
+            )}
+          </ul>`,
+      )
+    await notifyUserOfEach(Number(recipientId), 'account_deleted_impact', items, {
+      send: (to, name) =>
+        sendProjectNotificationEmail({
+          to,
+          name,
+          subject: title,
+          message: msgParts.join(''),
+          projectTitle: allProjects[0].projectTitle,
+          projectId: allProjects[0].projectId,
+        }),
+    })
   }
 }
 
@@ -364,11 +357,11 @@ export const authRouter = {
         volunteer.nationalChapterId,
         'new_volunteer_signup',
         'New volunteer application',
-        `${volunteer.name} has applied to join Catalyse`,
+        `${volunteer.name} has applied to join Action Hub`,
         `/admin/applications/${volunteer.id}`,
         {
-          message: html`<strong>${volunteer.name}</strong> (${email}) has applied to join Catalyse.
-            Please review their application.`,
+          message: html`<strong>${volunteer.name}</strong> (${email}) has applied to join Action
+            Hub. Please review their application.`,
           ctaLabel: 'Review Application',
           ctaUrl: `/admin/applications/${volunteer.id}`,
         },
@@ -766,6 +759,10 @@ export const authRouter = {
       })
       await sendAccountDeletionNotifications(context.volunteer.id, context.volunteer.name)
       await deleteAllSessions(context.volunteer.id)
+      // Only an address they proved is theirs: anyone can sign up with someone else's.
+      if (context.volunteer.email && context.volunteer.emailConfirmed) {
+        await liftSuppression(context.volunteer.email)
+      }
       await prisma.volunteer.update({
         where: { id: context.volunteer.id },
         data: {
@@ -786,6 +783,22 @@ export const authRouter = {
       })
       await prisma.volunteerSkill.deleteMany({ where: { volunteerId: context.volunteer.id } })
       await prisma.profilePicture.deleteMany({ where: { volunteerId: context.volunteer.id } })
+      // A coordinator's role goes with the account, and their open calls close.
+      const { count: wasCoordinator } = await prisma.coordinator.deleteMany({
+        where: { volunteerId: context.volunteer.id },
+      })
+      if (wasCoordinator) {
+        await prisma.call.updateMany({
+          where: { senderId: context.volunteer.id, closedAt: null },
+          data: { closedAt: new Date() },
+        })
+        await audit(prisma, ChapterAuditAction.COORDINATOR_REMOVED, {
+          actorId: context.volunteer.id,
+          chapterId: null,
+          targetVolunteerId: context.volunteer.id,
+          details: { reason: 'account deleted' },
+        })
+      }
       return { message: "Your account has been deleted. We're sorry to see you go." }
     }),
 

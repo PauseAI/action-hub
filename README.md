@@ -1,8 +1,8 @@
-# Catalyse
+# Action Hub
 
 **Volunteer & Project Matching Platform for PauseAI**
 
-Catalyse connects volunteers with projects, matching skills to needs and enabling effective coordination across PauseAI initiatives.
+Action Hub connects volunteers with projects, matching skills to needs and enabling effective coordination across PauseAI initiatives.
 
 ## Features
 
@@ -33,7 +33,14 @@ Catalyse connects volunteers with projects, matching skills to needs and enablin
 - **Database**: PostgreSQL via Prisma ORM
 - **Email**: Resend SDK
 - **Auth**: Custom token-based + Google OAuth
-- **Hosting**: Railway
+- **Hosting**: Railway, served at https://action.pauseai.info. The Railway domain
+  `catalyse.up.railway.app` stays attached: `proxy.ts` sends its pages to the same path on
+  `APP_URL` with a 308, and answers `/api` itself so cron and MCP callers keep working.
+- **Scheduled jobs**: a separate Railway cron service (`Dockerfile.cron`) runs
+  `scripts/cron-trigger/trigger.mjs` hourly, which POSTs to `/api/cron/daily` with
+  `CRON_SECRET`. Set `CRON_HEALTHCHECK_URL` on that service to a healthchecks.io ping URL and
+  each run reports its start and result there, so a run that fails or never happens alerts.
+- Each service's deploy settings and variable names are in [docs/railway.md](docs/railway.md).
 
 ## Getting Started
 
@@ -64,8 +71,36 @@ cp .env.local.example .env.local
 
 Key variables:
 
+- `APP_URL` — the app's public origin, used for links in emails; in production
+  `https://action.pauseai.info`
 - `DATABASE_URL` — Postgres connection URL (e.g. `postgresql://postgres:postgres@localhost:5432/catalyse`)
-- `RESEND_API_KEY` — for email sending
+- `RESEND_API_KEY` — for email sending through Resend (the default provider)
+- `EMAIL_PROVIDER` — `resend` (default) or `ses`. With `ses`, mail goes through Amazon SES and
+  these are needed too (PauseAI/infra's `ses-app-setup.sh` writes the first four to a file):
+  - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` — read by the AWS SDK
+  - `SES_CONFIGURATION_SET` — named on every send, so SES applies the app's suppression,
+    reputation alarms and pause switch, and publishes its bounces and complaints
+  - `SES_FEEDBACK_TOPIC_ARN` — the SNS topic (`ses-<app>-feedback`) whose bounce and complaint
+    notifications `POST /api/email/sns` accepts. Permanent bounces and complaints go on
+    `email_suppressions` and get no more mail (a complaint for a year, a bounce until lifted);
+    deleting a row, or the confirmed account, lifts it. Only SHA-256 signatures are accepted, so
+    set the topic to sign with them:
+
+    ```bash
+    aws sns set-topic-attributes --topic-arn <arn> --attribute-name SignatureVersion --attribute-value 2
+    ```
+
+  - `EMAIL_HASH_SECRET` — a random secret keying the hashes suppressed addresses are kept under
+    (`openssl rand -hex 32`); changing it forgets every suppression
+
+- `FROM_EMAIL` — the sender; with SES it must be set, on the verified domain:
+  `Action Hub <noreply@action.pauseai.info>`
+- `EMAIL_HOURLY_CAP` — with `ses`, the most emails sent in one clock hour across every process
+  (default 500); beyond it mail is dropped and logged. Keep it above the number of people a
+  digest or call reaches.
+- `EMAIL_ESSENTIAL_HOURLY_CAP` — with `ses`, the same for essential mail (password reset, signup
+  confirmation, account merge, outreach login), kept apart from the cap above (default 200), plus
+  five an hour to any one address
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — for Google OAuth
 - `STUB_EMAIL=true` — suppress real emails in development
 
@@ -190,7 +225,7 @@ Actions are pinned to commit SHAs with the version in a trailing comment; bump b
 ## Project Structure
 
 ```text
-catalyse/
+action-hub/
 ├── app/                    # App Router pages and API routes
 ├── components/             # Shared React components
 ├── docs/                   # Architecture notes
@@ -202,8 +237,8 @@ catalyse/
 ```
 
 `AGENTS.md` holds the working notes for coding agents and contributors, and
-`SELF-IMPROVE.md` is the backlog of things about the repo itself that made work
-harder than it needed to be, sorted by how often each has bitten.
+`investments/` the backlog of things about the repo itself that made work harder
+than it needed to be; `npm run investments` ranks it by how often each has bitten.
 
 ## License
 

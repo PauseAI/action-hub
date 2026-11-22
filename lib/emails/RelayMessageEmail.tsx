@@ -14,7 +14,7 @@ export type RelayMessageEmailProps = {
 }
 
 /**
- * A message relayed from one volunteer to another. `threadUrl` is where to reply on Catalyse;
+ * A message relayed from one volunteer to another. `threadUrl` is where to reply on Action Hub;
  * `repliesByEmail` says whether the sender shared their address as the reply-to.
  */
 export function RelayMessageEmail({
@@ -32,7 +32,7 @@ export function RelayMessageEmail({
       <Heading as="h2">Message from {fromName}</Heading>
       <Text>{`Hi ${toName},`}</Text>
       <Text>
-        <strong>{fromName}</strong> has sent you a message via Catalyse
+        <strong>{fromName}</strong> has sent you a message via Action Hub
         {projectTitle && (
           <>
             {' '}
@@ -55,7 +55,7 @@ export function RelayMessageEmail({
         <p>{message}</p>
       </div>
       <p>
-        <a href={threadUrl}>Reply on Catalyse</a>
+        <a href={threadUrl}>Reply on Action Hub</a>
       </p>
       {repliesByEmail && (
         <Text>You can also reply to this email to write to {fromName} directly.</Text>

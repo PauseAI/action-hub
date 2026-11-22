@@ -80,6 +80,8 @@ enum ChapterAuditAction {
   ROLE_INVITE_SENT
   ROLE_INVITE_ACCEPTED
   JOINED_FROM_POOL
+  COORDINATOR_APPOINTED
+  COORDINATOR_REMOVED
   PROFILE_PICTURE_REMOVED
 }
 
@@ -237,6 +239,20 @@ enum TaskStatus {
   in_progress
   under_review
   completed
+}
+
+/// How a notification of one type reaches its recipient beyond the Inbox (lib/notification-types.ts).
+enum EmailDelivery {
+  in_app
+  email
+  digest
+}
+
+/// How often a person's notification digest may go out.
+enum DigestFrequency {
+  daily
+  every_3_days
+  weekly
 }
 
 enum DailySummaryPreference {
@@ -425,8 +441,8 @@ model DeletionRequest {
 }
 
 model Notification {
-  id          Int       @id @default(autoincrement())
-  volunteerId Int       @map("volunteer_id")
+  id          Int                 @id @default(autoincrement())
+  volunteerId Int                 @map("volunteer_id")
   type        String // TODO: enum — new_project_proposal, project_approved, project_needs_discussion, project_status_changed, new_interest, interest_accepted, interest_declined, interest_withdrawn, assigned_to_project, task_assigned, new_bug_report, quick_task_assigned, quick_task_submitted, quick_task_reviewed, local_group_suggestion
   title       String
   body        String?
@@ -435,16 +451,49 @@ model Notification {
   // that when the underlying item is resolved by one person, matching notifications for the
   // same (type, entityId) can be cleared for every other recipient. Null for types that aren't
   // cleared this way.
-  entityId    Int?      @map("entity_id")
-  readAt      DateTime? @map("read_at")
-  emailedAt   DateTime? @map("emailed_at")
-  createdAt   DateTime? @default(now()) @map("created_at")
-  volunteer   Volunteer @relation(fields: [volunteerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  entityId    Int?                @map("entity_id")
+  readAt      DateTime?           @map("read_at")
+  emailedAt   DateTime?           @map("emailed_at")
+  /// Held for the recipient's notification digest, because they chose Digest for its type.
+  inDigest    Boolean             @default(false) @map("in_digest")
+  /// The digest that listed this notification; a digest lists each one once.
+  digestId    Int?                @map("digest_id")
+  createdAt   DateTime?           @default(now()) @map("created_at")
+  volunteer   Volunteer           @relation(fields: [volunteerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  digest      NotificationDigest? @relation(fields: [digestId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([volunteerId, readAt], map: "idx_notifications_unread")
   @@index([volunteerId], map: "idx_notifications_volunteer")
   @@index([type, entityId], map: "idx_notifications_type_entity")
+  @@index([inDigest, digestId], map: "idx_notifications_digest")
   @@map("notifications")
+}
+
+/// One digest email, recorded before it is sent. `sentOn` is the person's local day, and one
+/// digest per person per local day is the database's guard against sending twice.
+model NotificationDigest {
+  id            Int            @id @default(autoincrement())
+  volunteerId   Int            @map("volunteer_id")
+  sentOn        DateTime       @map("sent_on") @db.Date
+  createdAt     DateTime       @default(now()) @map("created_at")
+  volunteer     Volunteer      @relation(fields: [volunteerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  notifications Notification[]
+
+  @@unique([volunteerId, sentOn])
+  @@map("notification_digests")
+}
+
+/// A volunteer's choice of delivery for one notification type, kept only where it differs from
+/// the type's default, so a default that changes reaches everyone who never chose.
+model NotificationPreference {
+  id          Int           @id @default(autoincrement())
+  volunteerId Int           @map("volunteer_id")
+  type        String
+  delivery    EmailDelivery
+  volunteer   Volunteer     @relation(fields: [volunteerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([volunteerId, type])
+  @@map("notification_preferences")
 }
 
 model PasswordResetToken {
@@ -1065,6 +1114,7 @@ model Skill {
   category        SkillCategory      @relation(fields: [categoryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   workItems       WorkItem[]
   volunteerSkills VolunteerSkill[]
+  callSkills      CallSkill[]
 
   @@unique([categoryId, name])
   @@index([categoryId], map: "idx_skills_category")
@@ -1128,8 +1178,11 @@ model Volunteer {
   deletedAt                               DateTime?                @map("deleted_at")
   country                                 String?
   emailDigest                             String?                  @default("none") @map("email_digest") // TODO: enum — none, daily, weekly
-  /// Inbox categories (lib/notification-categories.ts) whose notifications are not also emailed.
-  emailMutedCategories                    String[]                 @default([]) @map("email_muted_categories")
+  /// IANA time zone, from their browser or chosen in Settings; null falls back by chapter country.
+  timeZone                                String?                  @map("time_zone")
+  digestFrequency                         DigestFrequency          @default(daily) @map("digest_frequency")
+  /// Local hour (0-23) the notification digest goes out.
+  digestHour                              Int                      @default(8) @map("digest_hour")
   /// How the daily summary of reminders and project activity reaches this person.
   dailySummary                            DailySummaryPreference   @default(email_and_in_app) @map("daily_summary")
   /// Set from `country`; null is the holding pool. Changing it is a transfer (ChapterTransferRequest).
@@ -1155,6 +1208,11 @@ model Volunteer {
   distinctPairsDismissed                  DistinctAccountPair[]    @relation("DistinctAccountPairDismissedBy")
   ledChapter                              NationalChapter?         @relation("ChapterLead")
   chapterDeputyRole                       ChapterDeputy?           @relation("ChapterDeputyVolunteer")
+  coordinatorRole                         Coordinator?             @relation("CoordinatorVolunteer")
+  coordinatorsAppointed                   Coordinator[]            @relation("CoordinatorAppointedBy")
+  callsSent                               Call[]                   @relation("CallSender")
+  callResponses                           CallResponse[]           @relation("CallResponder")
+  callDismissals                          CallDismissal[]
   chapterDeputiesAppointed                ChapterDeputy[]          @relation("ChapterDeputyAppointedBy")
   chapterTransferRequests                 ChapterTransferRequest[] @relation("TransferVolunteer")
   chapterTransfersDecided                 ChapterTransferRequest[] @relation("TransferDecidedBy")
@@ -1183,6 +1241,8 @@ model Volunteer {
   contactRequestsReceived                 ContactRequest[]         @relation("ContactRequestTo")
   messagesReceived                        Message[]                @relation("MessageTo")
   notifications                           Notification[]
+  notificationPreferences                 NotificationPreference[]
+  notificationDigests                     NotificationDigest[]
   finishByReminders                       FinishByReminder[]
   emailVerificationTokens                 EmailVerificationToken[]
   passwordResetTokens                     PasswordResetToken[]
@@ -1438,4 +1498,133 @@ model ContactRequest {
   @@index([fromVolunteerId, createdAt], map: "idx_contact_requests_from")
   @@index([toVolunteerId, status], map: "idx_contact_requests_to")
   @@map("contact_requests")
+}
+
+/// Someone a global admin has made a coordinator: they may put out calls to volunteers in any
+/// chapter and read the answers, and see and message every approved volunteer, hidden from the
+/// directory or not (seesFullProfile, lib/contact.ts). It grants no admin power.
+model Coordinator {
+  id            Int      @id @default(autoincrement())
+  volunteerId   Int      @unique @map("volunteer_id")
+  /// What they coordinate, e.g. "Media"; shown to volunteers beside their name on a call.
+  remit         String?
+  appointedById Int?     @map("appointed_by_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  volunteer   Volunteer  @relation("CoordinatorVolunteer", fields: [volunteerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  appointedBy Volunteer? @relation("CoordinatorAppointedBy", fields: [appointedById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@map("coordinators")
+}
+
+/// A request a coordinator sends to volunteers across chapters, such as for photos of events.
+/// Who it reaches is worked out from its filters when asked and never stored or shown to the
+/// sender, who sees only the answers.
+model Call {
+  id         Int       @id @default(autoincrement())
+  senderId   Int?      @map("sender_id")
+  title      String
+  body       String
+  /// The chapters it is addressed to; empty means every chapter and the holding pool.
+  chapterIds Int[]     @default([]) @map("chapter_ids")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  /// Set when it stops taking answers: closed by its sender, when its sender goes, or when the
+  /// last of the skills it asked for is deleted.
+  closedAt   DateTime? @map("closed_at")
+
+  sender    Volunteer?     @relation("CallSender", fields: [senderId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  /// The skills it asks for, any one of which addresses it to a volunteer; none means anyone.
+  skills    CallSkill[]
+  responses  CallResponse[]
+  dismissals CallDismissal[]
+
+  @@index([createdAt], map: "idx_calls_created")
+  @@map("calls")
+}
+
+model CallSkill {
+  callId  Int   @map("call_id")
+  skillId Int   @map("skill_id")
+  call    Call  @relation(fields: [callId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  skill   Skill @relation(fields: [skillId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([callId, skillId])
+  @@index([skillId], map: "idx_call_skills_skill")
+  @@map("call_skills")
+}
+
+/// A volunteer's answer to a call, which shares their name, email and message with the call's
+/// sender; withdrawing deletes the row.
+model CallResponse {
+  id          Int      @id @default(autoincrement())
+  callId      Int      @map("call_id")
+  volunteerId Int      @map("volunteer_id")
+  message     String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  call      Call      @relation(fields: [callId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  volunteer Volunteer @relation("CallResponder", fields: [volunteerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([callId, volunteerId])
+  @@index([volunteerId], map: "idx_call_responses_volunteer")
+  @@map("call_responses")
+}
+
+/// A volunteer setting a call aside: it leaves their home page and folds away on /calls. It tells
+/// the sender nothing and is not an answer; answering removes it.
+model CallDismissal {
+  callId      Int      @map("call_id")
+  volunteerId Int      @map("volunteer_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  call      Call      @relation(fields: [callId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  volunteer Volunteer @relation(fields: [volunteerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([callId, volunteerId])
+  @@index([volunteerId], map: "idx_call_dismissals_volunteer")
+  @@map("call_dismissals")
+}
+
+enum EmailSuppressionReason {
+  bounce
+  complaint
+}
+
+/// An address the email provider reported as permanently undeliverable or as having marked our
+/// mail as spam. Nothing is sent to it while the row is live; deleting the row lifts it. Kept
+/// as a keyed hash (lib/email-suppression.ts), so it holds no address and cannot be matched
+/// against a list of addresses without the server's secret.
+model EmailSuppression {
+  id        Int                    @id @default(autoincrement())
+  emailHash String                 @unique @map("email_hash")
+  reason    EmailSuppressionReason
+  /// The provider's classification, e.g. "Permanent/General" or a complaint's feedback type.
+  detail    String?
+  createdAt DateTime               @default(now()) @map("created_at")
+  /// Null for a bounce, which stays until lifted; a complaint lapses after a year.
+  expiresAt DateTime?              @map("expires_at")
+
+  @@map("email_suppressions")
+}
+
+/// How many emails went to the provider in one clock hour, per bucket: `bulk`, `essential`, or
+/// one recipient's essential mail (`to:` and the recipient's keyed hash). Every process shares
+/// these counts, so the caps hold across the web and cron services.
+model EmailSendCount {
+  hour   DateTime
+  bucket String
+  count  Int      @default(0)
+
+  @@id([hour, bucket])
+  @@map("email_send_counts")
+}
+
+/// SNS messages already handled, so a repeat delivery or a replayed message does nothing.
+/// Kept only as long as a message's timestamp would still be accepted.
+model SnsMessage {
+  messageId  String   @id @map("message_id")
+  receivedAt DateTime @default(now()) @map("received_at")
+
+  @@index([receivedAt])
+  @@map("sns_messages")
 }

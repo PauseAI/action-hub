@@ -43,8 +43,8 @@ function RequestLinkForm({ onSignIn }: { onSignIn: (token: string) => void }) {
   const mutation = useMutation({
     mutationFn: (email: string) => client.journalistOutreach.requestLink({ email }),
   })
-  const catalyseSignIn = useMutation({
-    mutationFn: () => client.journalistOutreach.catalyseSignIn(),
+  const actionHubSignIn = useMutation({
+    mutationFn: () => client.journalistOutreach.actionHubSignIn(),
     onSuccess: (res) => onSignIn(res.token),
   })
 
@@ -75,21 +75,21 @@ function RequestLinkForm({ onSignIn }: { onSignIn: (token: string) => void }) {
       </P>
       {user && (
         <div className="bg-brand-bg rounded-lg p-3 mb-4 text-sm">
-          <P className="mb-2">You&apos;re logged in to Catalyse, so you can skip the link.</P>
+          <P className="mb-2">You&apos;re logged in to Action Hub, so you can skip the link.</P>
           <Button
             type="button"
             variant="outline"
             size="sm"
-            disabled={catalyseSignIn.isPending}
-            onClick={() => catalyseSignIn.mutate()}
+            disabled={actionHubSignIn.isPending}
+            onClick={() => actionHubSignIn.mutate()}
           >
             Continue as {user.email}
           </Button>
         </div>
       )}
-      {(mutation.error ?? catalyseSignIn.error) && (
+      {(mutation.error ?? actionHubSignIn.error) && (
         <P role="alert" className="text-error mb-4">
-          {(mutation.error ?? catalyseSignIn.error)?.message}
+          {(mutation.error ?? actionHubSignIn.error)?.message}
         </P>
       )}
       <div className="mb-5">

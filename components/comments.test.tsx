@@ -818,8 +818,28 @@ describe('Footer', () => {
   it('shows the version and PR link when deployed, plain links otherwise', async () => {
     await renderApp(<Footer />)
     expect(screen.getByRole('link', { name: 'Privacy & Data' })).toHaveAttribute('href', '/privacy')
+    expect(screen.getByRole('link', { name: 'Contact' })).toHaveAttribute(
+      'href',
+      'mailto:tech-support@pauseai.info',
+    )
     await waitFor(() => expect(screen.queryByText(/PR #/)).toBeNull())
   })
+
+  it.each(['action-hub-pr-406', 'catalyse-pr-406'])(
+    'links a %s preview environment to its pull request',
+    async (name) => {
+      vi.stubEnv('RAILWAY_ENVIRONMENT_NAME', name)
+      try {
+        await renderApp(<Footer />)
+        expect(await screen.findByRole('link', { name: 'PR #406' })).toHaveAttribute(
+          'href',
+          'https://github.com/PauseAI/action-hub/pull/406',
+        )
+      } finally {
+        vi.unstubAllEnvs()
+      }
+    },
+  )
 })
 
 describe('AiEditingHelp', () => {

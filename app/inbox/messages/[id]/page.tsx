@@ -147,7 +147,7 @@ export default function ConversationPage({ params }: { params: Promise<{ id: str
         </form>
       ) : (
         <P className="text-text-light">
-          {thread.with.name} has left Catalyse, so you can&apos;t reply.
+          {thread.with.name} has left Action Hub, so you can&apos;t reply.
         </P>
       )}
     </main>

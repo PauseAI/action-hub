@@ -16,10 +16,10 @@ export type AccountMergeEmailProps = {
 export function AccountMergeEmail({ confirmUrl, name, appUrl }: AccountMergeEmailProps) {
   return (
     <EmailLayout>
-      <Heading as="h2">Merge your Catalyse accounts</Heading>
+      <Heading as="h2">Merge your Action Hub accounts</Heading>
       <Text>{`Hi ${name},`}</Text>
       <Text>
-        Someone signed in to another Catalyse account asked to merge it with the account for this
+        Someone signed in to another Action Hub account asked to merge it with the account for this
         address. Your projects, tasks, teams and messages would all move to one account, and you
         would choose which of the two addresses to sign in with.
       </Text>

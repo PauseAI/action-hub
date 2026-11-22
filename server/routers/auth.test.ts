@@ -1,3 +1,4 @@
+import { suppressAddresses, suppressionKey } from '@/lib/email-suppression'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { logger } from '@/lib/logger'
 import { prisma } from '@/lib/prisma'
@@ -25,11 +26,11 @@ import { emails, linkParam } from '@/test/fakes/email'
 import { google } from '@/test/fakes/google'
 
 const subjects = {
-  confirm: 'Welcome to Catalyse: please confirm your email',
-  welcome: 'Welcome to Catalyse!',
-  reset: 'Reset your Catalyse password',
-  received: 'Your Catalyse application has been received',
-  approved: 'Your Catalyse application has been approved',
+  confirm: 'Welcome to Action Hub: please confirm your email',
+  welcome: 'Welcome to Action Hub!',
+  reset: 'Reset your Action Hub password',
+  received: 'Your Action Hub application has been received',
+  approved: 'Your Action Hub application has been approved',
 }
 const sentSubjects = () => emails.sent.map((e) => e.subject)
 
@@ -560,7 +561,7 @@ describe('verifyEmail / resendVerification', () => {
 
   it('locks out whoever pre-registered a listed address when its owner confirms it', async () => {
     // Anyone can sign up with an address they do not own. The owner, expecting mail
-    // from Catalyse, clicks the link from their own browser, signed out.
+    // from Action Hub, clicks the link from their own browser, signed out.
     const squatted = await createVolunteer({
       email: 'admin14@example.com',
       approvalStatus: 'pending',
@@ -741,6 +742,14 @@ describe('deleteAccount and chapters', () => {
 })
 
 describe('deleteAccount', () => {
+  it('keeps the suppression of an address the account never confirmed', async () => {
+    const squatter = await createVolunteer({ emailConfirmed: false })
+    await suppressAddresses([squatter.email!], 'complaint', 'abuse')
+    await clientAs(squatter).auth.deleteAccount({ password: TEST_PASSWORD })
+    expect(await prisma.emailSuppression.count()).toBe(1)
+    await prisma.emailSuppression.deleteMany()
+  })
+
   it('requires the password when one is set, scrubs the account, and warns affected owners and admins', async () => {
     const me = await createVolunteer({ name: 'Leaver' })
     const owner = await createVolunteer()
@@ -755,6 +764,8 @@ describe('deleteAccount', () => {
     const mine = await createProject({ assigneeId: me.id, status: 'in_progress' })
     await createProject({ assigneeId: me.id, status: 'completed' })
 
+    await suppressAddresses([me.email!], 'complaint', 'abuse')
+    await suppressAddresses(['someone-else@example.com'], 'complaint', 'abuse')
     const c = clientAs(me)
     await expect(c.auth.deleteAccount({})).rejects.toMatchObject({
       message: 'Password is incorrect',
@@ -769,6 +780,10 @@ describe('deleteAccount', () => {
     expect(row.deletedAt).not.toBeNull()
     expect(await prisma.deletionRequest.count({ where: { volunteerId: me.id } })).toBe(1)
     expect(await prisma.session.count({ where: { volunteerId: me.id } })).toBe(0)
+    // Their suppression goes with the account; nobody else's does.
+    expect(await prisma.emailSuppression.findMany({ select: { emailHash: true } })).toEqual([
+      { emailHash: suppressionKey('someone-else@example.com') },
+    ])
 
     const ownerNotes = await prisma.notification.findMany({
       where: { volunteerId: owner.id, type: 'account_deleted_impact' },
@@ -791,6 +806,24 @@ describe('deleteAccount', () => {
     expect(sent).not.toContain(null)
   })
 
+  it('gives each affected project its own Inbox row, with one email for them all', async () => {
+    const me = await createVolunteer({ passwordHash: null, name: 'Leaver' })
+    const owner = await createVolunteer()
+    const a = await createProject({ assigneeId: owner.id, status: 'in_progress' })
+    const b = await createProject({ assigneeId: owner.id, status: 'in_progress' })
+    await createQuickTask({ contextProjectId: a.id, assigneeId: me.id, status: 'in_progress' })
+    await createQuickTask({ contextProjectId: b.id, assigneeId: me.id, status: 'in_progress' })
+    await clientAs(me).auth.deleteAccount({})
+    const rows = await prisma.notification.findMany({
+      where: { volunteerId: owner.id, type: 'account_deleted_impact' },
+    })
+    expect(rows.map((n) => n.link).sort()).toEqual(
+      [`/projects/${a.id}`, `/projects/${b.id}`].sort(),
+    )
+    await vi.waitFor(() => expect(emails.to(owner.email!)).toHaveLength(1))
+    expect(emails.lastTo(owner.email!).html).toContain(b.title)
+  })
+
   it('deletes a passwordless account without a password, and one with nothing to notify', async () => {
     const me = await createVolunteer({ passwordHash: null })
     expect((await clientAs(me).auth.deleteAccount({})).message).toContain('deleted')
@@ -804,11 +837,11 @@ describe('deleteAccount', () => {
     await createQuickTask({ contextProjectId: p.id, assigneeId: me.id })
     await createProject({ assigneeId: me.id })
     const error = vi.spyOn(logger, 'error').mockImplementation(() => logger)
-    vi.spyOn(prisma.notification, 'create').mockRejectedValue(new Error('db') as never)
+    vi.spyOn(prisma.notification, 'createManyAndReturn').mockRejectedValue(new Error('db') as never)
     emails.failAll()
     await clientAs(me).auth.deleteAccount({})
     expect(error).toHaveBeenCalledWith(expect.any(Error), '[NOTIFY ERROR]')
-    expect(error).toHaveBeenCalledWith(expect.any(Error), '[NOTIFY ERROR] email failed:')
+    await vi.waitFor(() => expect(error).toHaveBeenCalledWith(expect.any(Error), '[EMAIL ERROR]'))
     vi.restoreAllMocks()
   })
 })

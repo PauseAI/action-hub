@@ -100,7 +100,7 @@ describe('journalist outreach sign-in', () => {
     expect(await screen.findByRole('alert')).toBeInTheDocument()
   })
 
-  it('lets someone logged in to Catalyse continue without a link', async () => {
+  it('lets someone logged in to Action Hub continue without a link', async () => {
     const volunteer = await createVolunteer()
     await renderApp(<JournalistOutreachPage />, { as: volunteer })
     await userEvent.click(

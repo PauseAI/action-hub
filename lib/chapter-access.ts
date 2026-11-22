@@ -5,6 +5,10 @@
  * deputies and only a global admin appoints the lead. Everyone else is a member of one chapter,
  * or of the pool when `chapterId` is null, and sees only that.
  *
+ * A coordinator works across every chapter: they put out calls (server/routers/calls.ts), and
+ * see and message every approved volunteer, including those hidden from the directory, but hold
+ * no admin power anywhere.
+ *
  * Pure, so the client can make the same decisions the server does.
  */
 export type ChapterRole = 'LEAD' | 'DEPUTY'
@@ -13,21 +17,38 @@ export type ChapterAccess = {
   globalAdmin: boolean
   chapterId: number | null
   role: ChapterRole | null
+  coordinator: boolean
 }
 
-export const NO_ACCESS: ChapterAccess = { globalAdmin: false, chapterId: null, role: null }
+export const NO_ACCESS: ChapterAccess = {
+  globalAdmin: false,
+  chapterId: null,
+  role: null,
+  coordinator: false,
+}
 
 export const isStaff = (access: ChapterAccess) => access.role !== null
 
+/** The staff role `access` holds in `chapterId`, if any; nobody is staff of the holding pool. */
+export function staffRoleIn(access: ChapterAccess, chapterId: number | null): ChapterRole | null {
+  return chapterId !== null && access.chapterId === chapterId ? access.role : null
+}
+
 /** Whether `access` holds admin powers over things in `chapterId` (null: the holding pool). */
 export function canAdminChapter(access: ChapterAccess, chapterId: number | null): boolean {
-  if (access.globalAdmin) return true
-  return access.role !== null && chapterId !== null && access.chapterId === chapterId
+  return access.globalAdmin || staffRoleIn(access, chapterId) !== null
 }
 
 export function canAppointDeputies(access: ChapterAccess, chapterId: number | null): boolean {
-  if (access.globalAdmin) return true
-  return access.role === 'LEAD' && chapterId !== null && access.chapterId === chapterId
+  return access.globalAdmin || staffRoleIn(access, chapterId) === 'LEAD'
+}
+
+/**
+ * Whether `access` sees the directory of every chapter and the pool. Whose profile opens, and who
+ * may be messaged, is seesFullProfile (lib/contact.ts).
+ */
+export function seesEveryChapter(access: ChapterAccess): boolean {
+  return access.globalAdmin || access.coordinator
 }
 
 /** Whether something in `chapterId` is visible to `access`; pool members see the pool. */

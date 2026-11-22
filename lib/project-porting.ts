@@ -35,7 +35,7 @@ export function serializeProjectExport(state: CurrentState, appUrl?: string): Pr
   return {
     ...(base ? { $schema: `${base}/api/project-import/schema` } : {}),
     _meta: {
-      format: 'catalyse-project-export',
+      format: 'action-hub-project-export',
       version: 1,
       projectId: state.project.id,
       exportedAt: new Date().toISOString(),

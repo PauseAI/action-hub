@@ -3,17 +3,22 @@ import * as e from './email'
 import { env } from './env'
 import {
   createEmailTransport,
+  EmailTransport,
   emailTransport,
   setEmailTransport,
   FileStubTransport,
+  GuardedTransport,
   ResendTransport,
   type ResendClient,
+  SesTransport,
+  type SesClient,
   UnconfiguredTransport,
 } from './email-transport'
 import { emails } from '@/test/fakes/email'
 import { logger } from './logger'
 import http from 'node:http'
 import { Resend } from 'resend'
+import { SendEmailCommand, SESv2Client } from '@aws-sdk/client-sesv2'
 
 const sendMock = vi.fn()
 const resendClient = { emails: { send: sendMock } } as unknown as ResendClient
@@ -36,6 +41,9 @@ const baseEnv = {
   RESEND_API_KEY: undefined,
   FROM_EMAIL: 'from@x',
   REPLY_TO_EMAIL: undefined,
+  EMAIL_PROVIDER: 'resend',
+  AWS_REGION: undefined,
+  SES_CONFIGURATION_SET: undefined,
 }
 const message = { to: 'a@b.c', subject: 'Hello', html: '<p>hi</p>' }
 
@@ -46,12 +54,125 @@ describe('email transports', () => {
     vi.spyOn(logger, 'error').mockImplementation(() => logger as never)
   })
 
+  /** The provider a transport hands mail to, inside the guard real providers come wrapped in. */
+  const provider = (transport: EmailTransport) =>
+    transport instanceof GuardedTransport ? transport.inner : transport
+
   it('is chosen from the environment: stub first, then Resend, else unconfigured', () => {
     expect(createEmailTransport({ ...baseEnv, STUB_EMAIL: true })).toBeInstanceOf(FileStubTransport)
+    // Resend is left as it was: the cap and suppression list come with SES.
     expect(createEmailTransport({ ...baseEnv, RESEND_API_KEY: 'key' })).toBeInstanceOf(
       ResendTransport,
     )
     expect(createEmailTransport(baseEnv)).toBeInstanceOf(UnconfiguredTransport)
+  })
+
+  it('sends through SES only when EMAIL_PROVIDER says so, even with a Resend key set', () => {
+    const ses = {
+      ...baseEnv,
+      RESEND_API_KEY: 'key',
+      EMAIL_PROVIDER: 'ses',
+      AWS_REGION: 'eu-west-1',
+    }
+    const transport = createEmailTransport(ses)
+    expect(transport).toBeInstanceOf(GuardedTransport)
+    expect(provider(transport)).toBeInstanceOf(SesTransport)
+    expect(createEmailTransport({ ...ses, STUB_EMAIL: true })).toBeInstanceOf(FileStubTransport)
+    expect(provider(createEmailTransport({ ...ses, EMAIL_PROVIDER: 'resend' }))).toBeInstanceOf(
+      ResendTransport,
+    )
+  })
+
+  it('sends through SES with the configuration set and reply-to, and reports failures', async () => {
+    const send = vi.fn().mockResolvedValue({ MessageId: 'm1' })
+    const ses = new SesTransport(
+      { ...baseEnv, AWS_REGION: 'eu-west-1', SES_CONFIGURATION_SET: 'action-hub' },
+      { send } as unknown as SesClient,
+    )
+    expect(await ses.send({ ...message, replyTo: 'b@x' })).toBe(true)
+    const command = send.mock.calls[0][0]
+    expect(command).toBeInstanceOf(SendEmailCommand)
+    expect(command.input).toEqual({
+      FromEmailAddress: 'from@x',
+      Destination: { ToAddresses: ['a@b.c'] },
+      ReplyToAddresses: ['b@x'],
+      ConfigurationSetName: 'action-hub',
+      Content: {
+        Simple: {
+          Subject: { Data: 'Hello', Charset: 'UTF-8' },
+          Body: { Html: { Data: '<p>hi</p>', Charset: 'UTF-8' } },
+        },
+      },
+    })
+    send.mockRejectedValueOnce(Object.assign(new Error('throttled'), { name: 'TooManyRequests' }))
+    expect(await ses.send(message)).toBe(false)
+    expect(send.mock.calls[1][0].input).not.toHaveProperty('ReplyToAddresses')
+    expect(logger.error).toHaveBeenCalledWith(expect.any(Error), '[EMAIL ERROR] SES')
+  })
+
+  it('puts a signed SendEmail request on the wire through the real SES SDK', async () => {
+    // A stand-in for the SESv2 endpoint, so the SDK's signing, serialisation and error parsing
+    // run for real instead of being replaced by the fake client above.
+    const requests: { path: string | undefined; auth: string; body: Record<string, unknown> }[] = []
+    let fail = false
+    const server = http.createServer((req, res) => {
+      let body = ''
+      req.on('data', (chunk) => (body += chunk))
+      req.on('end', () => {
+        requests.push({
+          path: req.url,
+          auth: String(req.headers.authorization),
+          body: JSON.parse(body),
+        })
+        if (fail) {
+          res.writeHead(400, {
+            'content-type': 'application/json',
+            'x-amzn-errortype': 'MessageRejected',
+          })
+          res.end(JSON.stringify({ message: 'Email address is not verified.' }))
+        } else {
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ MessageId: 'ses-message-1' }))
+        }
+      })
+    })
+    await new Promise<void>((resolve) => server.listen(0, resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('server has no port')
+    const client = new SESv2Client({
+      region: 'eu-west-1',
+      endpoint: `http://127.0.0.1:${address.port}`,
+      credentials: { accessKeyId: 'AKIDTEST', secretAccessKey: 'secret' },
+      maxAttempts: 1,
+    })
+    const ses = new SesTransport(
+      { ...baseEnv, AWS_REGION: 'eu-west-1', SES_CONFIGURATION_SET: 'action-hub' },
+      client,
+    )
+    try {
+      expect(await ses.send(message)).toBe(true)
+      expect(requests[0].path).toBe('/v2/email/outbound-emails')
+      expect(requests[0].auth).toMatch(
+        /^AWS4-HMAC-SHA256 Credential=AKIDTEST\/\d+\/eu-west-1\/ses\//,
+      )
+      expect(requests[0].body).toEqual({
+        FromEmailAddress: 'from@x',
+        Destination: { ToAddresses: ['a@b.c'] },
+        ConfigurationSetName: 'action-hub',
+        Content: {
+          Simple: {
+            Subject: { Data: 'Hello', Charset: 'UTF-8' },
+            Body: { Html: { Data: '<p>hi</p>', Charset: 'UTF-8' } },
+          },
+        },
+      })
+      fail = true
+      expect(await ses.send(message)).toBe(false)
+      const [err] = vi.mocked(logger.error).mock.calls.at(-1) as [Error]
+      expect(err.name).toBe('MessageRejected')
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
   })
 
   it('is built once from the environment and can be swapped', () => {
@@ -156,7 +277,7 @@ describe('email transports', () => {
   it('relays a message with a link to reply, and the sender as reply-to only if shared', async () => {
     const relay = { to: 'a@b.c', toName: 'A', fromName: 'B', subject: 'Hi', message: 'm' }
     await e.sendRelayMessage({ ...relay, replyTo: null, threadId: 7 })
-    expect(emails.last).toMatchObject({ subject: '[Catalyse] Hi', replyTo: undefined })
+    expect(emails.last).toMatchObject({ subject: '[Action Hub] Hi', replyTo: undefined })
     expect(emails.last.html).toContain(`${env.APP_URL}/inbox/messages/7`)
     expect(emails.last.html).not.toContain('reply to this email')
     await e.sendRelayMessage({ ...relay, replyTo: 'b@x', threadId: 7 })
@@ -165,12 +286,21 @@ describe('email transports', () => {
   })
 })
 
+describe('essential mail', () => {
+  it('marks what one person asked for as essential, and fan-out mail as not', async () => {
+    await e.sendPasswordResetEmail({ to: 'r@example.com', resetToken: 't' })
+    expect(emails.lastTo('r@example.com').essential).toBe(true)
+    await e.sendWelcomeEmail({ to: 'w@example.com', name: 'W' })
+    expect(emails.lastTo('w@example.com').essential).toBeUndefined()
+  })
+})
+
 describe('daily summary', () => {
   it('sends one email with each section and its links, escaped', async () => {
     await e.sendDailySummaryEmail({
       to: 'owner@example.com',
       name: '<Olive>',
-      subject: 'Catalyse: 2 things need you today',
+      subject: 'Action Hub: 2 things need you today',
       sections: [
         { heading: 'Your tasks', lines: [{ text: '“Book <venue>” is due today', href: '/t/1' }] },
         {
@@ -186,7 +316,7 @@ describe('daily summary', () => {
       ],
     })
     const sent = emails.lastTo('owner@example.com')!
-    expect(sent.subject).toBe('Catalyse: 2 things need you today')
+    expect(sent.subject).toBe('Action Hub: 2 things need you today')
     expect(sent.html).toContain('Hi &lt;Olive&gt;')
     expect(sent.html).toContain('<h3 style="margin:24px 0 8px">Your tasks</h3>')
     // The projects share one heading, each named under it.

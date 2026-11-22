@@ -55,8 +55,8 @@ describe('server rendering of client pages', () => {
   it('renders the root layout shell around its children', async () => {
     const { default: RootLayout, metadata } = await import('./layout')
     expect(metadata.title).toEqual({
-      template: 'Catalyse | %s',
-      default: 'Catalyse | PauseAI Volunteer Platform',
+      template: 'Action Hub | %s',
+      default: 'Action Hub | PauseAI Volunteer Platform',
     })
     const html = renderToString(
       createElement(RootLayout, null, createElement('p', null, 'page body')),
@@ -70,6 +70,6 @@ describe('server rendering of client pages', () => {
 
   it('renders the header without a window', async () => {
     const { default: Header } = await import('@/components/Header')
-    expect(await ssr(Header)).toContain('Catalyse')
+    expect(await ssr(Header)).toContain('Action Hub')
   })
 })

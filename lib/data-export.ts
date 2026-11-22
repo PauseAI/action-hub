@@ -1,6 +1,8 @@
 import type { RuntimeDataModel } from '@prisma/client/runtime/library'
 import { prisma } from '@/lib/prisma'
 import { hashEmail, isSuperAdmin } from '@/lib/auth'
+import { suppressionKey } from '@/lib/email-suppression'
+import { env } from '@/lib/env'
 import type { Volunteer } from '@/generated/prisma/client'
 import { PICTURE_CONTENT_TYPE } from '@/lib/profile-picture'
 
@@ -25,8 +27,11 @@ export interface UserLink {
   name: string
   model: string
   foreignKey: string
-  matchBy: 'id' | 'email' | 'emailHash' | 'participant'
+  matchBy: 'id' | 'email' | 'emailHash' | 'suppressionKey' | 'participant'
 }
+
+/** Models whose email hash is keyed with EMAIL_HASH_SECRET (lib/email-suppression.ts). */
+const KEYED_HASH_MODELS = new Set(['EmailSuppression'])
 
 /**
  * Rows a person gets in their export: about them, made by them, or sent to them. Notes admins
@@ -45,8 +50,12 @@ export const EXPORTED_LINKS: readonly string[] = [
   'BugReport.reporter',
   'BugReport.reporterEmail',
   'BugReportComment.author',
+  'Call.sender',
+  'CallDismissal.volunteer',
+  'CallResponse.volunteer',
   'ChapterAuditEvent.targetVolunteer',
   'ChapterDeputy.volunteer',
+  'Coordinator.volunteer',
   'ChapterTransferRequest.volunteer',
   'ContactRequest.from',
   'ContactRequest.to',
@@ -54,6 +63,7 @@ export const EXPORTED_LINKS: readonly string[] = [
   'DeletionRequest.volunteerId',
   'DistinctAccountPair.volunteerA',
   'DistinctAccountPair.volunteerB',
+  'EmailSuppression.emailHash',
   'EmailVerificationToken.volunteer',
   'ExperimentalJournalist.claimedBy',
   'ExperimentalJournalist.contactedBy',
@@ -67,6 +77,8 @@ export const EXPORTED_LINKS: readonly string[] = [
   'Message.to',
   'NationalChapter.lead',
   'Notification.volunteer',
+  'NotificationDigest.volunteer',
+  'NotificationPreference.volunteer',
   'PasswordResetToken.volunteer',
   'ProjectDeputy.volunteer',
   'RejectedApplication.emailHash',
@@ -106,6 +118,7 @@ export const OMITTED_LINKS: Readonly<Record<string, string>> = {
   'BugReport.resolvedBy': STAFF_ACTION,
   'ChapterAuditEvent.actor': STAFF_ACTION,
   'ChapterDeputy.appointedBy': STAFF_ACTION,
+  'Coordinator.appointedBy': STAFF_ACTION,
   'ChapterTransferRequest.decidedBy': STAFF_ACTION,
   'DistinctAccountPair.dismissedBy': STAFF_ACTION,
   'LocalGroupSuggestion.reviewedBy': STAFF_ACTION,
@@ -129,6 +142,7 @@ export const SECRET_FIELDS: Readonly<Record<string, readonly string[]>> = {
   AdminInvite: ['inviteToken'],
   AnonymisedEmail: ['emailHash'],
   ApiToken: ['tokenHash'],
+  EmailSuppression: ['emailHash'],
   EmailVerificationToken: ['token'],
   ExperimentalOutreachLoginToken: ['tokenHash'],
   ExperimentalOutreachSession: ['tokenHash'],
@@ -173,7 +187,7 @@ export function userLinks(dataModel: DataModel): UserLink[] {
       } else if (model !== USER_MODEL && EMAIL.test(f.name)) {
         link(f.name, f.name, 'email')
       } else if (model !== USER_MODEL && EMAIL_HASH.test(f.name)) {
-        link(f.name, f.name, 'emailHash')
+        link(f.name, f.name, KEYED_HASH_MODELS.has(model) ? 'suppressionKey' : 'emailHash')
       }
     }
   }
@@ -276,6 +290,10 @@ export async function linkedRecords(
     if (l.matchBy === 'id') return { [l.foreignKey]: subject.id }
     if (email === null) return null
     if (l.matchBy === 'emailHash') return { [l.foreignKey]: hashEmail(email) }
+    // Without the secret no suppression can have been stored, so there is nothing to match.
+    if (l.matchBy === 'suppressionKey') {
+      return env.EMAIL_HASH_SECRET ? { [l.foreignKey]: suppressionKey(email) } : null
+    }
     if (l.matchBy === 'participant')
       return { [l.foreignKey]: { in: participants.map((p) => p.id) } }
     return { [l.foreignKey]: byAddress }

@@ -54,6 +54,8 @@ import { adminJournalistOutreachRouter } from './routers/admin/journalistOutreac
 import { journalistOutreachRouter } from './routers/journalistOutreach'
 import { versionRouter } from './routers/version'
 import { maintenanceRouter } from './routers/maintenance'
+import { callsRouter } from './routers/calls'
+import { adminCoordinatorsRouter } from './routers/admin/coordinators'
 
 export const appRouter = {
   auth: authRouter,
@@ -87,7 +89,9 @@ export const appRouter = {
   version: versionRouter,
   maintenance: maintenanceRouter,
   journalistOutreach: journalistOutreachRouter,
+  calls: callsRouter,
   admin: {
+    coordinators: adminCoordinatorsRouter,
     journalistOutreach: adminJournalistOutreachRouter,
     applications: adminApplicationsRouter,
     volunteers: adminVolunteersRouter,

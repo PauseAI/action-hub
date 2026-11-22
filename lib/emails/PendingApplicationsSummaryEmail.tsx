@@ -19,7 +19,7 @@ export function PendingApplicationsSummaryEmail({
       <Heading as="h2">Pending Applications</Heading>
       <Text>
         There {count === 1 ? 'is' : 'are'} <strong>{count}</strong> pending {plural} waiting for
-        review on Catalyse.
+        review on Action Hub.
       </Text>
       <Section style={{ textAlign: 'center', margin: '32px 0' }}>
         <EmailButton href={applicationsUrl}>Review Applications</EmailButton>
