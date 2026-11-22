@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Ensures the Postgres client tools (`pg_dump`, `pg_restore`) that `fetch-prod-db` and the
- * backup job shell out to are on PATH, installing them with the machine's package manager
+ * pre-deploy backup shell out to are on PATH, installing them with the machine's package manager
  * when they are missing. Does nothing if they are already there.
  *
  * Usage:

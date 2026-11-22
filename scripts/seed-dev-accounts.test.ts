@@ -1,9 +1,8 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import { Client } from 'pg'
 import { prisma } from '@/lib/prisma'
-import { resolveDbUrl } from '@/lib/db-url'
+import { libpqUrl, resolveDbUrl } from '@/lib/db-url'
 import { getCurrentVolunteer } from '@/lib/auth'
-import { libpqUrl } from '../jobs/backup'
 import { devSessionToken, devSessionsAllowed, seedDevAccounts } from './seed-dev-accounts'
 
 /** A pg client on this test file's own schema, which is what the seeder is handed. */

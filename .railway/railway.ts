@@ -42,14 +42,12 @@ export default defineRailway((ctx) => {
       // deploy.
       drainingSeconds: 10,
     },
-    // jobs/backup.ts keeps the last week of dumps here (RAILWAY_VOLUME_MOUNT_PATH).
+    // scripts/pre-deploy-backup.ts keeps the last week of pre-deploy dumps here
+    // (RAILWAY_VOLUME_MOUNT_PATH).
     volumeMounts: { '/data': webVolume },
     env: {
       ADMIN_EMAILS: preserve(),
       APP_URL: preserve(),
-      B2_APP_KEY: preserve(),
-      B2_BUCKET_NAME: preserve(),
-      B2_KEY_ID: preserve(),
       CRON_SECRET: preserve(),
       DATABASE_URL: preserve(),
       FROM_EMAIL: preserve(),

@@ -1,5 +1,4 @@
 export const CRON_JOB_NAMES = [
-  'backup',
   'digest',
   'nudges',
   'applications-summary',
@@ -22,11 +21,6 @@ export const DAILY_JOBS_HOUR_UTC = 8
 export type CronJobInfo = { description: string; idempotent: boolean; every: 'hour' | 'day' }
 
 export const CRON_JOB_INFO: Record<CronJobName, CronJobInfo> = {
-  backup: {
-    description: 'Snapshots the database locally and uploads it to B2, then prunes old backups.',
-    idempotent: false,
-    every: 'day',
-  },
   digest: {
     description: 'Emails volunteers a fortnightly digest of new matching projects.',
     idempotent: true,
