@@ -38,7 +38,7 @@ export default function Avatar({
   const picture = person?.picture
   if (picture && failed !== picture) {
     return (
-      <span {...a11y} className={`${box} shrink-0 overflow-hidden rounded-full`}>
+      <span {...a11y} className={`${box} block shrink-0 overflow-hidden rounded-full`}>
         <Image
           src={picture}
           alt=""

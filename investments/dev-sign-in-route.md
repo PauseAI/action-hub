@@ -13,3 +13,4 @@ A development-only route that takes a `dev-` token, stores it and redirects, ref
 ## Hits
 
 - 2026-11-11 (x2): screenshots for two features each needed the throwaway page
+- 2026-11-22: profile pictures needed the throwaway page again to check the header avatar locally

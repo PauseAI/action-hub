@@ -26,6 +26,10 @@ test.describe('Profile pictures', () => {
     await expect(page.getByText('Picture updated')).toBeVisible()
     await expect(card.getByRole('button', { name: 'Change picture' })).toBeVisible()
     await expect(card.locator('img')).toBeVisible()
+    // The header's avatar keeps to its circle rather than the stored image's own size.
+    const headerPicture = page.getByRole('banner').getByRole('button', { name: volunteer.name })
+    await expect(headerPicture.locator('img')).toHaveJSProperty('complete', true)
+    expect((await headerPicture.boundingBox())?.width).toBeLessThanOrEqual(40)
     await snap(page, 'picture uploaded')
 
     const token = await page.evaluate(() => localStorage.getItem('authToken'))
