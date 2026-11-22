@@ -7,6 +7,7 @@ import { groupIn, placement } from '@/lib/chapter-placement'
 import { redactVolunteer } from '@/lib/auth'
 import { TimeZoneSchema, UpdateVolunteerSchema } from '@/lib/schemas'
 import { projectScopeWhere } from '@/lib/work-item'
+import { historySelect, historyWhere, projectHistory } from '@/lib/volunteer-history'
 import { contactRelations } from '@/lib/contact'
 import { canAdminChapter, seesEveryChapter } from '@/lib/chapter-access'
 import { peopleInfo, viewableVolunteers } from '@/lib/people'
@@ -228,12 +229,26 @@ export const volunteersRouter = {
         skillName: se.skill.name,
       }))
 
+      const history = {
+        volunteerId: input.id,
+        seesEnded: vol.id === currentVolunteer.id || isAdmin,
+      }
       const [projects, completedTasks] = await Promise.all([
         prisma.workItem.findMany({
           where: {
-            type: WorkItemType.PROJECT,
-            OR: [{ assigneeId: input.id }, { creatorId: input.id }],
-            AND: [projectScopeWhere(currentVolunteer)],
+            ...historyWhere(history),
+            AND: [
+              projectScopeWhere(currentVolunteer),
+              // A draft is its creator's and admins' alone, as on the project page.
+              currentVolunteer.isAdmin
+                ? {}
+                : {
+                    OR: [
+                      { status: { not: ProjectStatus.draft } },
+                      { creatorId: currentVolunteer.id },
+                    ],
+                  },
+            ],
             status: {
               notIn: [
                 ProjectStatus.archived,
@@ -242,17 +257,7 @@ export const volunteersRouter = {
               ],
             },
           },
-          orderBy: { createdAt: 'desc' },
-          select: {
-            id: true,
-            title: true,
-            description: true,
-            status: true,
-            assigneeId: true,
-            creatorId: true,
-            createdAt: true,
-            updatedAt: true,
-          },
+          select: historySelect(history),
         }),
         prisma.workItem.findMany({
           where: {
@@ -292,17 +297,7 @@ export const volunteersRouter = {
           Boolean(vol.consentMakeProfileVisibleInDirectory),
         activeRecently: isActiveRecently(vol.lastActiveAt),
         chapter: vol.chapter,
-        projects: projects.map((p) => ({
-          id: p.id,
-          title: p.title,
-          description: p.description,
-          status: p.status,
-          ownerId: p.assigneeId,
-          proposedById: p.creatorId,
-          createdAt: p.createdAt,
-          updatedAt: p.updatedAt,
-          role: p.assigneeId === input.id ? 'owner' : 'proposer',
-        })),
+        projects: projectHistory(projects, input.id),
         completedTasks: completedTasks.map((t) => ({
           title: t.title,
           reviewRating: t.reviewRating,

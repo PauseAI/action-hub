@@ -33,3 +33,4 @@ A test that races only under full-suite load fails one `check-all` run, passes 8
 - 2026-11-18 (x2): a nudges-job change's `test:unit` timed out `projects-access` and `tasks-access` (two tests); alone on the base commit the pair failed five of 42 at 20 s
 - 2026-11-20 (x2): a Railway config change touching no app code: `check-all` timed out `tasks-access` and failed `app/coordinate/page.test.tsx` (the "Australia" checkbox not yet rendered), 8/8 alone; the `test:unit` rerun timed out `projects-access` instead
 - 2026-11-21: ses-sender's merge of main: `check-all` (load average about 17) timed out five `projects-access`/`tasks-access` tests; alone at that load, eight of 42 timed out
+- 2026-11-21: with the host's load average near 25, `check-all` timed out tests across a dozen files at 20 s, and `volunteers.test.ts` alone still timed out a different test each run, on `main` too; one aborted `check-all`, CI used as the full run
