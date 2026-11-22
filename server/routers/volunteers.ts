@@ -158,7 +158,10 @@ export const volunteersRouter = {
         context.volunteer.approvalStatus === ApprovalStatus.approved || context.volunteer.isAdmin
       return approved
         ? people
-        : people.map((p) => ({ ...p, canView: p.id === context.volunteer.id }))
+        : people.map((p) => {
+            const own = p.id === context.volunteer.id
+            return { ...p, canView: own, picture: own ? p.picture : null }
+          })
     }),
 
   getById: approvedProcedure
@@ -279,6 +282,8 @@ export const volunteersRouter = {
         ...profile,
         ...(context.access.globalAdmin ? { email, duplicateOf: vol.duplicateOf } : {}),
         canMessage: vol.id !== currentVolunteer.id && showContact,
+        /** Their chapter's staff, or a global admin, may take down someone's picture. */
+        canRemovePicture: isAdmin && vol.id !== currentVolunteer.id,
         contactRequested: relations.requested.has(vol.id),
         incomingContactRequest: incoming,
         canRequestContact:

@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import {
   createChapter,
   createMember,
+  createChapterLead,
   connect,
   createVolunteer,
   createAdmin,
@@ -290,6 +291,49 @@ describe('volunteer profile', () => {
       'href',
       `/volunteers/${kept.id}`,
     )
+  })
+
+  async function showPictureToLead(name: string) {
+    const chapter = await createChapter()
+    const member = await createMember(chapter, { name })
+    await prisma.profilePicture.create({
+      data: { volunteerId: member.id, publicId: `picture-${member.id}`, data: new Uint8Array([1]) },
+    })
+    await renderApp(<VolunteerDetailPage params={Promise.resolve({ id: String(member.id) })} />, {
+      as: await createChapterLead(chapter),
+    })
+    await screen.findByRole('heading', { name })
+    return { member, open: await screen.findByRole('button', { name: 'Remove picture' }) }
+  }
+  const confirmRemoval = async () =>
+    userEvent.click(
+      within(await screen.findByRole('dialog', { name: 'Remove profile picture?' })).getByRole(
+        'button',
+        { name: 'Remove picture' },
+      ),
+    )
+
+  it("lets the volunteer's chapter staff take down their picture", async () => {
+    const { member, open } = await showPictureToLead('Pic Member')
+    await userEvent.click(open)
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    await userEvent.click(open)
+    await confirmRemoval()
+    expect(await screen.findByText('Picture removed')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Remove picture' })).toBeNull())
+    expect(await prisma.profilePicture.count({ where: { volunteerId: member.id } })).toBe(0)
+  })
+
+  it('shows the profile as it is when someone else took the picture down first', async () => {
+    const { member, open } = await showPictureToLead('Gone Member')
+    await prisma.profilePicture.delete({ where: { volunteerId: member.id } })
+    await userEvent.click(open)
+    await confirmRemoval()
+    expect(await screen.findByText('They have no picture')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Remove picture' })).toBeNull())
   })
 
   it('shows a minimal profile, and a not-found state', async () => {

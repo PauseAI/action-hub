@@ -782,6 +782,7 @@ export const authRouter = {
         },
       })
       await prisma.volunteerSkill.deleteMany({ where: { volunteerId: context.volunteer.id } })
+      await prisma.profilePicture.deleteMany({ where: { volunteerId: context.volunteer.id } })
       // A coordinator's role goes with the account, and their open calls close.
       const { count: wasCoordinator } = await prisma.coordinator.deleteMany({
         where: { volunteerId: context.volunteer.id },
