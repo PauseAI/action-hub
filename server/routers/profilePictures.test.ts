@@ -145,6 +145,11 @@ describe('profile pictures', () => {
         where: { volunteerId: member.id, type: 'profile_picture_removed' },
       }),
     ).toMatchObject({ title: 'Your profile picture was removed', link: '/settings' })
+    const { rows } = await clientAs(member).notifications.preferences()
+    expect(rows.find((r) => r.type === 'profile_picture_removed')).toMatchObject({
+      category: 'update',
+      delivery: 'in_app',
+    })
 
     await expect(
       clientAs(lead).profilePictures.removeFor({ volunteerId: member.id }),
