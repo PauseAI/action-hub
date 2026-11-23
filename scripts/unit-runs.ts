@@ -7,10 +7,15 @@ import path from 'node:path'
  * then never write into each other's reports.
  */
 
-/** EPERM means the process exists but belongs to another user. */
+/**
+ * Whether a process with this pid is running. Nothing is killed: signal 0 sends no signal, it
+ * only asks the kernel whether one could be sent (the `kill -0` idiom). It throws ESRCH when no
+ * such process exists, and EPERM when the process exists but belongs to another user, which
+ * still counts as alive.
+ */
 export function isAlive(pid: number): boolean {
   try {
-    process.kill(pid, 0)
+    process.kill(pid, 0) // probe only, see above
     return true
   } catch (e) {
     return (e as NodeJS.ErrnoException).code === 'EPERM'
