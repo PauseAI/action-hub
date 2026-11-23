@@ -4,7 +4,7 @@ Size: M. Kind: tools.
 
 ## Problem
 
-Flakes that need load show one per full run, and reproducing one needs load too: running test files side by side collides on the shared test-database setup (`parallel-vitest-runs-collide.md`), so the only way is busy-looping cores by hand.
+Flakes that need load show one per full run, and reproducing one needs load too: by hand, that means several unit runs side by side or busy-looped cores.
 
 ## Fix
 

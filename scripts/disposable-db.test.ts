@@ -1,16 +1,17 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, inject } from 'vitest'
 import { Client } from 'pg'
-import { DB_PREFIX, resolveTestDbUrl, withClient } from '@/test/pg'
+import { resolveTestDbUrl, runPrefix, withClient } from '@/test/pg'
 import { anonymise } from './anonymise-db'
 import { seedDevAccounts } from './seed-dev-accounts'
 import { assertDisposable, claimDisposable, isDisposable, markDisposable } from './disposable-db'
 
 /**
  * A new, unmarked database on the test server, standing in for one nobody has marked. Its
- * prefix leaves dropping it to the run's global teardown (`dropStale`), once the server is idle.
+ * run's prefix leaves dropping it to the run's global teardown (`dropRun`), once the server is
+ * idle.
  */
 async function withScratchDb<T>(fn: (db: Client) => Promise<T>): Promise<T> {
-  const name = `${DB_PREFIX}scratch_${Math.random().toString(36).slice(2)}`
+  const name = `${runPrefix(inject('testRunPid'))}scratch_${Math.random().toString(36).slice(2)}`
   await withClient((client) => client.query(`CREATE DATABASE "${name}"`))
   const url = new URL(resolveTestDbUrl())
   url.pathname = `/${name}`
@@ -37,7 +38,7 @@ describe('a database not marked disposable', () => {
         await db.query('CREATE TABLE volunteers (id int)')
 
         await expect(claimDisposable(db, 'restore over it')).rejects.toThrow(
-          /Refusing to restore over it: database "vitest_scratch_\w+" is not marked disposable/,
+          /Refusing to restore over it: database "vitestrun_\d+_scratch_\w+" is not marked disposable/,
         )
         await expect(anonymise(db)).rejects.toThrow(/Refusing to anonymise it/)
         await expect(seedDevAccounts(db, counts, false)).rejects.toThrow(
