@@ -1,0 +1,11 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["github>PauseAI/.github:renovate"],
+  "packageRules": [
+    {
+      "description": "Node comes from .nvmrc and engines in package.json (Railway's build); bump it on purpose, not by bot",
+      "matchManagers": ["nvm"],
+      "enabled": false
+    }
+  ]
+}
