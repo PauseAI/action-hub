@@ -26,9 +26,9 @@ const blueprint = parse(
 const render = (name: string) => blueprint.services.find((s) => s.name === name)!
 const keys = (s: Service) => s.envVars.map((v) => v.key).sort()
 
+const graph = railway(createRailwayContext({ environment: 'production' }), project)
 async function onRailway(address: string): Promise<ServiceNode> {
-  const graph = await railway(createRailwayContext({ environment: 'production' }), project)
-  return (graph.resources as ServiceNode[]).find((r) => r.address === address)!
+  return ((await graph).resources as ServiceNode[]).find((r) => r.address === address)!
 }
 
 // The standby only helps if it runs what production runs, so each check reads Railway's side

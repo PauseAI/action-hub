@@ -11,6 +11,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Decrypter } from 'age-encryption'
+import type { Client } from 'pg'
 import { logger } from '../lib/logger'
 
 export const DEFAULT_BUCKET = 'pauseai-actionhub-backups'
@@ -221,9 +222,15 @@ export async function downloadNewestDump(
   return b2.download(latest)
 }
 
+/** Drops and recreates the public schema: what `restoreIntoEmptySchema` expects to find. */
+export async function emptyPublicSchema(db: Pick<Client, 'query'>): Promise<void> {
+  await db.query('DROP SCHEMA IF EXISTS public CASCADE')
+  await db.query('CREATE SCHEMA public')
+}
+
 /**
  * Restores the dump into the database at `dbUrl` (a libpq URL), whose public schema the caller
- * has just emptied, feeding pg_restore from memory so the plaintext never touches disk. The
+ * has just emptied (`emptyPublicSchema`), feeding pg_restore from memory so the plaintext never touches disk. The
  * dump's own `CREATE SCHEMA public` entry is filtered out of the restore list, since the schema
  * already exists; `pg_restore -l`/`-L` is the documented way to skip entries. A dump piped out of
  * pg_dump has no data offsets, so pg_restore reads it in order, which the filtered list keeps.

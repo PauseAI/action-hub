@@ -2,8 +2,8 @@
 /**
  * Restores the newest production backup, unchanged, into the standby database on Render: the
  * failover counterpart of fetch-prod-db, which anonymises. docs/standby-render.md is the runbook.
- * It refuses a database that holds any volunteer, so it can fill a new standby but never
- * overwrite one in use, or production. Migrations newer than the dump are left to the web
+ * It refuses any database but a new standby's, so it can never overwrite one in use,
+ * production, or another app's. Migrations newer than the dump are left to the web
  * service, which applies them when it starts.
  *
  * Reads, only from the env file: RESTORE_DATABASE_URL, the standby's external
@@ -24,6 +24,7 @@ import { logger } from '../lib/logger'
 import {
   decryptDump,
   downloadNewestDump,
+  emptyPublicSchema,
   readAgeIdentity,
   restoreIntoEmptySchema,
 } from './prod-backup'
@@ -64,35 +65,43 @@ async function withClient<T>(dbUrl: string, fn: (db: Client) => Promise<T>): Pro
   }
 }
 
-/** How many volunteers the database holds; none when it has never been migrated. */
-async function volunteerCount(db: Client): Promise<number> {
-  const { rows } = await db.query<{ t: string | null }>(
-    "SELECT to_regclass('public.volunteers') AS t",
+/**
+ * Throws unless the database is a new standby: a public schema with no tables, or Action Hub's
+ * migrated schema with no volunteers in it, as the web service's first start leaves it. Any
+ * other database, Action Hub's or not, is refused before anything is dropped.
+ */
+async function assertNewStandby(db: Client, name: string): Promise<void> {
+  const { rows } = await db.query<{ tables: number; migrated: boolean; people: boolean }>(
+    `SELECT count(*)::int AS tables,
+            to_regclass('public._prisma_migrations') IS NOT NULL AS migrated,
+            to_regclass('public.volunteers') IS NOT NULL AS people
+       FROM pg_tables WHERE schemaname = 'public'`,
   )
-  if (rows[0].t === null) return 0
+  const { tables, migrated, people } = rows[0]
+  if (tables === 0) return
+  if (!migrated || !people) {
+    throw new Error(
+      `Refusing to restore: database "${name}" holds ${tables} table(s) and is not Action Hub's. Check RESTORE_DATABASE_URL is the standby's.`,
+    )
+  }
   const count = await db.query<{ n: number }>('SELECT count(*)::int AS n FROM public.volunteers')
-  return count.rows[0].n
-}
-
-async function emptyPublicSchema(db: Client): Promise<void> {
-  await db.query('DROP SCHEMA IF EXISTS public CASCADE')
-  await db.query('CREATE SCHEMA public')
+  const volunteers = count.rows[0].n
+  if (volunteers > 0) {
+    throw new Error(
+      `Refusing to restore: database "${name}" already holds ${volunteers} volunteer(s). Only a new standby is restored into.`,
+    )
+  }
 }
 
 /**
  * Empties the public schema of the database at `dbUrl` (a libpq URL) and restores the dump into
- * it, refusing first if it holds any volunteer. A failed restore empties the schema again, so the
+ * it, refusing first unless it is a new standby (`assertNewStandby`). A failed restore empties the schema again, so the
  * next attempt is not refused over a partial copy; if that fails too, the restore's error is
  * the one thrown.
  */
 export async function restoreStandby(dump: Uint8Array, dbUrl: string): Promise<void> {
   await withClient(dbUrl, async (db) => {
-    const volunteers = await volunteerCount(db)
-    if (volunteers > 0) {
-      throw new Error(
-        `Refusing to restore: database "${new URL(dbUrl).pathname.slice(1)}" already holds ${volunteers} volunteer(s). Only a new standby is restored into.`,
-      )
-    }
+    await assertNewStandby(db, new URL(dbUrl).pathname.slice(1))
     await emptyPublicSchema(db)
   })
   try {

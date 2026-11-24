@@ -27,9 +27,10 @@ COPY . .
 
 # Railway passes service variables to the build only when declared here. `prisma generate`
 # reads DATABASE_URL; NEXT_PUBLIC_* values are inlined into the client bundle;
-# RAILWAY_GIT_COMMIT_SHA becomes Next's deploymentId.
+# RAILWAY_GIT_COMMIT_SHA (RENDER_GIT_COMMIT on the Render standby) becomes Next's deploymentId.
 ARG DATABASE_URL
 ARG RAILWAY_GIT_COMMIT_SHA
+ARG RENDER_GIT_COMMIT
 ARG NEXT_PUBLIC_GA_MEASUREMENT_ID
 RUN npm run build:railway
 

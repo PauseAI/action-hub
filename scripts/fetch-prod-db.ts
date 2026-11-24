@@ -29,6 +29,7 @@ import { claimDisposable } from './disposable-db'
 import {
   decryptDump,
   downloadNewestDump,
+  emptyPublicSchema,
   readAgeIdentity,
   restoreIntoEmptySchema,
 } from './prod-backup'
@@ -53,8 +54,7 @@ async function emptyDatabase(dbUrl: string): Promise<void> {
   await client.connect()
   try {
     await claimDisposable(client, 'restore over it')
-    await client.query('DROP SCHEMA IF EXISTS public CASCADE')
-    await client.query('CREATE SCHEMA public')
+    await emptyPublicSchema(client)
   } finally {
     await client.end()
   }

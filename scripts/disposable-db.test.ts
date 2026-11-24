@@ -1,12 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { withScratchDb } from '@/test/pg'
+import { SCRATCH_TEST_TIMEOUT_MS, withScratchDb } from '@/test/pg'
 import { anonymise } from './anonymise-db'
 import { seedDevAccounts } from './seed-dev-accounts'
 import { assertDisposable, claimDisposable, isDisposable, markDisposable } from './disposable-db'
-
-// Creating a database can outlast the default timeout while the rest of the suite keeps the
-// same server busy.
-const SCRATCH_TEST_TIMEOUT_MS = 60_000
 
 const counts = { volunteer: 1, lead: 1, deputy: 1, admin: 1, superadmin: 0 }
 

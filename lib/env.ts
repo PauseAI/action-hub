@@ -78,8 +78,9 @@ export const env = {
   get STUB_GOOGLE(): boolean {
     return flag(process.env.STUB_GOOGLE)
   },
+  /** The deployed commit: Railway's variable, or Render's on the standby (docs/standby-render.md). */
   get RAILWAY_GIT_COMMIT_SHA(): string | undefined {
-    return process.env.RAILWAY_GIT_COMMIT_SHA
+    return process.env.RAILWAY_GIT_COMMIT_SHA || process.env.RENDER_GIT_COMMIT || undefined
   },
   get RAILWAY_ENVIRONMENT_NAME(): string | undefined {
     return process.env.RAILWAY_ENVIRONMENT_NAME

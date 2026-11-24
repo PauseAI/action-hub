@@ -35,7 +35,11 @@ joins for the failback.
 
 The web service generates its own `CRON_SECRET`, and the cron service reads it from there, so
 there is no secret to copy for it. It also means Railway's cron, if Railway comes back while
-`action.pauseai.info` points at Render, is refused rather than running jobs twice.
+`action.pauseai.info` points at Render, is refused rather than running jobs twice (failover
+step 8 then stops it altogether).
+
+The database accepts no connections from the internet (`ipAllowList: []`). The restore and the
+failback add the deputy's IP for as long as they need it.
 
 `.railway/render.test.ts` checks that the Blueprint stays in step with `.railway/railway.ts`: same
 Dockerfiles, health check, schedule, and the same variable names. **A variable added to
@@ -97,9 +101,11 @@ Write down the time you start each step; it tells us how long a failover takes.
 Render only asks for these values when the Blueprint is created. To change one later, edit it on
 the service's **Environment** page.
 
-### 2. Hold the cron job
+### 2. Hold the web service and the cron job
 
-Open `actionhub-cron` and **Suspend** it, so no job runs while the database is being filled.
+Once `actionhub-web`'s first deploy shows **Live**, **Suspend** it, and **Suspend**
+`actionhub-cron`. Nobody can then sign up on the empty standby, which would make the restore
+refuse it, and no job runs while the database is being filled.
 
 ### 3. Point the cron job at the web service
 
@@ -115,7 +121,9 @@ healthcheck URL set it reports nowhere.
 
 ### 4. Restore the newest backup
 
-1. On `actionhub-db`, **Connect > External**, copy the **External Database URL**.
+1. The database accepts no connections from the internet. On `actionhub-db`, **Access Control**,
+   add your own IP address (the page offers it). Then **Connect > External**, and copy the
+   **External Database URL**.
 2. Save the age identity from Psono to a file outside the repository, readable only by you
    (`chmod 600`).
 3. Make a file outside the repository, say `~/standby.env`, also `chmod 600`:
@@ -139,32 +147,28 @@ healthcheck URL set it reports nowhere.
    time for the announcement.
 
    It warns if the backup is more than two days old (the nightly backup has been failing). It
-   refuses a database that already holds volunteers, so it can't overwrite a standby in use or
-   production. If it fails partway, it empties the standby again and can simply be run again.
-   If it says it could not empty the standby, empty it by hand and run it again:
-   `psql "<External Database URL>" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public'`. This
-   erases the standby's database, so never run it once the standby is serving members.
+   refuses any database but a new standby's: one holding volunteers, or one that isn't Action
+   Hub's, so a wrong URL can't wipe anything. If it fails partway, it empties the standby again
+   and can simply be run again.
 
-5. Close the database to the internet: on `actionhub-db`, **Access Control**, delete the entry
-   that allows `0.0.0.0/0`. The web and cron services connect over Render's private network and
-   are unaffected. It now holds every member's data, so only re-open it, to your own IP, when a
-   step needs it (the failback).
+   If it refuses the standby itself because it holds volunteers (someone signed up before step
+   2), or says it could not empty it, empty it by hand and run it again:
+   `psql "<External Database URL>" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public'`. This
+   erases the standby's database: run it only before step 5, and only with the standby's URL.
+
+5. On `actionhub-db`, **Access Control**, remove your IP address again. (Any push to `main`
+   re-applies the Blueprint, which also removes it.)
 6. Delete `~/standby.env` and the identity file.
 
-### 5. Restart the web service and check it
+### 5. Resume the web service and check it
 
-1. On `actionhub-web`, **Manual Deploy > Restart service**. Start-up applies any migration newer
-   than the backup. In **Logs**, look for `prisma migrate deploy` finishing and Next starting.
+1. On `actionhub-web`, **Resume**. Start-up applies any migration newer than the backup. In
+   **Logs**, look for `prisma migrate deploy` finishing and Next starting.
 2. Open `<onrender.com URL>/api/health`: it answers `{"ok":true}`.
 3. Open the `onrender.com` URL in a browser; the home page loads. (Google sign-in only works on
-   `action.pauseai.info`, so sign-in is checked in step 7.)
+   `action.pauseai.info`, so sign-in is checked in step 6.)
 
-### 6. Resume the cron job
-
-On `actionhub-cron`, **Resume**, then **Trigger Run**. Its log should end with `HTTP 200` and the
-jobs' results, and healthchecks.io shows the run.
-
-### 7. Move `action.pauseai.info` to Render
+### 6. Move `action.pauseai.info` to Render
 
 1. On `actionhub-web`, **Settings > Custom Domains > Add**: `action.pauseai.info`. Render shows
    the `onrender.com` hostname to point it at.
@@ -177,7 +181,20 @@ jobs' results, and healthchecks.io shows the run.
 5. Check `https://action.pauseai.info/api/health` answers `{"ok":true}`, sign in with Google,
    and open a page with data on it.
 
+### 7. Resume the cron job
+
+Only now, so the emails it sends link to a domain that works. On `actionhub-cron`, **Resume**,
+then **Trigger Run**. Its log should end with `HTTP 200` and the jobs' results, and
+healthchecks.io shows the run.
+
 Tell Harry and the team that Action Hub is on the standby, and from what time data was lost.
+
+### 8. Hold Railway's cron when Railway answers
+
+As soon as Railway's dashboard works again (at once, if only the app is down), clear the
+**Cron Schedule** of Railway's `Cron for digest` (Settings), noting it is `0 * * * *`. Otherwise
+it runs every hour, Render refuses it, and it reports a failure to the same healthchecks.io
+check the standby reports to. The failback puts the schedule back.
 
 ## Failback
 
@@ -208,10 +225,10 @@ public database URL (Railway > `Postgres` > **Variables** > `DATABASE_PUBLIC_URL
 3. **Restart Railway's web service** (it applies any migration that ran on Render only), and
    check `https://catalyse.up.railway.app/api/health`.
 4. **Move the domain back.** In Cloudflare, set the `action` record back to the target and proxy
-   status written down in failover step 7. Remove `action.pauseai.info` from `actionhub-web`'s
+   status written down in failover step 6. Remove `action.pauseai.info` from `actionhub-web`'s
    Custom Domains. Check `https://action.pauseai.info/api/health`, and sign in.
-5. **Let Railway's cron run.** It runs on its own schedule; check the next hourly run on
-   healthchecks.io.
+5. **Put Railway's cron back.** Set `Cron for digest`'s **Cron Schedule** back to `0 * * * *`,
+   and check the next hourly run on healthchecks.io.
 6. **Delete the standby** once Railway has run for a day: on Render, delete `actionhub-web`,
    `actionhub-cron`, `actionhub-db` and then the Blueprint. Delete both dump files: they hold
    every member's personal data in plain text.
@@ -226,10 +243,11 @@ and at least twice a year. **Read the warning at the top of this page first.**
   `NEXT_PUBLIC_GA_MEASUREMENT_ID` and `CRON_HEALTHCHECK_URL` empty, `RAILWAY_ENVIRONMENT_NAME`
   `rehearsal`. Enter `APP_URL` after the web service exists, on its **Environment** page, as its
   `onrender.com` URL, so links point at the rehearsal.
-- **R2.** Failover steps 4 to 6. After the cron run, the web service's logs show each email the
+- **R2.** Failover steps 4 and 5, then step 7 (resume the cron job and trigger a run). After
+  the run, the web service's logs show each email the
   jobs would have sent as `[EMAIL NOT CONFIGURED] Would send to ...`: with no key, nothing
   leaves. Sign-in is not checked, since Google refuses the `onrender.com` origin.
-- **R3.** Skip step 7: don't touch Cloudflare.
+- **R3.** Skip steps 6 and 8: don't touch Cloudflare or Railway.
 - **R4.** The same day, delete `actionhub-web`, `actionhub-cron`, `actionhub-db` and the
   Blueprint, then `~/standby.env` and the identity file. Write down how long each step took
   and anything in this page that was wrong or unclear, and send it to Harry.

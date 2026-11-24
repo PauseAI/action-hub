@@ -15,8 +15,10 @@ databases:
     plan: 0.5c-1g
     # Production's Railway volume is 5 GB.
     diskSizeGB: 5
-    # No ipAllowList, so restore-standby can connect from a deputy's machine; the runbook closes it
-    # to the internet once the restore is done.
+    # Closed to the internet: the services reach it over Render's private network. The restore
+    # and failback add the deputy's own IP for as long as they need it, and every Blueprint sync
+    # closes it again.
+    ipAllowList: []
 
 services:
   - type: web

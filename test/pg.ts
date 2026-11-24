@@ -98,6 +98,12 @@ export async function withClient<T>(fn: (client: Client) => Promise<T>): Promise
 }
 
 /**
+ * Timeout for a test using `withScratchDb`: creating a database can outlast the default while the
+ * rest of the suite keeps the same server busy.
+ */
+export const SCRATCH_TEST_TIMEOUT_MS = 60_000
+
+/**
  * Runs `fn` against a new, empty, unmarked database on the test server, given a client and its
  * URL. Its prefix leaves dropping it to the run's global teardown (`dropStale`), once the server
  * is idle.
