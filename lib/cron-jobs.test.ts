@@ -132,16 +132,41 @@ describe('runScheduledJobs (the hourly trigger)', () => {
     expect(await digestRuns()).toBe(before + 1)
   })
 
-  it('keeps the email cap check in the history only when it fails', async () => {
-    const checks = () => prisma.cronJobRun.count({ where: { jobName: 'email-cap-check' } })
-    const before = await checks()
+  it('keeps the email cap check in the history when it fails and when it recovers', async () => {
+    const checks = async () =>
+      (
+        await prisma.cronJobRun.findMany({
+          where: { jobName: 'email-cap-check' },
+          orderBy: { id: 'asc' },
+          select: { status: true },
+        })
+      ).map((r) => r.status)
+    await prisma.cronJobRun.deleteMany({ where: { jobName: 'email-cap-check' } })
     await trigger(hour('2026-12-11', 3))
-    expect(await checks()).toBe(before)
+    expect(await checks()).toEqual([])
     cronJobs.fails('email-cap-check', 'Email held back')
     expect((await trigger(hour('2026-12-11', 4))).body['email-cap-check']).toEqual({
       error: 'Error: Email held back',
     })
-    expect(await checks()).toBe(before + 1)
+    cronJobs.returns('email-cap-check', { reached: 0 })
+    await trigger(hour('2026-12-11', 5))
+    await trigger(hour('2026-12-11', 6))
+    expect(await checks()).toEqual(['error', 'success'])
+  })
+
+  it('starts the email cap check only once the other jobs have settled', async () => {
+    let finish!: () => void
+    cronJobs.returns(
+      'notification-digest',
+      new Promise((resolve) => (finish = () => resolve({ due: 0 }))),
+    )
+    const run = trigger(hour('2026-12-12', 3))
+    await vi.waitFor(() => expect(cronJobs.runs).toContain('notification-digest'))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(cronJobs.runs).not.toContain('email-cap-check')
+    finish()
+    const { ran } = await run
+    expect(ran.at(-1)).toBe('email-cap-check')
   })
 
   it("leaves an admin's Run now out of the day's tries", async () => {

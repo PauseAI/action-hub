@@ -102,7 +102,8 @@ Key variables:
   reaches.
 - `EMAIL_ESSENTIAL_HOURLY_CAP` — the same for essential mail (password reset, signup
   confirmation, account merge, outreach login), kept apart from the cap above (default 200), plus
-  five an hour to any one address
+  five an hour to any one address when `EMAIL_HASH_SECRET` is set (with Resend too) to key it.
+  Reaching it is logged but raises no alert, since anyone can request resets
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — for Google OAuth
 - `STUB_EMAIL=true` — suppress real emails in development
 

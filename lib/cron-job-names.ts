@@ -67,7 +67,7 @@ export const CRON_JOB_INFO: Record<CronJobName, CronJobInfo> = {
   },
   'email-cap-check': {
     description:
-      'Fails, so the cron healthcheck alerts, while an hourly email cap has refused mail this hour or last.',
+      'Fails, so the cron healthcheck alerts, while the hourly bulk email cap has refused mail this hour or last.',
     idempotent: true,
     every: 'hour',
   },

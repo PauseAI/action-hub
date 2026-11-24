@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { prisma } from './prisma'
 import { hashEmail } from './auth'
-import { capsReached, EmailTransport, GuardedTransport } from './email-transport'
+import { bulkCapRefusals, EmailTransport, GuardedTransport } from './email-transport'
 import { liftSuppression, suppressAddresses, suppressionKey } from './email-suppression'
 import { logger } from './logger'
 import { emails } from '@/test/fakes/email'
@@ -123,13 +123,53 @@ describe('GuardedTransport', () => {
     expect(emails.sent.map((e) => e.to)).toEqual(['listed@example.com'])
   })
 
-  it('limits essential mail per recipient without the hashing secret', async () => {
+  it('skips the per-recipient limit when no secret keys it, keeping the shared cap', async () => {
     vi.stubEnv('EMAIL_HASH_SECRET', '')
+    vi.stubEnv('EMAIL_ESSENTIAL_HOURLY_CAP', '7')
     vi.spyOn(logger, 'error').mockImplementation(() => logger as never)
     const resendLike = new GuardedTransport(emails, { suppression: false })
     const reset = { ...to('reset@example.com'), essential: true }
-    for (let n = 0; n < 5; n++) expect(await resendLike.send(reset)).toBe(true)
-    expect(await resendLike.send({ ...reset, to: ' Reset@Example.com' })).toBe(false)
+    for (let n = 0; n < 7; n++) expect(await resendLike.send(reset), `${n}`).toBe(true)
+    expect(await resendLike.send(reset)).toBe(false)
+    const buckets = await prisma.emailSendCount.findMany({ select: { bucket: true } })
+    expect(buckets.map((b) => b.bucket).sort()).toEqual(['essential', 'essential:refused'])
+  })
+
+  it('lets the first sends of a new hour race without refusing any', async () => {
+    const results = await Promise.all(
+      Array.from({ length: 20 }, (_, n) =>
+        guarded.send({ ...to(`race${n}@example.com`), essential: n % 2 === 0 }),
+      ),
+    )
+    expect(results.every(Boolean)).toBe(true)
+  })
+
+  it('reuses a slot a failed send gave back, even after the cap refused one', async () => {
+    vi.stubEnv('EMAIL_HOURLY_CAP', '2')
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => logger as never)
+    expect(await guarded.send(to('a@example.com'))).toBe(true)
+    emails.failNext()
+    expect(await guarded.send(to('b@example.com'))).toBe(false)
+    expect(await guarded.send(to('c@example.com'))).toBe(true)
+    expect(await guarded.send(to('d@example.com'))).toBe(false)
+    emails.failNext()
+    // The slot c holds is taken, so e is refused without being sent; announced once.
+    expect(await guarded.send(to('e@example.com'))).toBe(false)
+    expect(emails.sent.map((e) => e.to)).toEqual(['a@example.com', 'c@example.com'])
+    expect(error.mock.calls.filter((c) => String(c[1]).includes('[EMAIL CAP]'))).toHaveLength(1)
+  })
+
+  it('gives back what it claimed when the database fails partway', async () => {
+    vi.stubEnv('EMAIL_ESSENTIAL_HOURLY_CAP', '0')
+    vi.spyOn(logger, 'error').mockImplementation(() => logger as never)
+    const real = prisma.$queryRaw.bind(prisma)
+    // The per-recipient claim succeeds, then recording the refusal fails.
+    vi.spyOn(prisma, '$queryRaw')
+      .mockImplementationOnce(((...args: Parameters<typeof real>) => real(...args)) as never)
+      .mockRejectedValueOnce(new Error('db down'))
+    expect(await guarded.send({ ...to('r@example.com'), essential: true })).toBe(false)
+    const counts = await prisma.emailSendCount.findMany({ select: { bucket: true, count: true } })
+    expect(counts).toEqual([{ bucket: `to:${suppressionKey('r@example.com')}`, count: 0 }])
   })
 
   it('reports whether the provider inside it is configured', () => {
@@ -140,27 +180,25 @@ describe('GuardedTransport', () => {
   })
 })
 
-describe('capsReached', () => {
+describe('bulkCapRefusals', () => {
   const at = (iso: string) => new Date(iso)
 
-  it('names each shared cap that refused mail this hour or last, and nothing older', async () => {
+  it('names each hour, this one or last, in which the bulk cap refused mail', async () => {
     await prisma.emailSendCount.createMany({
       data: [
         { hour: at('2026-11-24T08:00:00Z'), bucket: 'bulk:refused', count: 50 },
         { hour: at('2026-11-24T09:00:00Z'), bucket: 'bulk', count: 500 },
         { hour: at('2026-11-24T09:00:00Z'), bucket: 'bulk:refused', count: 11 },
+        { hour: at('2026-11-24T10:00:00Z'), bucket: 'bulk:refused', count: 2 },
+        // Anyone outside can push essential mail past its cap, so it raises no alert.
         { hour: at('2026-11-24T10:00:00Z'), bucket: 'essential:refused', count: 1 },
-        { hour: at('2026-11-24T10:00:00Z'), bucket: 'to:someone', count: 9 },
       ],
     })
-    expect(await capsReached(prisma, at('2026-11-24T10:00:30Z'))).toEqual([
+    expect(await bulkCapRefusals(prisma, at('2026-11-24T10:00:30Z'))).toEqual([
       'EMAIL_HOURLY_CAP refused 11 in the hour from 2026-11-24T09:00:00.000Z',
-      'EMAIL_ESSENTIAL_HOURLY_CAP refused 1 in the hour from 2026-11-24T10:00:00.000Z',
+      'EMAIL_HOURLY_CAP refused 2 in the hour from 2026-11-24T10:00:00.000Z',
     ])
-    expect(await capsReached(prisma, at('2026-11-24T11:59:00Z'))).toEqual([
-      'EMAIL_ESSENTIAL_HOURLY_CAP refused 1 in the hour from 2026-11-24T10:00:00.000Z',
-    ])
-    expect(await capsReached(prisma, at('2026-11-24T12:00:00Z'))).toEqual([])
+    expect(await bulkCapRefusals(prisma, at('2026-11-24T12:00:00Z'))).toEqual([])
   })
 
   it('sees a refusal, even after a failed send gives its slot back', async () => {
@@ -177,21 +215,13 @@ describe('capsReached', () => {
     )
     const first = slow.send(to('a@example.com'))
     await vi.waitFor(() => expect(release).toBeDefined())
-    expect(await capsReached(prisma, new Date())).toEqual([])
+    expect(await bulkCapRefusals(prisma, new Date())).toEqual([])
     expect(await slow.send(to('b@example.com'))).toBe(false)
     release(false)
     expect(await first).toBe(false)
-    expect(await capsReached(prisma, new Date())).toEqual([
+    expect(await bulkCapRefusals(prisma, new Date())).toEqual([
       expect.stringContaining('EMAIL_HOURLY_CAP refused 1'),
     ])
-  })
-
-  it('does not count a per-recipient refusal as a shared cap reached', async () => {
-    vi.spyOn(logger, 'error').mockImplementation(() => logger as never)
-    const reset = { ...to('reset@example.com'), essential: true }
-    for (let n = 0; n < 6; n++) await guarded.send(reset)
-    expect(emails.to('reset@example.com')).toHaveLength(5)
-    expect(await capsReached(prisma, new Date())).toEqual([])
   })
 })
 

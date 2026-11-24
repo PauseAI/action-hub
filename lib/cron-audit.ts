@@ -40,12 +40,12 @@ export async function recordCronRun<T>(
   jobName: string,
   fn: () => Promise<T>,
   triggeredBy: CronTriggerSource = 'cron',
-  quiet?: (result: T) => boolean,
+  quiet?: (result: T) => Promise<boolean> | boolean,
 ): Promise<T> {
   const run = await prisma.cronJobRun.create({
     data: { jobName, status: 'running', triggeredBy },
   })
   const result = await finishCronRun(run.id, fn)
-  if (quiet?.(result)) await prisma.cronJobRun.delete({ where: { id: run.id } })
+  if (await quiet?.(result)) await prisma.cronJobRun.delete({ where: { id: run.id } })
   return result
 }

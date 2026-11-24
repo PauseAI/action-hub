@@ -1,4 +1,4 @@
-import { createHmac, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { Resend } from 'resend'
 import { SendEmailCommand, SESv2Client } from '@aws-sdk/client-sesv2'
 import type { PrismaClient } from '@/generated/prisma/client'
@@ -153,35 +153,33 @@ const CAPS = {
   bulk: { setting: 'EMAIL_HOURLY_CAP', cap: () => env.EMAIL_HOURLY_CAP },
   essential: { setting: 'EMAIL_ESSENTIAL_HOURLY_CAP', cap: () => env.EMAIL_ESSENTIAL_HOURLY_CAP },
 } as const
+type SharedCap = keyof typeof CAPS
+
+/** Counts the emails a shared cap refused, apart from its allowance, which a failed send gives back. */
+const refusedBucket = (bucket: SharedCap) => `${bucket}:refused`
 
 const startOfHour = (time: number) => new Date(Math.floor(time / HOUR_MS) * HOUR_MS)
 
-/** Counts the emails a shared cap refused, apart from its allowance, which a failed send gives back. */
-const refusedBucket = (bucket: keyof typeof CAPS) => `${bucket}:refused`
-
 /**
- * Each shared cap that refused mail in the clock hour holding `now` or the one before, as a
- * sentence naming the setting.
+ * Each hour, this one or the one before `now`, in which EMAIL_HOURLY_CAP refused mail. Only the
+ * bulk cap alerts: that is the bug or hijacked admin this guard is for, while anyone outside
+ * can push essential mail (resets, signups) past its cap.
  */
-export async function capsReached(
+export async function bulkCapRefusals(
   db: Pick<PrismaClient, 'emailSendCount'>,
   now: Date,
 ): Promise<string[]> {
-  const names = Object.keys(CAPS) as (keyof typeof CAPS)[]
-  const settings: Record<string, string> = Object.fromEntries(
-    names.map((n) => [refusedBucket(n), CAPS[n].setting]),
-  )
   const rows = await db.emailSendCount.findMany({
     where: {
       hour: { gte: new Date(startOfHour(now.getTime()).getTime() - HOUR_MS) },
-      bucket: { in: names.map(refusedBucket) },
+      bucket: refusedBucket('bulk'),
       count: { gt: 0 },
     },
-    orderBy: [{ hour: 'asc' }, { bucket: 'asc' }],
+    orderBy: { hour: 'asc' },
   })
   return rows.map(
-    ({ hour, bucket, count }) =>
-      `${settings[bucket]} refused ${count} in the hour from ${hour.toISOString()}`,
+    ({ hour, count }) =>
+      `${CAPS.bulk.setting} refused ${count} in the hour from ${hour.toISOString()}`,
   )
 }
 
@@ -189,11 +187,12 @@ export async function capsReached(
  * Wraps a real provider so that a bug or a hijacked admin cannot mail everyone: at most
  * EMAIL_HOURLY_CAP emails an hour go out in all, and the hourly `email-cap-check` job alerts
  * when the cap refused any. With `suppression` (SES, which reports bounces), nothing reaches the
- * provider for a suppressed address (lib/email-suppression.ts). Essential
- * mail (a password reset, a confirmation link) is kept apart, so a bulk run cannot lock anyone
- * out and anyone requesting resets cannot use up the bulk allowance: it has its own cap,
- * EMAIL_ESSENTIAL_HOURLY_CAP, and a limit per recipient. Counts live in the database, so every
- * process shares them. Fails closed: when the database cannot answer, nothing is sent.
+ * provider for a suppressed address (lib/email-suppression.ts). Essential mail (a password
+ * reset, a confirmation link) is kept apart, so a bulk run cannot lock anyone out and anyone
+ * requesting resets cannot use up the bulk allowance: it has its own cap,
+ * EMAIL_ESSENTIAL_HOURLY_CAP, and, when EMAIL_HASH_SECRET is set to key it, a limit per
+ * recipient. Counts live in the database, so every process shares them. Fails closed: when the
+ * database cannot answer, nothing is sent.
  */
 export class GuardedTransport extends EmailTransport {
   constructor(
@@ -204,9 +203,14 @@ export class GuardedTransport extends EmailTransport {
   }
 
   async send(email: OutgoingEmail): Promise<boolean> {
-    let db: PrismaClient
-    let hour: Date
+    let db: PrismaClient | undefined
+    let hour = startOfHour(Date.now())
     const claimed: string[] = []
+    const giveBack = () =>
+      db &&
+      this.release(db, hour, claimed).catch((err: unknown) =>
+        logger.error(err, '[EMAIL ERROR] Could not return a send slot'),
+      )
     try {
       // Loaded here, not at the top: the test harness imports this module before it has set
       // the database URL that `lib/prisma` reads when it is first imported.
@@ -223,29 +227,28 @@ export class GuardedTransport extends EmailTransport {
         }
       }
       hour = startOfHour(Date.now())
-      // Keyed, so the row cannot be matched against a list of addresses. Resend runs without
-      // EMAIL_HASH_SECRET, and production always has CRON_SECRET.
-      const recipient = env.EMAIL_HASH_SECRET
-        ? suppression.suppressionKey(email.to)
-        : createHmac('sha256', env.CRON_SECRET ?? '')
-            .update(email.to.trim().toLowerCase())
-            .digest('hex')
       // Each bucket with its cap, and the shared cap it stands for, if any.
-      const buckets: [string, number, keyof typeof CAPS | null][] = email.essential
-        ? [
-            [`to:${recipient}`, ESSENTIAL_PER_RECIPIENT_HOURLY, null],
-            ['essential', CAPS.essential.cap(), 'essential'],
-          ]
-        : [['bulk', CAPS.bulk.cap(), 'bulk']]
+      const buckets: [string, number, SharedCap | null][] = []
+      if (email.essential) {
+        // Keyed like the suppression list, so the row cannot be matched against addresses.
+        if (env.EMAIL_HASH_SECRET) {
+          const key = suppression.suppressionKey(email.to)
+          buckets.push([`to:${key}`, ESSENTIAL_PER_RECIPIENT_HOURLY, null])
+        }
+        buckets.push(['essential', CAPS.essential.cap(), 'essential'])
+      } else {
+        buckets.push(['bulk', CAPS.bulk.cap(), 'bulk'])
+      }
       for (const [bucket, cap, shared] of buckets) {
-        if (!(await this.claim(db, hour, bucket, cap, shared))) {
-          await this.release(db, hour, claimed)
+        if (!(await this.claim(prisma, hour, bucket, cap, shared))) {
+          await giveBack()
           return false
         }
         claimed.push(bucket)
       }
     } catch (err) {
       logger.error(err, '[EMAIL ERROR] Suppression or cap check failed; not sending')
+      await giveBack()
       return false
     }
     const sent = await this.inner.send(email).catch((err: unknown) => {
@@ -253,11 +256,7 @@ export class GuardedTransport extends EmailTransport {
       return false
     })
     // A send that went nowhere gives its slots back, so an outage does not use up the hour.
-    if (!sent) {
-      await this.release(db, hour, claimed).catch((err: unknown) =>
-        logger.error(err, '[EMAIL ERROR] Could not return a send slot'),
-      )
-    }
+    if (!sent) await giveBack()
     return sent
   }
 
@@ -265,26 +264,32 @@ export class GuardedTransport extends EmailTransport {
     return this.inner.configured()
   }
 
-  /** Takes one send from `bucket`'s allowance this hour; false once `cap` are taken. */
+  /**
+   * Takes one send from `bucket`'s allowance this hour; false once `cap` are taken. One
+   * statement, so concurrent first sends in a new hour neither collide nor pass the cap.
+   */
   private async claim(
     db: PrismaClient,
     hour: Date,
     bucket: string,
     cap: number,
-    shared: keyof typeof CAPS | null,
+    shared: SharedCap | null,
   ): Promise<boolean> {
-    const increment = (bucket: string) =>
-      db.emailSendCount.upsert({
-        where: { hour_bucket: { hour, bucket } },
-        create: { hour, bucket, count: 1 },
-        update: { count: { increment: 1 } },
-      })
-    const { count } = await increment(bucket)
-    if (count <= cap) return true
+    if (cap > 0) {
+      const taken = await db.$queryRaw<{ count: number }[]>`
+        INSERT INTO email_send_counts (hour, bucket, count) VALUES (${hour}, ${bucket}, 1)
+        ON CONFLICT (hour, bucket) DO UPDATE SET count = email_send_counts.count + 1
+        WHERE email_send_counts.count < ${cap}
+        RETURNING count`
+      if (taken.length) return true
+    }
     if (!shared) return false
-    await increment(refusedBucket(shared))
-    // A refused claim stays counted, so the cap is announced once, not once per refused email.
-    if (count === cap + 1) {
+    const [{ count }] = await db.$queryRaw<{ count: number }[]>`
+      INSERT INTO email_send_counts (hour, bucket, count)
+      VALUES (${hour}, ${refusedBucket(shared)}, 1)
+      ON CONFLICT (hour, bucket) DO UPDATE SET count = email_send_counts.count + 1
+      RETURNING count`
+    if (count === 1) {
       logger.error(
         { hour, cap },
         `[EMAIL CAP] ${CAPS[shared].setting} of ${cap} reached; no more ${bucket} email until the next hour`,
