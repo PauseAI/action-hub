@@ -27,7 +27,8 @@ async function load() {
 let failures = 0
 let failingPath: string | undefined
 const requested: string[] = []
-let held: { path: string; release: Promise<void> } | undefined
+let heldPath: string | undefined
+let held: { released: Promise<void>; release: () => void } | undefined
 
 /**
  * The next request to a procedure is answered from the database as it is now, but its response
@@ -35,7 +36,9 @@ let held: { path: string; release: Promise<void> } | undefined
  */
 export function holdNextFetch(path: string): () => void {
   let release!: () => void
-  held = { path, release: new Promise((resolve) => (release = resolve)) }
+  const released = new Promise<void>((resolve) => (release = resolve))
+  heldPath = path
+  held = { released, release }
   return release
 }
 
@@ -54,7 +57,8 @@ export const requestsTo = (path: string) => requested.filter((p) => p === `/api/
 export function resetRpcFetch(): void {
   failures = 0
   failingPath = undefined
-  held = undefined
+  held?.release()
+  held = heldPath = undefined
   requested.length = 0
 }
 
@@ -75,10 +79,9 @@ export async function rpcFetch(input: RequestInfo | URL, init?: RequestInit): Pr
     prefix: '/api/rpc',
     context: (await createContext(request)) as Record<never, never>,
   })
-  if (held && pathname === `/api/rpc/${held.path}`) {
-    const { release } = held
-    held = undefined
-    await release
+  if (held && pathname === `/api/rpc/${heldPath}`) {
+    heldPath = undefined
+    await held.released
   }
   // A real fetch rejects once its signal is aborted; react-query relies on that to discard a
   // cancelled refetch's result rather than let a stale response overtake a newer one.

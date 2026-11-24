@@ -49,11 +49,10 @@ describe('ProfilePictureSettings', () => {
       fileInput(),
       new File([new Uint8Array(png)], 'me.png', { type: 'image/png' }),
     )
-    await waitFor(async () => expect(await pictureOf(me.id)).not.toBeNull())
-    releaseLookup()
-
+    // Without the cancel, the refresh would wait on this lookup and the toast would never show.
     expect(await screen.findByText('Picture updated')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Change picture' })).toBeInTheDocument()
+    releaseLookup()
   })
 
   it('says why a file is refused', async () => {
