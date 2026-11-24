@@ -4,7 +4,7 @@
 # It mirrors production on Railway (.railway/railway.ts, docs/railway.md): the same Dockerfiles,
 # so the same pinned Node, start-up migrations and pg tools, the same hourly cron trigger, and
 # Postgres 18. No values live here: each `sync: false` variable is entered from Psono when the
-# Blueprint is created, and render.test.ts keeps the lists in step with Railway's.
+# Blueprint is created, and .railway/render.test.ts keeps the lists in step with Railway's.
 
 databases:
   - name: actionhub-db

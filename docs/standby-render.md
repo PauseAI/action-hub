@@ -37,7 +37,7 @@ The web service generates its own `CRON_SECRET`, and the cron service reads it f
 there is no secret to copy for it. It also means Railway's cron, if Railway comes back while
 `action.pauseai.info` points at Render, is refused rather than running jobs twice.
 
-`render.test.ts` checks that the Blueprint stays in step with `.railway/railway.ts`: same
+`.railway/render.test.ts` checks that the Blueprint stays in step with `.railway/railway.ts`: same
 Dockerfiles, health check, schedule, and the same variable names. **A variable added to
 production on Railway has to be added to `render.yaml` as well**, or that test fails.
 

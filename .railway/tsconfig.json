@@ -6,7 +6,7 @@
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": []
+    "types": ["node"]
   },
-  "include": ["railway.ts", "railway.test.ts"]
+  "include": ["railway.ts", "railway.test.ts", "render.test.ts"]
 }

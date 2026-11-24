@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { createRailwayContext, project, type ServiceNode } from 'railway/iac'
 import { describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
-import railway from './.railway/railway'
+import railway from './railway'
 
 type EnvVar = { key: string; value?: unknown; sync?: boolean; generateValue?: boolean }
 type Service = {
@@ -19,7 +20,9 @@ type Blueprint = {
   databases: { name: string; region: string; postgresMajorVersion: string }[]
 }
 
-const blueprint = parse(readFileSync('render.yaml', 'utf8')) as Blueprint
+const blueprint = parse(
+  readFileSync(fileURLToPath(new URL('../render.yaml', import.meta.url)), 'utf8'),
+) as Blueprint
 const render = (name: string) => blueprint.services.find((s) => s.name === name)!
 const keys = (s: Service) => s.envVars.map((v) => v.key).sort()
 
