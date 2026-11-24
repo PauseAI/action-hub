@@ -1,0 +1,83 @@
+# Action Hub's standby host on Render, for when Railway is down. Nothing exists on Render until a
+# failover or a rehearsal creates it from this Blueprint; docs/standby-render.md is the runbook.
+#
+# It mirrors production on Railway (.railway/railway.ts, docs/railway.md): the same Dockerfiles,
+# so the same pinned Node, start-up migrations and pg tools, the same hourly cron trigger, and
+# Postgres 18. No values live here: each `sync: false` variable is entered from Psono when the
+# Blueprint is created, and render.test.ts keeps the lists in step with Railway's.
+
+databases:
+  - name: actionhub-db
+    databaseName: actionhub
+    user: actionhub
+    region: frankfurt
+    postgresMajorVersion: '18'
+    plan: 0.5c-1g
+    # Production's Railway volume is 5 GB.
+    diskSizeGB: 5
+    # No ipAllowList: restore-standby connects from a deputy's machine. Password and TLS guard it.
+
+services:
+  - type: web
+    name: actionhub-web
+    runtime: docker
+    branch: main
+    region: frankfurt
+    plan: 1c-2g
+    numInstances: 1
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    # The Dockerfile's CMD migrates, then starts Next on Render's PORT.
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: actionhub-db
+          property: connectionString
+      # Only the cron service below calls the cron routes, so the standby has its own secret.
+      - key: CRON_SECRET
+        generateValue: true
+      # `production` at a failover turns on validateEnv's checks and stops anonymise-db and
+      # fetch-prod-db; `rehearsal` turns the checks off, so it starts with no email key.
+      - key: RAILWAY_ENVIRONMENT_NAME
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: FROM_EMAIL
+        sync: false
+      - key: REPLY_TO_EMAIL
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
+      # Build time only: Render passes every variable to the Docker build as a build argument.
+      - key: NEXT_PUBLIC_GA_MEASUREMENT_ID
+        sync: false
+
+  - type: cron
+    name: actionhub-cron
+    runtime: docker
+    branch: main
+    region: frankfurt
+    plan: 0.5c-512mb
+    # Hourly, UTC: /api/cron/daily runs each job when it is due (lib/cron-jobs.ts).
+    schedule: '0 * * * *'
+    dockerfilePath: ./Dockerfile.cron
+    dockerContext: .
+    autoDeployTrigger: commit
+    envVars:
+      - key: CRON_SECRET
+        fromService:
+          type: web
+          name: actionhub-web
+          envVarKey: CRON_SECRET
+      # The web service's own onrender.com URL plus /api/cron/daily, so runs never depend on DNS
+      # or reach Railway. Unset, trigger.mjs calls production's domain.
+      - key: CRON_URL
+        sync: false
+      - key: CRON_HEALTHCHECK_URL
+        sync: false

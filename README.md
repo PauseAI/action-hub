@@ -217,6 +217,7 @@ Actions are pinned to commit SHAs with the version in a trailing comment; bump b
 | `new-migration`    | Create a new migration SQL file from schema diff                                                                                                |
 | `migrate`          | Apply pending migration files to the local database                                                                                             |
 | `fetch-prod-db`    | Restore latest prod backup into DATABASE_URL, anonymised, with dev accounts seeded                                                              |
+| `restore-standby`  | Restore latest prod backup, unchanged, into a new standby on Render (docs/standby-render.md)                                                    |
 | `anonymise-db`     | Anonymise PII in DATABASE_URL and seed dev accounts                                                                                             |
 | `install:browsers` | Install Playwright's Chromium browser                                                                                                           |
 | `test:unit`        | Run unit tests with vitest                                                                                                                      |

@@ -4,7 +4,8 @@ Action Hub runs as three services in the Railway project "Action Hub", beside a 
 database (service `Postgres`, volume `postgres-volume`, 5000 MB). Every service runs one replica
 in `europe-west4-drams3a` (EU West, Amsterdam). Their deploy settings live in
 [`.railway/railway.ts`](../.railway/railway.ts) (Railway Infrastructure as Code). This page lists
-what each service needs, so a standby host can match it; values are never written here.
+what each service needs, so a standby host can match it ([standby-render.md](standby-render.md));
+values are never written here.
 
 ## Services
 
@@ -150,6 +151,7 @@ The plan compares every field of a declared service, so the file declares each s
 region, volume mount and full variable list as they are on Railway. Variables are `preserve()`.
 
 **A variable added to a production service in the dashboard must be added to the file as
-`preserve()` in the same breath.** Otherwise the next plan shows "Delete variable" for it: stop
+`preserve()` in the same breath**, and to the standby's [`render.yaml`](../render.yaml) as
+`sync: false` ([standby-render.md](standby-render.md)). Otherwise the next plan shows "Delete variable" for it: stop
 there, add the name, and plan again. `.railway/railway.test.ts` lists the names, so it changes
 alongside.

@@ -1,27 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { Client } from 'pg'
-import { DB_PREFIX, resolveTestDbUrl, withClient } from '@/test/pg'
+import { withScratchDb } from '@/test/pg'
 import { anonymise } from './anonymise-db'
 import { seedDevAccounts } from './seed-dev-accounts'
 import { assertDisposable, claimDisposable, isDisposable, markDisposable } from './disposable-db'
-
-/**
- * A new, unmarked database on the test server, standing in for one nobody has marked. Its
- * prefix leaves dropping it to the run's global teardown (`dropStale`), once the server is idle.
- */
-async function withScratchDb<T>(fn: (db: Client) => Promise<T>): Promise<T> {
-  const name = `${DB_PREFIX}scratch_${Math.random().toString(36).slice(2)}`
-  await withClient((client) => client.query(`CREATE DATABASE "${name}"`))
-  const url = new URL(resolveTestDbUrl())
-  url.pathname = `/${name}`
-  const db = new Client({ connectionString: url.toString() })
-  await db.connect()
-  try {
-    return await fn(db)
-  } finally {
-    await db.end()
-  }
-}
 
 // Creating a database can outlast the default timeout while the rest of the suite keeps the
 // same server busy.
