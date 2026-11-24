@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { createHmac, randomUUID } from 'node:crypto'
 import { Resend } from 'resend'
 import { SendEmailCommand, SESv2Client } from '@aws-sdk/client-sesv2'
 import type { PrismaClient } from '@/generated/prisma/client'
@@ -156,29 +156,33 @@ const CAPS = {
 
 const startOfHour = (time: number) => new Date(Math.floor(time / HOUR_MS) * HOUR_MS)
 
+/** Counts the emails a shared cap refused, apart from its allowance, which a failed send gives back. */
+const refusedBucket = (bucket: keyof typeof CAPS) => `${bucket}:refused`
+
 /**
  * Each shared cap that refused mail in the clock hour holding `now` or the one before, as a
- * sentence naming the setting. A refused claim stays counted, so a count over its cap means
- * mail was held back.
+ * sentence naming the setting.
  */
 export async function capsReached(
   db: Pick<PrismaClient, 'emailSendCount'>,
   now: Date,
 ): Promise<string[]> {
+  const names = Object.keys(CAPS) as (keyof typeof CAPS)[]
+  const settings: Record<string, string> = Object.fromEntries(
+    names.map((n) => [refusedBucket(n), CAPS[n].setting]),
+  )
   const rows = await db.emailSendCount.findMany({
     where: {
       hour: { gte: new Date(startOfHour(now.getTime()).getTime() - HOUR_MS) },
-      bucket: { in: Object.keys(CAPS) },
+      bucket: { in: names.map(refusedBucket) },
+      count: { gt: 0 },
     },
     orderBy: [{ hour: 'asc' }, { bucket: 'asc' }],
   })
-  return rows.flatMap(({ hour, bucket, count }) => {
-    const { setting, cap } = CAPS[bucket as keyof typeof CAPS]
-    const limit = cap()
-    return count > limit
-      ? [`${setting} of ${limit} reached in the hour from ${hour.toISOString()} (${count} tried)`]
-      : []
-  })
+  return rows.map(
+    ({ hour, bucket, count }) =>
+      `${settings[bucket]} refused ${count} in the hour from ${hour.toISOString()}`,
+  )
 }
 
 /**
@@ -219,21 +223,22 @@ export class GuardedTransport extends EmailTransport {
         }
       }
       hour = startOfHour(Date.now())
-      // Keyed when there is a secret; Resend runs without one, and the row lasts only a day.
+      // Keyed, so the row cannot be matched against a list of addresses. Resend runs without
+      // EMAIL_HASH_SECRET, and production always has CRON_SECRET.
       const recipient = env.EMAIL_HASH_SECRET
         ? suppression.suppressionKey(email.to)
-        : createHash('sha256').update(email.to.trim().toLowerCase()).digest('hex')
-      const shared = (bucket: keyof typeof CAPS): [string, number, string] => [
-        bucket,
-        CAPS[bucket].cap(),
-        CAPS[bucket].setting,
-      ]
-      // Each bucket with its cap, and the setting to name in the log once that cap is reached.
-      const buckets: [string, number, string | null][] = email.essential
-        ? [[`to:${recipient}`, ESSENTIAL_PER_RECIPIENT_HOURLY, null], shared('essential')]
-        : [shared('bulk')]
-      for (const [bucket, cap, setting] of buckets) {
-        if (!(await this.claim(db, hour, bucket, cap, setting))) {
+        : createHmac('sha256', env.CRON_SECRET ?? '')
+            .update(email.to.trim().toLowerCase())
+            .digest('hex')
+      // Each bucket with its cap, and the shared cap it stands for, if any.
+      const buckets: [string, number, keyof typeof CAPS | null][] = email.essential
+        ? [
+            [`to:${recipient}`, ESSENTIAL_PER_RECIPIENT_HOURLY, null],
+            ['essential', CAPS.essential.cap(), 'essential'],
+          ]
+        : [['bulk', CAPS.bulk.cap(), 'bulk']]
+      for (const [bucket, cap, shared] of buckets) {
+        if (!(await this.claim(db, hour, bucket, cap, shared))) {
           await this.release(db, hour, claimed)
           return false
         }
@@ -266,19 +271,23 @@ export class GuardedTransport extends EmailTransport {
     hour: Date,
     bucket: string,
     cap: number,
-    setting: string | null,
+    shared: keyof typeof CAPS | null,
   ): Promise<boolean> {
-    const { count } = await db.emailSendCount.upsert({
-      where: { hour_bucket: { hour, bucket } },
-      create: { hour, bucket, count: 1 },
-      update: { count: { increment: 1 } },
-    })
+    const increment = (bucket: string) =>
+      db.emailSendCount.upsert({
+        where: { hour_bucket: { hour, bucket } },
+        create: { hour, bucket, count: 1 },
+        update: { count: { increment: 1 } },
+      })
+    const { count } = await increment(bucket)
     if (count <= cap) return true
+    if (!shared) return false
+    await increment(refusedBucket(shared))
     // A refused claim stays counted, so the cap is announced once, not once per refused email.
-    if (count === cap + 1 && setting) {
+    if (count === cap + 1) {
       logger.error(
         { hour, cap },
-        `[EMAIL CAP] ${setting} of ${cap} reached; no more ${bucket} email until the next hour`,
+        `[EMAIL CAP] ${CAPS[shared].setting} of ${cap} reached; no more ${bucket} email until the next hour`,
       )
     }
     return false

@@ -97,8 +97,9 @@ Key variables:
   `Action Hub <noreply@action.pauseai.info>`
 - `EMAIL_HOURLY_CAP` — the most emails sent in one clock hour across every process, through
   either provider (default 500); beyond it mail is dropped and logged, and the hourly
-  `email-cap-check` cron job fails, so the cron healthcheck alerts. Keep it above the number of
-  people a digest or call reaches.
+  `email-cap-check` cron job fails, so the cron healthcheck alerts (and stays down for that hour
+  and the next, whatever else fails). Keep it above the number of people a digest or call
+  reaches.
 - `EMAIL_ESSENTIAL_HOURLY_CAP` — the same for essential mail (password reset, signup
   confirmation, account merge, outreach login), kept apart from the cap above (default 200), plus
   five an hour to any one address
