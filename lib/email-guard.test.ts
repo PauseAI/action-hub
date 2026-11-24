@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { prisma } from './prisma'
 import { hashEmail } from './auth'
-import { GuardedTransport } from './email-transport'
+import { capsReached, GuardedTransport } from './email-transport'
 import { liftSuppression, suppressAddresses, suppressionKey } from './email-suppression'
 import { logger } from './logger'
 import { emails } from '@/test/fakes/email'
@@ -113,11 +113,67 @@ describe('GuardedTransport', () => {
     )
   })
 
+  it('without suppression, as for Resend, sends to a listed address and still caps', async () => {
+    const resendLike = new GuardedTransport(emails, { suppression: false })
+    vi.stubEnv('EMAIL_HOURLY_CAP', '1')
+    vi.spyOn(logger, 'error').mockImplementation(() => logger as never)
+    await suppressAddresses(['listed@example.com'], 'bounce', null)
+    expect(await resendLike.send(to('listed@example.com'))).toBe(true)
+    expect(await resendLike.send(to('next@example.com'))).toBe(false)
+    expect(emails.sent.map((e) => e.to)).toEqual(['listed@example.com'])
+  })
+
+  it('limits essential mail per recipient without the hashing secret', async () => {
+    vi.stubEnv('EMAIL_HASH_SECRET', '')
+    vi.spyOn(logger, 'error').mockImplementation(() => logger as never)
+    const resendLike = new GuardedTransport(emails, { suppression: false })
+    const reset = { ...to('reset@example.com'), essential: true }
+    for (let n = 0; n < 5; n++) expect(await resendLike.send(reset)).toBe(true)
+    expect(await resendLike.send({ ...reset, to: ' Reset@Example.com' })).toBe(false)
+  })
+
   it('reports whether the provider inside it is configured', () => {
     emails.setConfigured(false)
     expect(guarded.configured()).toBe(false)
     emails.setConfigured(true)
     expect(guarded.configured()).toBe(true)
+  })
+})
+
+describe('capsReached', () => {
+  const at = (iso: string) => new Date(iso)
+
+  it('names each shared cap that refused mail this hour or last, and nothing older', async () => {
+    vi.stubEnv('EMAIL_HOURLY_CAP', '10')
+    vi.stubEnv('EMAIL_ESSENTIAL_HOURLY_CAP', '4')
+    await prisma.emailSendCount.createMany({
+      data: [
+        { hour: at('2026-11-24T08:00:00Z'), bucket: 'bulk', count: 50 },
+        { hour: at('2026-11-24T09:00:00Z'), bucket: 'bulk', count: 11 },
+        { hour: at('2026-11-24T09:00:00Z'), bucket: 'essential', count: 4 },
+        { hour: at('2026-11-24T10:00:00Z'), bucket: 'essential', count: 5 },
+        { hour: at('2026-11-24T10:00:00Z'), bucket: 'to:someone', count: 9 },
+      ],
+    })
+    expect(await capsReached(prisma, at('2026-11-24T10:00:30Z'))).toEqual([
+      'EMAIL_HOURLY_CAP of 10 reached in the hour from 2026-11-24T09:00:00.000Z (11 tried)',
+      'EMAIL_ESSENTIAL_HOURLY_CAP of 4 reached in the hour from 2026-11-24T10:00:00.000Z (5 tried)',
+    ])
+    expect(await capsReached(prisma, at('2026-11-24T11:59:00Z'))).toEqual([
+      'EMAIL_ESSENTIAL_HOURLY_CAP of 4 reached in the hour from 2026-11-24T10:00:00.000Z (5 tried)',
+    ])
+    expect(await capsReached(prisma, at('2026-11-24T12:00:00Z'))).toEqual([])
+  })
+
+  it('sees the refusal a capped send left behind', async () => {
+    vi.stubEnv('EMAIL_HOURLY_CAP', '1')
+    vi.spyOn(logger, 'error').mockImplementation(() => logger as never)
+    await guarded.send(to('a@example.com'))
+    expect(await capsReached(prisma, new Date())).toEqual([])
+    await guarded.send(to('b@example.com'))
+    expect(await capsReached(prisma, new Date())).toEqual([
+      expect.stringContaining('EMAIL_HOURLY_CAP of 1 reached'),
+    ])
   })
 })
 

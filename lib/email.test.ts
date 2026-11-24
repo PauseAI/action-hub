@@ -58,12 +58,12 @@ describe('email transports', () => {
   const provider = (transport: EmailTransport) =>
     transport instanceof GuardedTransport ? transport.inner : transport
 
-  it('is chosen from the environment: stub first, then Resend, else unconfigured', () => {
+  it('is chosen from the environment: stub first, then a guarded Resend, else unconfigured', () => {
     expect(createEmailTransport({ ...baseEnv, STUB_EMAIL: true })).toBeInstanceOf(FileStubTransport)
-    // Resend is left as it was: the cap and suppression list come with SES.
-    expect(createEmailTransport({ ...baseEnv, RESEND_API_KEY: 'key' })).toBeInstanceOf(
-      ResendTransport,
-    )
+    // Resend sits behind the cap too, so a bug cannot mail everyone on either provider.
+    const resend = createEmailTransport({ ...baseEnv, RESEND_API_KEY: 'key' })
+    expect(resend).toBeInstanceOf(GuardedTransport)
+    expect(provider(resend)).toBeInstanceOf(ResendTransport)
     expect(createEmailTransport(baseEnv)).toBeInstanceOf(UnconfiguredTransport)
   })
 

@@ -6,6 +6,7 @@ import { runCspSummaryJob } from '@/jobs/csp-summary'
 import { runDeadlineRemindersJob } from '@/jobs/deadline-reminders'
 import { runNotificationDigestJob } from '@/jobs/notification-digest'
 import { runEmailHousekeepingJob } from '@/jobs/email-housekeeping'
+import { runEmailCapCheckJob } from '@/jobs/email-cap-check'
 import {
   CRON_JOB_INFO,
   CRON_JOB_NAMES,
@@ -28,6 +29,7 @@ const realRunners: CronJobRunners = {
   'deadline-reminders': runDeadlineRemindersJob,
   'notification-digest': runNotificationDigestJob,
   'email-housekeeping': runEmailHousekeepingJob,
+  'email-cap-check': runEmailCapCheckJob,
 }
 
 let current: CronJobRunners = realRunners
@@ -58,6 +60,7 @@ export const CRON_JOBS = Object.fromEntries(
  */
 const QUIET_RUN: Partial<Record<CronJobName, (result: unknown) => boolean>> = {
   'notification-digest': (r) => (r as { due?: number }).due === 0,
+  'email-cap-check': () => true,
 }
 
 /** A run still marked running after this long is taken to have died. */

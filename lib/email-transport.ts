@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { Resend } from 'resend'
 import { SendEmailCommand, SESv2Client } from '@aws-sdk/client-sesv2'
 import type { PrismaClient } from '@/generated/prisma/client'
@@ -16,7 +16,7 @@ export type OutgoingEmail = {
 
 /**
  * The last hop of an outgoing email. Every template in `lib/email.tsx` builds an OutgoingEmail
- * and hands it to whichever transport `emailTransport()` returns (with SES, inside
+ * and hands it to whichever transport `emailTransport()` returns (a real provider comes inside
  * GuardedTransport); tests swap in their own with `setEmailTransport`.
  */
 export abstract class EmailTransport {
@@ -148,16 +148,54 @@ const HOUR_MS = 60 * 60 * 1000
 /** Essential emails one address may be sent in an hour, so nobody can flood a stranger with resets. */
 export const ESSENTIAL_PER_RECIPIENT_HOURLY = 5
 
+/** The shared caps: each bucket's setting, read on every send so a change applies at once. */
+const CAPS = {
+  bulk: { setting: 'EMAIL_HOURLY_CAP', cap: () => env.EMAIL_HOURLY_CAP },
+  essential: { setting: 'EMAIL_ESSENTIAL_HOURLY_CAP', cap: () => env.EMAIL_ESSENTIAL_HOURLY_CAP },
+} as const
+
+const startOfHour = (time: number) => new Date(Math.floor(time / HOUR_MS) * HOUR_MS)
+
 /**
- * Wraps SES so that nothing reaches it for a suppressed address (lib/email-suppression.ts),
- * and a bug cannot mail everyone: at most EMAIL_HOURLY_CAP emails an hour go out in all. Essential
+ * Each shared cap that refused mail in the clock hour holding `now` or the one before, as a
+ * sentence naming the setting. A refused claim stays counted, so a count over its cap means
+ * mail was held back.
+ */
+export async function capsReached(
+  db: Pick<PrismaClient, 'emailSendCount'>,
+  now: Date,
+): Promise<string[]> {
+  const rows = await db.emailSendCount.findMany({
+    where: {
+      hour: { gte: new Date(startOfHour(now.getTime()).getTime() - HOUR_MS) },
+      bucket: { in: Object.keys(CAPS) },
+    },
+    orderBy: [{ hour: 'asc' }, { bucket: 'asc' }],
+  })
+  return rows.flatMap(({ hour, bucket, count }) => {
+    const { setting, cap } = CAPS[bucket as keyof typeof CAPS]
+    const limit = cap()
+    return count > limit
+      ? [`${setting} of ${limit} reached in the hour from ${hour.toISOString()} (${count} tried)`]
+      : []
+  })
+}
+
+/**
+ * Wraps a real provider so that a bug or a hijacked admin cannot mail everyone: at most
+ * EMAIL_HOURLY_CAP emails an hour go out in all, and the hourly `email-cap-check` job alerts
+ * when the cap refused any. With `suppression` (SES, which reports bounces), nothing reaches the
+ * provider for a suppressed address (lib/email-suppression.ts). Essential
  * mail (a password reset, a confirmation link) is kept apart, so a bulk run cannot lock anyone
  * out and anyone requesting resets cannot use up the bulk allowance: it has its own cap,
  * EMAIL_ESSENTIAL_HOURLY_CAP, and a limit per recipient. Counts live in the database, so every
  * process shares them. Fails closed: when the database cannot answer, nothing is sent.
  */
 export class GuardedTransport extends EmailTransport {
-  constructor(readonly inner: EmailTransport) {
+  constructor(
+    readonly inner: EmailTransport,
+    private readonly options: { suppression: boolean } = { suppression: true },
+  ) {
     super()
   }
 
@@ -173,19 +211,27 @@ export class GuardedTransport extends EmailTransport {
         import('./email-suppression'),
       ])
       db = prisma
-      const reason = await suppression.suppressionOf(email.to)
-      if (reason) {
-        logger.info(`[EMAIL SUPPRESSED] Not sending "${email.subject}": ${reason}`)
-        return false
+      if (this.options.suppression) {
+        const reason = await suppression.suppressionOf(email.to)
+        if (reason) {
+          logger.info(`[EMAIL SUPPRESSED] Not sending "${email.subject}": ${reason}`)
+          return false
+        }
       }
-      hour = new Date(Math.floor(Date.now() / HOUR_MS) * HOUR_MS)
+      hour = startOfHour(Date.now())
+      // Keyed when there is a secret; Resend runs without one, and the row lasts only a day.
+      const recipient = env.EMAIL_HASH_SECRET
+        ? suppression.suppressionKey(email.to)
+        : createHash('sha256').update(email.to.trim().toLowerCase()).digest('hex')
+      const shared = (bucket: keyof typeof CAPS): [string, number, string] => [
+        bucket,
+        CAPS[bucket].cap(),
+        CAPS[bucket].setting,
+      ]
       // Each bucket with its cap, and the setting to name in the log once that cap is reached.
       const buckets: [string, number, string | null][] = email.essential
-        ? [
-            [`to:${suppression.suppressionKey(email.to)}`, ESSENTIAL_PER_RECIPIENT_HOURLY, null],
-            ['essential', env.EMAIL_ESSENTIAL_HOURLY_CAP, 'EMAIL_ESSENTIAL_HOURLY_CAP'],
-          ]
-        : [['bulk', env.EMAIL_HOURLY_CAP, 'EMAIL_HOURLY_CAP']]
+        ? [[`to:${recipient}`, ESSENTIAL_PER_RECIPIENT_HOURLY, null], shared('essential')]
+        : [shared('bulk')]
       for (const [bucket, cap, setting] of buckets) {
         if (!(await this.claim(db, hour, bucket, cap, setting))) {
           await this.release(db, hour, claimed)
@@ -247,11 +293,14 @@ export class GuardedTransport extends EmailTransport {
   }
 }
 
-/** SES comes wrapped in GuardedTransport; Resend, the stub and the unconfigured drop do not. */
+/** SES and Resend come wrapped in GuardedTransport; the stub and the unconfigured drop do not. */
 export function createEmailTransport(config: EmailEnv = env): EmailTransport {
   if (config.STUB_EMAIL) return new FileStubTransport()
   if (config.EMAIL_PROVIDER === 'ses') return new GuardedTransport(new SesTransport(config))
-  if (config.RESEND_API_KEY) return new ResendTransport(config)
+  if (config.RESEND_API_KEY) {
+    // Resend reports no bounces here, so there is no suppression list to check.
+    return new GuardedTransport(new ResendTransport(config), { suppression: false })
+  }
   return new UnconfiguredTransport()
 }
 
