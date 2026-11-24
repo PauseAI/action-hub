@@ -28,8 +28,12 @@ export default function ProfilePictureSettings({ id, name }: { id: number; name:
   const inputRef = useRef<HTMLInputElement>(null)
   const showToast = useToast()
   const queryClient = useQueryClient()
-  // Every avatar on the page reads the lookup, so it is refreshed for all of them.
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ['person'] })
+  // Every avatar on the page reads the lookup, so it is refreshed for all of them. A first lookup
+  // still in flight was answered before the change, and invalidating alone would wait for it.
+  const refresh = async () => {
+    await queryClient.cancelQueries({ queryKey: ['person'] })
+    await queryClient.invalidateQueries({ queryKey: ['person'] })
+  }
   const onError = (err: unknown) =>
     showToast(err instanceof Error ? err.message : 'Failed to update your picture', 'error')
 
