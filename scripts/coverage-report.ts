@@ -16,8 +16,6 @@ type FileCoverage = {
 }
 type Summary = Record<string, { pct: number; covered: number; total: number }>
 
-const dir = path.resolve('coverage')
-
 /** Collapses sorted line numbers into "3, 7-9, 12". */
 export function formatRanges(lines: number[]): string {
   const ranges: string[] = []
@@ -54,8 +52,8 @@ export function report(summary: Summary, files: FileCoverage[], root = process.c
   return out.join('\n') + '\n'
 }
 
-/** The report for the coverage directory's current contents. */
-export function currentReport(): string {
+/** The report for a coverage directory's current contents. */
+export function currentReport(dir = path.resolve('coverage')): string {
   const summaryPath = path.join(dir, 'coverage-summary.json')
   if (!fs.existsSync(summaryPath)) {
     return '## Unit test coverage\n\nNo coverage report was produced.\n'

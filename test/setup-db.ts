@@ -1,5 +1,5 @@
-import { afterAll, beforeEach } from 'vitest'
-import { createTestDb, dropTestDb, testUrl, DB_PREFIX } from './pg'
+import { afterAll, beforeEach, inject } from 'vitest'
+import { createTestDb, dropTestDb, runPrefix, testUrl } from './pg'
 import { setDatabaseUrl } from '@/lib/db-url'
 import { setEmailTransport } from '@/lib/email-transport'
 import { setGoogleVerifier } from '@/lib/google-auth'
@@ -18,8 +18,9 @@ import { GLOBAL_ADMIN_SLOTS, globalAdminEmail } from './admin-emails'
  * the URL set here at that moment — this runs before any test module is imported.
  */
 const DROP_TIMEOUT_MS = 60_000
-const name = `${DB_PREFIX}${process.pid}_${Math.random().toString(36).slice(2)}`
-await createTestDb(name)
+const runPid = inject('testRunPid')
+const name = `${runPrefix(runPid)}${process.pid}_${Math.random().toString(36).slice(2)}`
+await createTestDb(runPid, name)
 setDatabaseUrl(testUrl(name))
 afterAll(async () => {
   // Lets in-flight queries finish and closes the pool, so the drop is not fighting them.

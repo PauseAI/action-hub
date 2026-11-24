@@ -4,6 +4,7 @@ import { Client } from 'pg'
 // Imported for its side effect of loading .env and .env.local, so the variables below can live there.
 import '../lib/db-url'
 import { markDisposable } from '../scripts/disposable-db'
+import { isAlive } from '../scripts/unit-runs'
 
 /**
  * Every test file gets its own private copy of the schema, in one of two ways chosen by
@@ -22,12 +23,14 @@ import { markDisposable } from '../scripts/disposable-db'
  *
  * These helpers read the server's URL from the environment, never from `lib/db-url`, whose
  * `resolveDbUrl` is pointed at the file's own copy once `setup-db.ts` has run.
+ *
+ * Every name a run makes starts with `runPrefix` of the pid of the vitest process that runs
+ * it, so a run can tell its own copies from those of a run still going in another terminal or
+ * worktree against the same server, and drop only what a run that has ended left behind.
  */
-export const DB_PREFIX = 'vitest_'
-
 export type TestDbMode = 'clone' | 'schema'
 
-const TEMPLATE_DB = `${DB_PREFIX}template`
+const RUN_NAME = /^vitestrun_(\d+)_/
 const MIGRATIONS_DIR = path.resolve(__dirname, '..', 'prisma', 'migrations')
 
 /** Postgres refuses a clone while anything, even autovacuum, is connected to the template. */
@@ -35,6 +38,14 @@ const OBJECT_IN_USE = '55006'
 const CLONE_ATTEMPTS = 20
 const DEADLOCK_DETECTED = '40P01'
 const DROP_ATTEMPTS = 5
+
+export function runPrefix(runPid: number): string {
+  return `vitestrun_${runPid}_`
+}
+
+function templateDb(runPid: number): string {
+  return `${runPrefix(runPid)}template`
+}
 
 /** An explicit `TEST_DB_MODE` wins; otherwise cloning is used only on a dedicated test server. */
 export function testDbMode(): TestDbMode {
@@ -105,9 +116,9 @@ async function createSchema(schema: string): Promise<void> {
   })
 }
 
-async function createTemplate(): Promise<void> {
-  await withClient((client) => client.query(`CREATE DATABASE "${TEMPLATE_DB}"`))
-  const client = await connect(urlForDatabase(TEMPLATE_DB).toString())
+async function createTemplate(runPid: number): Promise<void> {
+  await withClient((client) => client.query(`CREATE DATABASE "${templateDb(runPid)}"`))
+  const client = await connect(urlForDatabase(templateDb(runPid)).toString())
   try {
     await client.query(migrationSql())
   } finally {
@@ -115,11 +126,11 @@ async function createTemplate(): Promise<void> {
   }
 }
 
-async function cloneTemplate(database: string): Promise<void> {
+async function cloneTemplate(runPid: number, database: string): Promise<void> {
   for (let attempt = 1; ; attempt++) {
     try {
       await withClient((client) =>
-        client.query(`CREATE DATABASE "${database}" TEMPLATE "${TEMPLATE_DB}"`),
+        client.query(`CREATE DATABASE "${database}" TEMPLATE "${templateDb(runPid)}"`),
       )
       return
     } catch (e) {
@@ -148,17 +159,19 @@ async function dropDatabase(database: string): Promise<void> {
 }
 
 /**
- * Once per run: clears what an interrupted run left, then prepares the mode. Building the
- * template, or one probe schema, makes a broken migration or an unreachable database fail
- * here with one clear error instead of once per test file. Every copy must be marked
- * disposable for the dev-database scripts to run against it (see scripts/disposable-db.ts).
+ * Once per run: clears what ended runs left, including an earlier process with this pid, then
+ * prepares the mode. Building the template, or one probe schema, makes a broken migration or
+ * an unreachable database fail here with one clear error instead of once per test file. Every
+ * copy must be marked disposable for the dev-database scripts to run against it (see
+ * scripts/disposable-db.ts).
  */
-export async function prepareTestDb(): Promise<void> {
-  await dropStale()
+export async function prepareTestDb(runPid: number): Promise<void> {
+  await dropRun(runPid)
+  await sweepDeadRuns()
   if (testDbMode() === 'clone') {
-    await createTemplate()
+    await createTemplate(runPid)
   } else {
-    await createSchema(`${DB_PREFIX}probe`)
+    await createSchema(`${runPrefix(runPid)}probe`)
     await withClient(markDisposable)
   }
 }
@@ -168,9 +181,9 @@ export async function prepareTestDb(): Promise<void> {
  * it does not inherit the template's database settings; schema copies share the server's
  * database, which `prepareTestDb` marks.
  */
-export async function createTestDb(name: string): Promise<void> {
+export async function createTestDb(runPid: number, name: string): Promise<void> {
   if (testDbMode() === 'clone') {
-    await cloneTemplate(name)
+    await cloneTemplate(runPid, name)
     const client = await connect(urlForDatabase(name).toString())
     try {
       await markDisposable(client)
@@ -187,23 +200,33 @@ export async function dropTestDb(name: string): Promise<void> {
   else await dropSchema(name)
 }
 
-/** Drops the template and every copy an interrupted run left, whichever mode made them. */
-export async function dropStale(): Promise<void> {
+/** Drops every database and schema of the runs `doomed` picks, whichever mode made them. */
+async function dropRuns(doomed: (runPid: number) => boolean): Promise<void> {
   await withClient(async (client) => {
-    const like = `${DB_PREFIX.replace('_', '\\_')}%`
-    const databases = await client.query<{ datname: string }>(
-      `SELECT datname FROM pg_database WHERE datname LIKE $1`,
-      [like],
-    )
-    for (const { datname } of databases.rows) {
+    const pick = (name: string) => {
+      const match = RUN_NAME.exec(name)
+      return match !== null && doomed(Number(match[1]))
+    }
+    const databases = await client.query<{ datname: string }>(`SELECT datname FROM pg_database`)
+    for (const { datname } of databases.rows.filter((r) => pick(r.datname))) {
       await client.query(`DROP DATABASE IF EXISTS "${datname}" WITH (FORCE)`)
     }
-    const schemas = await client.query<{ nspname: string }>(
-      `SELECT nspname FROM pg_namespace WHERE nspname LIKE $1`,
-      [like],
-    )
-    for (const { nspname } of schemas.rows) {
+    const schemas = await client.query<{ nspname: string }>(`SELECT nspname FROM pg_namespace`)
+    for (const { nspname } of schemas.rows.filter((r) => pick(r.nspname))) {
       await client.query(`DROP SCHEMA IF EXISTS "${nspname}" CASCADE`)
     }
   })
+}
+
+/** Drops the template and every copy of the run `runPid`, left in place by every other run. */
+export async function dropRun(runPid: number): Promise<void> {
+  await dropRuns((pid) => pid === runPid)
+}
+
+/**
+ * Drops what runs whose vitest process has ended left behind. A run still going in another
+ * terminal or worktree keeps its copies. Names without a run's prefix are never touched.
+ */
+export async function sweepDeadRuns(): Promise<void> {
+  await dropRuns((pid) => !isAlive(pid))
 }

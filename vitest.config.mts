@@ -32,8 +32,10 @@ const maxWorkers =
 // and a test's console output is shown only if it fails. CI keeps the full log and the
 // per-file coverage table. Pass `--reporter=default` for the tick-by-tick view.
 const quiet = !process.env.CI
-// The JSON results let `npm run test:unit` tell a failing test from a coverage shortfall.
-const RESULTS_FILE = 'tmp/unit-results.json'
+// The JSON results let `npm run test:unit` tell a failing test from a coverage shortfall. It
+// gives each run its own directory, so runs side by side never write into each other's.
+const runDir = process.env.UNIT_RUN_DIR
+const RESULTS_FILE = runDir ? `${runDir}/unit-results.json` : 'tmp/unit-results.json'
 
 export default defineConfig({
   resolve: { alias },
@@ -84,7 +86,7 @@ export default defineConfig({
       reporter: [quiet ? 'text-summary' : 'text', 'html', 'lcov', 'json', 'json-summary'],
       // CI reads the summary even from a failed run, to show what was missed alongside the failure.
       reportOnFailure: true,
-      reportsDirectory: './coverage',
+      reportsDirectory: runDir ? `${runDir}/coverage` : './coverage',
       thresholds: { lines: 100, statements: 100 },
     },
   },
