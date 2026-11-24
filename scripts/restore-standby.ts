@@ -6,7 +6,7 @@
  * overwrite one in use, or production. Migrations newer than the dump are left to the web
  * service, which applies them when it starts.
  *
- * Reads, from the environment or the env file: RESTORE_DATABASE_URL, the standby's external
+ * Reads, only from the env file: RESTORE_DATABASE_URL, the standby's external
  * connection URL (its own name, so a DATABASE_URL in .env.local can never be the target); an age
  * identity (BACKUP_AGE_IDENTITY_FILE, or BACKUP_AGE_IDENTITY); and to download,
  * BACKUP_B2_READ_KEY_ID and BACKUP_B2_READ_SECRET.
@@ -16,7 +16,7 @@
  *   npm run restore-standby -- --env ~/standby.env --file actionhub-<time>.dump.age
  */
 
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { Client } from 'pg'
 import { libpqUrl, loadEnvFile } from '../lib/db-url'
@@ -44,6 +44,15 @@ function pgUrl(dbUrl: string): string {
   if (url.searchParams.has('sslmode')) url.searchParams.set('uselibpqcompat', 'true')
   return url.toString()
 }
+
+const INPUTS = [
+  'RESTORE_DATABASE_URL',
+  'BACKUP_AGE_IDENTITY',
+  'BACKUP_AGE_IDENTITY_FILE',
+  'BACKUP_B2_READ_KEY_ID',
+  'BACKUP_B2_READ_SECRET',
+  'BACKUP_B2_BUCKET',
+]
 
 async function withClient<T>(dbUrl: string, fn: (db: Client) => Promise<T>): Promise<T> {
   const client = new Client({ connectionString: pgUrl(dbUrl) })
@@ -73,7 +82,8 @@ async function emptyPublicSchema(db: Client): Promise<void> {
 /**
  * Empties the public schema of the database at `dbUrl` (a libpq URL) and restores the dump into
  * it, refusing first if it holds any volunteer. A failed restore empties the schema again, so the
- * next attempt is not refused over a partial copy.
+ * next attempt is not refused over a partial copy; if that fails too, the restore's error is
+ * the one thrown.
  */
 export async function restoreStandby(dump: Uint8Array, dbUrl: string): Promise<void> {
   await withClient(dbUrl, async (db) => {
@@ -88,7 +98,13 @@ export async function restoreStandby(dump: Uint8Array, dbUrl: string): Promise<v
   try {
     restoreIntoEmptySchema(dump, dbUrl)
   } catch (err) {
-    await withClient(dbUrl, emptyPublicSchema)
+    try {
+      await withClient(dbUrl, emptyPublicSchema)
+    } catch (cleanup) {
+      logger.error(
+        `Could not empty the standby after the failed restore (${cleanup instanceof Error ? cleanup.message : cleanup}). Empty it by hand before running again (docs/standby-render.md).`,
+      )
+    }
     throw err
   }
 }
@@ -99,7 +115,15 @@ async function main(args: string[]): Promise<void> {
     return i === -1 ? undefined : args[i + 1]
   }
   const envFile = flag('--env')
-  if (envFile) loadEnvFile(envFile)
+  if (!envFile || !existsSync(envFile)) {
+    throw new Error(
+      `--env must name the standby's env file${envFile ? `; ${envFile} does not exist` : ''}.`,
+    )
+  }
+  // Only the env file supplies these: lib/db-url has already loaded .env.local, whose backup
+  // settings (a preview identity, say) would otherwise win over it.
+  for (const key of INPUTS) delete process.env[key]
+  loadEnvFile(envFile)
   const localDump = flag('--file')
 
   const target = process.env.RESTORE_DATABASE_URL

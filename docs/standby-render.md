@@ -53,7 +53,8 @@ You need:
 - For a real failover, access to the `pauseai.info` zone in Cloudflare.
 - Psono access to the entries below.
 - A computer with Node 24 and a checkout of this repository's `main`, with `npm ci` and
-  `npm run install:pg-tools` run in it (the restore needs `pg_restore` 18 or newer).
+  `pg_restore` 18 or newer: `pg_restore --version` says which. On a Mac, `npm run install:pg-tools`
+  installs it; on Linux, install `postgresql-client-18` from https://www.postgresql.org/download/.
 
 The values to enter, from Psono:
 
@@ -68,7 +69,7 @@ The values to enter, from Psono:
 | `ADMIN_EMAILS`                  | web     | production's                                                      | production's                                             |
 | `NEXT_PUBLIC_GA_MEASUREMENT_ID` | web     | production's                                                      | **empty**, so the rehearsal isn't counted                |
 | `CRON_URL`                      | cron    | the web service's `onrender.com` URL + `/api/cron/daily` (step 3) | the same                                                 |
-| `CRON_HEALTHCHECK_URL`          | cron    | production's healthchecks.io ping URL                             | **empty**                                                |
+| `CRON_HEALTHCHECK_URL`          | cron    | production's healthchecks.io ping URL (step 3)                    | **empty**                                                |
 
 `RAILWAY_ENVIRONMENT_NAME` is what the app reads to know it is the live deployment. Set to
 `production`, the app refuses to start without its email key and the other production settings,
@@ -88,8 +89,8 @@ Write down the time you start each step; it tells us how long a failover takes.
 1. In the Render dashboard, **New > Blueprint**, pick `PauseAI/action-hub` and branch `main`.
    Name it "Action Hub standby".
 2. Render reads `render.yaml` and asks for every variable marked `sync: false`. Enter the
-   **Failover** column of the table above, except `APP_URL` and `CRON_URL`: put
-   `https://action.pauseai.info` in `APP_URL` and leave `CRON_URL` empty for now.
+   **Failover** column of the table above, but leave `CRON_URL` and `CRON_HEALTHCHECK_URL`
+   empty for now.
 3. **Apply.** Render creates the database, then builds and deploys the web service (about ten
    minutes; the build compiles the whole app). Its first start migrates the empty database.
 
@@ -104,10 +105,13 @@ Open `actionhub-cron` and **Suspend** it, so no job runs while the database is b
 
 Open `actionhub-web`. Its URL is at the top of the page, such as
 `https://actionhub-web.onrender.com` (Render may add a suffix). On `actionhub-cron`'s
-**Environment** page set `CRON_URL` to that URL followed by `/api/cron/daily`, and save.
+**Environment** page set `CRON_URL` to that URL followed by `/api/cron/daily`, set
+`CRON_HEALTHCHECK_URL` (failover only), and save.
 
-The cron job calls the web service directly, so it never depends on DNS, and never reaches
-Railway's copy of the app if Railway comes back.
+From then on the cron job calls the web service directly, so it never depends on DNS, and never
+reaches Railway's copy of the app if Railway comes back. Before this step, a run that slips in
+calls `action.pauseai.info` with the standby's own secret: Railway refuses it, and with no
+healthcheck URL set it reports nowhere.
 
 ### 4. Restore the newest backup
 
@@ -137,8 +141,15 @@ Railway's copy of the app if Railway comes back.
    It warns if the backup is more than two days old (the nightly backup has been failing). It
    refuses a database that already holds volunteers, so it can't overwrite a standby in use or
    production. If it fails partway, it empties the standby again and can simply be run again.
+   If it says it could not empty the standby, empty it by hand and run it again:
+   `psql "<External Database URL>" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public'`. This
+   erases the standby's database, so never run it once the standby is serving members.
 
-5. Delete `~/standby.env` and the identity file once the failover is done.
+5. Close the database to the internet: on `actionhub-db`, **Access Control**, delete the entry
+   that allows `0.0.0.0/0`. The web and cron services connect over Render's private network and
+   are unaffected. It now holds every member's data, so only re-open it, to your own IP, when a
+   step needs it (the failback).
+6. Delete `~/standby.env` and the identity file.
 
 ### 5. Restart the web service and check it
 
@@ -175,9 +186,9 @@ answers. It replaces Railway's database, which is still as it was when Railway w
 everything written on Render since the failover. Pick a quiet time; Action Hub is offline for a
 few minutes.
 
-You need `pg_dump` and `pg_restore` 18 (`npm run install:pg-tools`), the Render database's
-External Database URL, and Railway's public database URL (Railway > `Postgres` > **Variables** >
-`DATABASE_PUBLIC_URL`).
+You need `pg_dump` and `pg_restore` 18 (see [Before you start](#before-you-start)), the Render
+database's External Database URL, with your own IP added to its **Access Control**, and Railway's
+public database URL (Railway > `Postgres` > **Variables** > `DATABASE_PUBLIC_URL`).
 
 1. **Stop writes on Render.** Suspend `actionhub-cron`. On `actionhub-web`, **Settings >
    Maintenance Mode** on.
