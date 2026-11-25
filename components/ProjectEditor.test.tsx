@@ -474,6 +474,14 @@ describe('ProjectEditor — editing an existing project', () => {
     blur(link)
     await waitFor(async () => expect((await row(project.id)).collaborationLink).toBe('https://doc'))
 
+    const chat = screen.getByLabelText(/Chat link/)
+    blur(chat) // unchanged
+    fireEvent.change(chat, { target: { value: 'https://discord.com/channels/1/2' } })
+    blur(chat)
+    await waitFor(async () =>
+      expect((await row(project.id)).chatLink).toBe('https://discord.com/channels/1/2'),
+    )
+
     await userEvent.click(await screen.findByLabelText(skill.name))
     await waitFor(async () =>
       expect(await prisma.workItemSkill.count({ where: { workItemId: project.id } })).toBe(2),

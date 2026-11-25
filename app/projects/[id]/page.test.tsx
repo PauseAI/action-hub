@@ -52,6 +52,7 @@ describe('project page — visitor', () => {
       status: 'in_progress',
       isSeekingHelp: true,
       collaborationLink: 'https://doc.example',
+      chatLink: 'https://discord.com/channels/1/2',
       reach: 'REMOTE',
       teamId: team.id,
       projectType: 'sprint',
@@ -85,11 +86,15 @@ describe('project page — visitor', () => {
     await mount(project.id, me)
     await screen.findByRole('heading', { name: 'Visible project' })
     expect(document.title).toBe('Action Hub | Visible project')
-    // Overview first: the description, skills and the doc link.
+    // Overview first: the description, skills, and the doc and chat links.
     expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('link', { name: 'Open project doc →' })).toHaveAttribute(
       'href',
       'https://doc.example',
+    )
+    expect(screen.getByRole('link', { name: 'Join the project chat →' })).toHaveAttribute(
+      'href',
+      'https://discord.com/channels/1/2',
     )
     expect(screen.getByText('Olive Owner')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Crew' })).toHaveAttribute('href', `/teams/${team.id}`)
@@ -185,16 +190,18 @@ describe('project page — visitor', () => {
       expect(navigation.replace).toHaveBeenCalledWith(`/projects/${draft.id}/edit`),
     )
     cleanup()
-    // A doc link that is not http(s), however it got into the row, is never rendered.
+    // A doc or chat link that is not http(s), however it got into the row, is never rendered.
     const project = await createProject({
       title: 'Ownerless',
       status: 'ready',
       isSeekingHelp: true,
       collaborationLink: 'javascript:alert(1)',
+      chatLink: 'javascript:alert(2)',
     })
     await mount(project.id, me)
     await screen.findByRole('heading', { name: 'Ownerless' })
     expect(screen.queryByRole('link', { name: 'Open project doc →' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Join the project chat →' })).toBeNull()
     // Nobody owns it: an empty chip, with the offer to lead beside it rather than among the
     // page's actions, and no task yet to ask for.
     const person = screen.getByText('Owner', { exact: true }).parentElement!

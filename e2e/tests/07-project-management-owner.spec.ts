@@ -24,12 +24,13 @@ async function setupOwnedProject(
 }
 
 test.describe('Project Management (Owner)', () => {
-  test('Project owner edits project details', async ({ adminPage, volunteer, baseUrl }) => {
+  test('Project owner edits project details', async ({ adminPage, volunteer, baseUrl, snap }) => {
     const projectId = await setupOwnedProject(baseUrl, adminPage, volunteer)
 
     const newTitle = fake.projectTitle()
     const newDescription = 'Updated project description set by the owner'
     const collaborationLink = 'https://docs.example.com/e2e-project'
+    const chatLink = 'https://discord.com/channels/1100491867675709580/1'
 
     await volunteer.page.goto(`${baseUrl}/projects/${projectId}/edit`)
     await expect(volunteer.page.getByRole('heading', { name: 'Edit Project' })).toBeVisible({
@@ -42,6 +43,7 @@ test.describe('Project Management (Owner)', () => {
       ['Project title', newTitle],
       ['Description', newDescription],
       ['Collaboration doc / link', collaborationLink],
+      ['Chat link (optional)', chatLink],
     ] as const) {
       const field = volunteer.page.getByLabel(label)
       await field.fill(value)
@@ -59,6 +61,10 @@ test.describe('Project Management (Owner)', () => {
     await expect(volunteer.page.getByRole('link', { name: 'Open project doc' })).toBeVisible({
       timeout: 10_000,
     })
+    await expect(
+      volunteer.page.getByRole('link', { name: 'Join the project chat' }),
+    ).toHaveAttribute('href', chatLink)
+    await snap(volunteer.page, 'doc and chat links')
   })
 
   test('Project owner adds a required skill to the project', async ({

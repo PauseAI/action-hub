@@ -580,6 +580,8 @@ model WorkItem {
   estimatedDuration          String?   @map("estimated_duration")
   timeCommitmentHoursPerWeek Int?      @map("time_commitment_hours_per_week")
   collaborationLink          String?   @map("collaboration_link")
+  /// Where the project's people talk, e.g. a Discord channel.
+  chatLink                   String?   @map("chat_link")
   isOrgProposed              Boolean?  @default(false) @map("is_org_proposed")
   // No `is_seeking_owner` column: it is derived from (status, assigneeId). See
   // isSeekingOwner() in lib/project-status.ts.

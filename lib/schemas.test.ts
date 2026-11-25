@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   SignupSchema,
   CompleteGoogleSignupSchema,
+  AdminCreateProjectSchema,
   CreateProjectSchema,
   UpdateProjectSchema,
   UpdateProjectTaskSchema,
@@ -141,12 +142,20 @@ describe('project and task schemas', () => {
     for (const link of ['https://doc.example', 'http://doc.example/a?b=c', '', null]) {
       expect(CreateProjectSchema.safeParse({ ...base, collaborationLink: link }).success).toBe(true)
       expect(UpdateProjectSchema.safeParse({ collaborationLink: link }).success).toBe(true)
+      const chat = { ...base, collaborationLink: null, chatLink: link }
+      expect(CreateProjectSchema.safeParse(chat).success).toBe(true)
+      expect(AdminCreateProjectSchema.safeParse(chat).success).toBe(true)
+      expect(UpdateProjectSchema.safeParse({ chatLink: link }).success).toBe(true)
     }
     for (const link of ['javascript:alert(1)', 'doc.example', 'ftp://x', 'https://a b']) {
       const create = CreateProjectSchema.safeParse({ ...base, collaborationLink: link })
       expect(create.success).toBe(false)
       expect(create.error?.issues[0].message).toBe('The link must start with http:// or https://')
       expect(UpdateProjectSchema.safeParse({ collaborationLink: link }).success).toBe(false)
+      const chat = { ...base, collaborationLink: null, chatLink: link }
+      expect(CreateProjectSchema.safeParse(chat).success).toBe(false)
+      expect(AdminCreateProjectSchema.safeParse(chat).success).toBe(false)
+      expect(UpdateProjectSchema.safeParse({ chatLink: link }).success).toBe(false)
     }
   })
 

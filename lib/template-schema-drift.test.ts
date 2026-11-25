@@ -17,6 +17,7 @@ const TEMPLATE_OMITTED_PROJECT_FIELDS = [
   'localGroupId', // always blanked + repicked on instantiate, never stored on the template
   'teamId', // same
   'isSeekingHelp', // per-instance recruiting flag, not part of the reusable structure
+  'chatLink', // one project's own channel, often an invite
 ] as const
 
 // Fields templates add that WorkItem's project input fields don't have, and why.
@@ -41,6 +42,7 @@ const PROJECT_INPUT_FIELD_NAMES = [
   'timeCommitmentHoursPerWeek',
   'urgency',
   'collaborationLink',
+  'chatLink',
   'reach',
   'localGroupId',
   'isSeekingHelp',

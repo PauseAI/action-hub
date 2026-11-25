@@ -127,6 +127,7 @@ export default function ProjectEditor(props: ProjectEditorProps) {
   const [durationDays, setDurationDays] = useState('')
   const [projectDeadline, setProjectDeadline] = useState('')
   const [collaborationLink, setCollaborationLink] = useState('')
+  const [chatLink, setChatLink] = useState('')
   const [skills, setSkills] = useState<SelectedSkill[]>([])
   const [seekingHelp, setSeekingHelp] = useState(true)
   const [autoAccept, setAutoAccept] = useState(true)
@@ -184,6 +185,7 @@ export default function ProjectEditor(props: ProjectEditorProps) {
     setTitle(data.title)
     setDescription(data.description ?? '')
     setCollaborationLink(data.collaborationLink ?? '')
+    setChatLink(data.chatLink ?? '')
     setSkills((data.skills ?? []).map((s) => ({ skillId: s.id, proficiencyLevel: 'intermediate' })))
     setProjectType(data.projectType ?? '')
     setHoursPerWeek(data.timeCommitmentHoursPerWeek?.toString() ?? '')
@@ -345,6 +347,7 @@ export default function ProjectEditor(props: ProjectEditorProps) {
       teamId: teamId ? Number(teamId) : null,
       estimatedDuration: duration.trim() || null,
       collaborationLink: collaborationLink.trim() || null,
+      chatLink: chatLink.trim() || null,
       startDate: fromDateInputValue(startDate),
       durationDays: durationDays ? parseInt(durationDays, 10) : null,
       skillIds: skills.map((s) => s.skillId),
@@ -899,6 +902,28 @@ export default function ProjectEditor(props: ProjectEditorProps) {
           />
           <P className="text-sm text-text-light mt-1">
             A link (starting with https://) to a planning doc or workspace
+          </P>
+        </div>
+
+        <div className="mb-5">
+          <FormLabel htmlFor="chat-link">Chat link (optional)</FormLabel>
+          <Input
+            id="chat-link"
+            type="url"
+            placeholder="e.g., https://discord.com/channels/…"
+            value={chatLink}
+            onChange={(e) => {
+              setChatLink(e.target.value)
+            }}
+            onBlur={() => {
+              const next = chatLink.trim()
+              if (next === (projectData?.chatLink ?? '')) return
+              commitField({ chatLink: next || null })
+            }}
+            disabled={!canEdit}
+          />
+          <P className="text-sm text-text-light mt-1">
+            Where the project&apos;s people talk, such as a Discord channel (starting with https://)
           </P>
         </div>
 

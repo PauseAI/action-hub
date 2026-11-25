@@ -2373,6 +2373,19 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                     </a>
                   </P>
                 )}
+
+                {isHttpUrl(project.chatLink) && (
+                  <P className="mt-2 text-sm">
+                    <a
+                      href={project.chatLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline text-primary-dark"
+                    >
+                      Join the project chat →
+                    </a>
+                  </P>
+                )}
               </div>
 
               {/* Outcome display */}

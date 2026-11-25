@@ -80,7 +80,7 @@ import { assertTeamInChapter, projectLocation } from '@/lib/project-location'
 import { chapterNarrowing, chapterNarrowingSql } from '@/lib/chapter-access-server'
 import { audit } from '@/lib/chapter-roles'
 import { isStaff, pickerChapter, type ChapterAccess } from '@/lib/chapter-access'
-import { can, NO_STANDING, permissionsOn } from '@/lib/permissions'
+import { can, NO_STANDING, permissionsOn, rolesOn } from '@/lib/permissions'
 import {
   assertCan,
   assertCanOnProject,
@@ -1293,6 +1293,7 @@ export const projectsRouter = {
           timeCommitmentHoursPerWeek: input.timeCommitmentHoursPerWeek ?? null,
           urgency: input.urgency ?? 'medium',
           collaborationLink: input.collaborationLink ?? null,
+          chatLink: input.chatLink || null,
           ...scheduleOnCreate,
           ...location,
           isSeekingHelp: input.isSeekingHelp !== false,
@@ -1769,6 +1770,8 @@ export const projectsRouter = {
         // A global admin, or this project's chapter's staff (see asProjectAdmin).
         viewerCanAdmin: Boolean(volunteer.isAdmin),
         permissions: permissionsOn(viewer, resource),
+        // Often an invite, so only for those with a part in the project: never in a list.
+        chatLink: rolesOn(viewer, resource).length > 0 ? project.chatLink : null,
         tasks: mappedTasks,
         taskCounts: taskCounts(mappedTasks),
         daysLate: (await lateProjects([project])).get(project.id) ?? null,
@@ -1917,6 +1920,7 @@ export const projectsRouter = {
         'estimatedDuration',
         'urgency',
         'collaborationLink',
+        'chatLink',
         'outcome',
         'outcomeNotes',
       ] as const

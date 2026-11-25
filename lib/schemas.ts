@@ -189,6 +189,7 @@ const PROJECT_INPUT_FIELDS = {
   timeCommitmentHoursPerWeek: true,
   urgency: true,
   collaborationLink: true,
+  chatLink: true,
   reach: true,
   localGroupId: true,
   isSeekingHelp: true,
@@ -213,6 +214,7 @@ export const CreateProjectSchema = WorkItemSchema.pick(PROJECT_INPUT_FIELDS)
   .extend({
     ...PROJECT_CHAPTER_FIELD,
     collaborationLink: HttpUrlSchema.nullable(),
+    chatLink: HttpUrlSchema.nullable().optional(),
     tasks: z.array(TaskInputSchema).optional().default([]),
     wantToOwn: z.boolean().optional().default(false),
     skillIds: z.array(z.number().int()).optional().default([]),
@@ -235,6 +237,7 @@ export const UpdateProjectSchema = WorkItemSchema.pick({
   .extend({
     ...PROJECT_CHAPTER_FIELD,
     collaborationLink: HttpUrlSchema.nullable().optional(),
+    chatLink: HttpUrlSchema.nullable().optional(),
     skillIds: z.array(z.number().int()).optional(),
     skillRequiredMap: z.record(z.string(), z.boolean()).optional(),
   })
@@ -332,6 +335,8 @@ export const AdminCreateProjectSchema = WorkItemSchema.pick(PROJECT_INPUT_FIELDS
   .partial({ reach: true, localGroupId: true, teamId: true, ...SCHEDULE_INPUT_FIELDS })
   .extend({
     ...PROJECT_CHAPTER_FIELD,
+    collaborationLink: HttpUrlSchema.nullable(),
+    chatLink: HttpUrlSchema.nullable().optional(),
     tasks: z.array(TaskInputSchema).optional().default([]),
     wantToOwn: z.boolean().optional().default(false),
     skillIds: z.array(z.number().int()).optional().default([]),

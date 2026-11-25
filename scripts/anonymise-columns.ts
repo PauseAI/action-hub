@@ -131,6 +131,7 @@ export const COLUMN_TREATMENT: Record<string, Record<string, Treatment>> = {
     urgency: 'keep',
     estimated_duration: 'keep',
     collaboration_link: 'keep',
+    chat_link: 'null',
     outcome: 'keep',
     outcome_notes: 'redact',
   },

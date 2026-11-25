@@ -85,6 +85,7 @@ export const adminProjectsRouter = {
           timeCommitmentHoursPerWeek: input.timeCommitmentHoursPerWeek ?? null,
           urgency: input.urgency ?? 'medium',
           collaborationLink: input.collaborationLink ?? null,
+          chatLink: input.chatLink || null,
           ...location,
           isSeekingHelp: input.isSeekingHelp !== false,
           teamId: input.teamId ?? null,
