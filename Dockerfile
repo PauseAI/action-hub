@@ -27,11 +27,17 @@ COPY . .
 
 # Railway passes service variables to the build only when declared here. `prisma generate`
 # reads DATABASE_URL; NEXT_PUBLIC_* values are inlined into the client bundle;
-# RAILWAY_GIT_COMMIT_SHA (RENDER_GIT_COMMIT on the Render standby) becomes Next's deploymentId.
+# RAILWAY_GIT_COMMIT_SHA (RENDER_GIT_COMMIT on the Render standby) becomes Next's deploymentId
+# and the Sentry release. SENTRY_DSN and the environment's name are inlined into the browser's
+# Sentry settings; SENTRY_AUTH_TOKEN uploads source maps and is skipped when unset.
 ARG DATABASE_URL
 ARG RAILWAY_GIT_COMMIT_SHA
 ARG RENDER_GIT_COMMIT
+ARG RAILWAY_ENVIRONMENT_NAME
 ARG NEXT_PUBLIC_GA_MEASUREMENT_ID
+ARG SENTRY_DSN
+ARG SENTRY_ENVIRONMENT
+ARG SENTRY_AUTH_TOKEN
 RUN npm run build:railway
 
 ENV NODE_ENV=production

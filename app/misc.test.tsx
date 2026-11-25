@@ -5,6 +5,8 @@ import { renderApp } from '@/test/render'
 import { navigation } from '@/test/next-navigation'
 import { createVolunteer, createAdmin, createProject } from '@/test/factories'
 import ErrorPage from './error'
+import GlobalError from './global-error'
+import { MemoryErrorReporter } from '@/test/fakes/error-reporter'
 import NotFound from './not-found'
 import Landing from './page'
 import ProfileRedirect from './profile/page'
@@ -27,6 +29,39 @@ describe('static pages', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
     expect(reset).toHaveBeenCalled()
     expect(screen.getByRole('link', { name: 'Go home' })).toHaveAttribute('href', '/')
+  })
+
+  it('error page reports the error with its digest', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const reporter = new MemoryErrorReporter().install()
+    try {
+      const error = Object.assign(new Error('boom'), { digest: 'd1' })
+      render(<ErrorPage error={error} reset={() => {}} />)
+      expect(reporter.reports).toEqual([{ kind: 'exception', error, extra: { digest: 'd1' } }])
+    } finally {
+      reporter.uninstall()
+    }
+  })
+
+  it('global error page reports the error and offers a retry', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const reporter = new MemoryErrorReporter().install()
+    const retry = vi.fn()
+    try {
+      const withDigest = Object.assign(new Error('layout failed'), { digest: 'd2' })
+      // It renders its own <html>, which React only warns about inside the test's container.
+      const { rerender } = render(<GlobalError error={withDigest} retry={retry} />)
+      await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
+      expect(retry).toHaveBeenCalled()
+      expect(screen.getByRole('link', { name: 'Go home' })).toHaveAttribute('href', '/')
+      rerender(<GlobalError error="thrown string" retry={retry} />)
+      expect(reporter.reports).toEqual([
+        { kind: 'exception', error: withDigest, extra: { digest: 'd2' } },
+        { kind: 'exception', error: 'thrown string' },
+      ])
+    } finally {
+      reporter.uninstall()
+    }
   })
 
   it('not-found and landing pages render', async () => {

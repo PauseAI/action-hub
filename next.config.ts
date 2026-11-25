@@ -1,9 +1,14 @@
+import { withSentryConfig } from '@sentry/nextjs/config'
 import type { NextConfig } from 'next'
+import { browserSentryEnv, sentryOrigin, serverSentrySettings } from './lib/sentry'
+
+const sentry = serverSentrySettings()
+const sentryConnect = sentryOrigin(sentry.dsn) ? ` ${sentryOrigin(sentry.dsn)}` : ''
 
 // Third-party sources are Google Sign-In (accounts.google.com) and Google Analytics, using the
 // hosts Google's CSP guide lists for Analytics without Ads features; everything else is
-// same-origin. 'unsafe-inline' stays in script-src because Next.js injects inline
-// bootstrap/flight scripts without a nonce — the CSP still stops any third-party script host.
+// same-origin, apart from Sentry's ingest host when SENTRY_DSN is set. 'unsafe-inline' stays in
+// script-src because Next.js injects inline bootstrap/flight scripts without a nonce — the CSP still stops any third-party script host.
 // React's development build evals to rebuild server call stacks; production never does.
 const devScript = process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''
 const CSP = [
@@ -12,7 +17,7 @@ const CSP = [
   "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
   "img-src 'self' data: blob: https://*.googleusercontent.com https://www.googletagmanager.com https://*.google-analytics.com",
   "font-src 'self' data:",
-  "connect-src 'self' https://accounts.google.com https://*.google-analytics.com https://*.analytics.google.com https://www.google.com https://www.googletagmanager.com",
+  `connect-src 'self' https://accounts.google.com https://*.google-analytics.com https://*.analytics.google.com https://www.google.com https://www.googletagmanager.com${sentryConnect}`,
   "frame-src 'self' https://accounts.google.com",
   "form-action 'self'",
   "frame-ancestors 'none'",
@@ -34,6 +39,8 @@ const securityHeaders = [
 ]
 
 const nextConfig: NextConfig = {
+  // The browser's Sentry settings (instrumentation-client.ts), from the build's environment.
+  env: browserSentryEnv(),
   // Ties each page to the deploy it was built from: Next reloads a page that navigates into a
   // newer deploy, and UpdatePrompt reads it to offer a refresh.
   // Render's variable on the standby (docs/standby-render.md).
@@ -137,4 +144,27 @@ const nextConfig: NextConfig = {
   },
 }
 
-export default nextConfig
+// The Sentry build plugin is only added for a build with SENTRY_DSN, and only uploads source maps
+// when SENTRY_AUTH_TOKEN is also set; a build without the token skips the upload and still passes.
+export default sentry.dsn
+  ? withSentryConfig(nextConfig, {
+      org: process.env.SENTRY_ORG || 'pauseai-global',
+      project: process.env.SENTRY_PROJECT || 'action-hub',
+      authToken: process.env.SENTRY_AUTH_TOKEN,
+      release: { name: sentry.release, create: Boolean(process.env.SENTRY_AUTH_TOKEN) },
+      sourcemaps: {
+        disable: !process.env.SENTRY_AUTH_TOKEN,
+        deleteSourcemapsAfterUpload: true,
+      },
+      telemetry: false,
+      silent: !process.env.CI,
+      suppressOnRouterTransitionStartWarning: true,
+      bundleSizeOptimizations: {
+        excludeDebugStatements: true,
+        excludeTracing: true,
+        excludeReplayIframe: true,
+        excludeReplayShadowDom: true,
+        excludeReplayWorker: true,
+      },
+    })
+  : nextConfig

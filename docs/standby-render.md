@@ -72,6 +72,8 @@ The values to enter, from Psono:
 | `GOOGLE_CLIENT_ID`              | web     | production's                                                      | production's (Google sign-in won't work on onrender.com) |
 | `ADMIN_EMAILS`                  | web     | production's                                                      | production's                                             |
 | `NEXT_PUBLIC_GA_MEASUREMENT_ID` | web     | production's                                                      | **empty**, so the rehearsal isn't counted                |
+| `SENTRY_DSN`                    | web     | production's                                                      | **empty**, so the rehearsal reports nothing to Sentry    |
+| `SENTRY_AUTH_TOKEN`             | web     | production's                                                      | **empty**                                                |
 | `CRON_URL`                      | cron    | the web service's `onrender.com` URL + `/api/cron/daily` (step 3) | the same                                                 |
 | `CRON_HEALTHCHECK_URL`          | cron    | production's healthchecks.io ping URL (step 3)                    | **empty**                                                |
 
@@ -240,7 +242,7 @@ everything. Run one after any change to `render.yaml`, the Dockerfiles or the ba
 and at least twice a year. **Read the warning at the top of this page first.**
 
 - **R1.** Failover steps 1 to 3 with the **Rehearsal** column of the table: `RESEND_API_KEY`,
-  `NEXT_PUBLIC_GA_MEASUREMENT_ID` and `CRON_HEALTHCHECK_URL` empty, `RAILWAY_ENVIRONMENT_NAME`
+  `NEXT_PUBLIC_GA_MEASUREMENT_ID`, `SENTRY_DSN`, `SENTRY_AUTH_TOKEN` and `CRON_HEALTHCHECK_URL` empty, `RAILWAY_ENVIRONMENT_NAME`
   `rehearsal`. Enter `APP_URL` after the web service exists, on its **Environment** page, as its
   `onrender.com` URL, so links point at the rehearsal.
 - **R2.** Failover steps 4 and 5, then step 7 (resume the cron job and trigger a run). After

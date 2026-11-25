@@ -32,6 +32,12 @@ Variables set on the service:
 - `APP_URL`, `CRON_SECRET`, `RESEND_API_KEY`: the app refuses to start in production without them
 - `FROM_EMAIL`, `REPLY_TO_EMAIL`, `GOOGLE_CLIENT_ID`, `ADMIN_EMAILS`
 - `NEXT_PUBLIC_GA_MEASUREMENT_ID`: build time only, inlined into the client bundle
+- `SENTRY_DSN`: build and runtime. Production only: without it (previews, the Render standby
+  unless entered there) Sentry is never initialised. The build inlines it into the browser's
+  settings and the CSP, so a change needs a redeploy
+- `SENTRY_AUTH_TOKEN`: build time only, a Sentry organization token that uploads source maps;
+  unset, the upload is skipped and the build still passes. `.railway/railway.ts` declares both,
+  so set them here before the next `railway config plan`
 - `ALLOW_DB_RESTORE`: only on the preview base environment, never production
 - `BACKUP_B2_READ_KEY_ID`, `BACKUP_B2_READ_SECRET`, `BACKUP_AGE_IDENTITY`: only on the preview
   base environment, so `seed-preview` can restore the newest nightly backup. The read-only key
@@ -39,7 +45,8 @@ Variables set on the service:
   `BACKUP_AGE_RECIPIENTS` so it can be revoked alone. Without all three a preview gets the dev
   accounts only
 
-Railway provides `PORT`, `RAILWAY_ENVIRONMENT_NAME`, `RAILWAY_GIT_COMMIT_SHA` (build and runtime)
+Railway provides `PORT`, `RAILWAY_ENVIRONMENT_NAME`, `RAILWAY_GIT_COMMIT_SHA` (build and runtime;
+the first names Sentry's environment, the second its release)
 and, when a volume is mounted, `RAILWAY_VOLUME_MOUNT_PATH`; a standby host has to set the ones
 the app reads. The production checks in `validateEnv` (`lib/env.ts`) run when
 `RAILWAY_ENVIRONMENT_NAME` is `production` or unset; any other value turns them off.

@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import Button from '@/components/Button'
 import { H1 } from '@/components/Heading'
 import { P } from '@/components/Text'
+import { reportError } from '@/lib/error-reporter'
 
 export default function Error({
   error,
@@ -14,6 +15,7 @@ export default function Error({
 }) {
   useEffect(() => {
     console.error(error)
+    reportError(error, error.digest ? { digest: error.digest } : undefined)
   }, [error])
 
   return (
