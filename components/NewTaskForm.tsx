@@ -35,6 +35,7 @@ export default function NewTaskForm({
   onCancel,
   datesNote,
   autoFocus,
+  allowQuickTask = true,
   className = '',
 }: {
   /** Creates the task; resolves true once it exists, which clears the form. */
@@ -46,6 +47,8 @@ export default function NewTaskForm({
   /** A line under the dates, such as who can change them later. */
   datesNote?: string
   autoFocus?: boolean
+  /** Offers the quick tasks page; off where the project is not yet approved. */
+  allowQuickTask?: boolean
   className?: string
 }) {
   const [title, setTitle] = useState('')
@@ -63,7 +66,7 @@ export default function NewTaskForm({
       title: title.trim(),
       description: description.trim() || undefined,
       ...datesPayload(dates),
-      featuredAsQuickTask: featured,
+      featuredAsQuickTask: allowQuickTask && featured,
       ...submissionAskPayload(ask),
       ...helpersWantedPayload(helpers),
     })
@@ -104,19 +107,10 @@ export default function NewTaskForm({
           </Button>
         )}
       </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="mt-2"
-        aria-expanded={showDetails}
-        aria-controls="new-task-details"
-        onClick={() => setShowDetails((v) => !v)}
-      >
-        {showDetails ? 'Fewer details' : 'More details'}
-      </Button>
-      {showDetails && (
-        <div id="new-task-details" className="mt-3">
+      {/* Once open the details stay open until the task is added, so nothing entered is sent
+          unseen and the dates' own validity check stays on the form. */}
+      {showDetails ? (
+        <div className="mt-3">
           <div className="mb-3">
             <FormLabel htmlFor="new-task-description">Details (optional)</FormLabel>
             <Textarea
@@ -132,11 +126,24 @@ export default function NewTaskForm({
           </div>
           <SubmissionAskFields id="new-task" value={ask} onChange={setAsk} />
           <HelpersWantedField id="new-task" value={helpers} onChange={setHelpers} />
-          <Checkbox checked={featured} onChange={(e) => setFeatured(e.target.checked)}>
-            Add this task to the quick tasks page so volunteers can find and claim it without first
-            clicking into this project
-          </Checkbox>
+          {allowQuickTask && (
+            <Checkbox checked={featured} onChange={(e) => setFeatured(e.target.checked)}>
+              Add this task to the quick tasks page so volunteers can find and claim it without
+              first clicking into this project
+            </Checkbox>
+          )}
         </div>
+      ) : (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="mt-2"
+          aria-expanded={false}
+          onClick={() => setShowDetails(true)}
+        >
+          More details
+        </Button>
       )}
     </form>
   )

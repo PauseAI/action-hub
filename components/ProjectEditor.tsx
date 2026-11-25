@@ -1072,6 +1072,7 @@ export default function ProjectEditor(props: ProjectEditorProps) {
               pending={creatingDraft || createTaskMutation.isPending}
               submitLabel="Add task"
               pendingLabel="Adding…"
+              allowQuickTask={false}
             />
           </div>
         )}

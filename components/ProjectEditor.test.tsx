@@ -124,7 +124,8 @@ describe('ProjectEditor — new volunteer proposal', () => {
     await userEvent.type(screen.getByLabelText('Details (optional)'), 'detail')
     await userEvent.type(screen.getByLabelText('Helpers wanted (optional)'), '3')
     await userEvent.type(screen.getByLabelText('What to submit (optional)'), 'A link')
-    await userEvent.click(screen.getByRole('checkbox', { name: /quick task/i }))
+    // An unapproved proposal's tasks can't go on the quick tasks page.
+    expect(screen.queryByRole('checkbox', { name: /quick task/i })).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: 'Add task' }))
     const draft = await waitFor(
       async () =>
@@ -141,7 +142,7 @@ describe('ProjectEditor — new volunteer proposal', () => {
         description: 'detail',
         helpersWanted: 3,
         submissionPrompt: 'A link',
-        featuredAsQuickTask: true,
+        featuredAsQuickTask: false,
       },
     )
     // The form empties and folds its details away for the next task.
