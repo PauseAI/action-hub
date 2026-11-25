@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { prisma } from '@/lib/prisma'
 import {
+  createAdmin,
   createChapter,
   createMember,
   createProject,
@@ -81,7 +82,7 @@ describe('offering to help on a task before joining the project', () => {
     expect(request).toMatchObject({
       status: 'pending',
       interestType: 'want_to_contribute',
-      message: "Offered to help on 'Practise': I can do Tuesdays",
+      message: 'I can do Tuesdays',
     })
     for (const to of [owner, deputy]) {
       const [n] = await noted(to.id, 'new_interest')
@@ -243,7 +244,7 @@ describe('offering to help on a task before joining the project', () => {
     // Bob asked only for that place, so his request goes too, and he is told.
     expect((await row(bob.id, project.id)).status).toBe('withdrawn')
     expect((await noted(bob.id, 'helper_place_filled'))[0].title).toBe(
-      "Place filled: 'Practise' has all the helpers it wants",
+      "Place filled: 'Practise' is not taking more helpers",
     )
     // Withdrawn rather than declined, so he can offer on something else.
     const other = await createTask(project.id, { helpersWanted: 1 })
@@ -427,7 +428,18 @@ describe('a manager putting someone not on the project on a task', () => {
         taskId: task.id,
         volunteerId: unapproved.id,
       }),
-    ).rejects.toMatchObject({ message: 'Cannot add a volunteer who is not yet approved' })
+    ).rejects.toMatchObject({
+      message: 'Cannot put a volunteer who is not yet approved on a task',
+    })
+    await expect(
+      clientAs(owner).projects.updateTask({
+        projectId: project.id,
+        taskId: (await createTask(project.id)).id,
+        data: { assigneeId: unapproved.id },
+      }),
+    ).rejects.toMatchObject({
+      message: 'Cannot put a volunteer who is not yet approved on a task',
+    })
     await expect(
       clientAs(owner).projects.updateTask({
         projectId: project.id,
@@ -443,5 +455,167 @@ describe('a manager putting someone not on the project on a task', () => {
         assigneeId: elsewhere.id,
       }),
     ).rejects.toMatchObject({ message: 'They are in another national chapter' })
+  })
+
+  it('leaves someone the owner turned down off, unless an admin puts them back', async () => {
+    const { deputy, project } = await setup()
+    const removed = await createVolunteer()
+    await prisma.workItemInterest.create({
+      data: {
+        workItemId: project.id,
+        volunteerId: removed.id,
+        interestType: 'want_to_contribute',
+        status: 'removed',
+      },
+    })
+    const task = await createTask(project.id)
+    await expect(
+      clientAs(deputy).projects.assignTask({
+        projectId: project.id,
+        taskId: task.id,
+        assigneeId: removed.id,
+      }),
+    ).rejects.toMatchObject({
+      message: 'The owner turned them down or took them off this project',
+    })
+    expect((await row(removed.id, project.id)).status).toBe('removed')
+
+    await clientAs(await createAdmin()).projects.assignTask({
+      projectId: project.id,
+      taskId: task.id,
+      assigneeId: removed.id,
+    })
+    expect(await row(removed.id, project.id)).toMatchObject({ status: 'accepted', origin: 'added' })
+  })
+
+  it('answers an invite when they are given a task, and its notification goes', async () => {
+    const { owner, project } = await setup()
+    const sam = await createVolunteer()
+    await clientAs(owner).projects.invite({ projectId: project.id, volunteerId: sam.id })
+    await noted(sam.id, 'project_invite')
+    await clientAs(owner).projects.assignTask({
+      projectId: project.id,
+      taskId: (await createTask(project.id)).id,
+      assigneeId: sam.id,
+    })
+    expect((await row(sam.id, project.id)).status).toBe('accepted')
+    await vi.waitFor(async () => expect(await notes(sam.id, 'project_invite')).toHaveLength(0))
+  })
+
+  it('makes someone offering to lead an ownerless project a member, not its owner', async () => {
+    const admin = await createAdmin()
+    const project = await createProject({ status: 'ready', isSeekingHelp: true })
+    const ann = await createVolunteer()
+    await clientAs(ann).projects.expressInterest({
+      projectId: project.id,
+      interestType: 'want_to_own',
+      message: 'I can run it',
+    })
+    // Offering to help on a task too keeps the offer to lead, and its message, as they were.
+    const task = await createTask(project.id, { helpersWanted: 1 })
+    await offer(ann, project.id, task.id, 'And help')
+    expect(await row(ann.id, project.id)).toMatchObject({
+      status: 'pending',
+      interestType: 'want_to_own',
+      message: 'I can run it',
+    })
+    // Someone else takes the place: Ann's offer closes, her offer to lead stays.
+    const bob = await createVolunteer()
+    await clientAs(admin).projects.addTaskHelper({
+      projectId: project.id,
+      taskId: task.id,
+      volunteerId: bob.id,
+    })
+    expect((await row(ann.id, task.id)).responseMessage).toBe(PLACE_FILLED)
+    expect((await row(ann.id, project.id)).status).toBe('pending')
+
+    await clientAs(admin).projects.assignTask({
+      projectId: project.id,
+      taskId: (await createTask(project.id)).id,
+      assigneeId: ann.id,
+    })
+    expect(await row(ann.id, project.id)).toMatchObject({
+      status: 'accepted',
+      interestType: 'want_to_contribute',
+    })
+    expect(
+      (await prisma.workItem.findUniqueOrThrow({ where: { id: project.id } })).assigneeId,
+    ).toBeNull()
+  })
+})
+
+describe('offers on a task that changes', () => {
+  it('closes waiting offers once the task is handed in, dropping the request with them', async () => {
+    const lead = await createVolunteer()
+    const { project } = await setup([lead])
+    const sam = await createVolunteer()
+    const task = await createTask(project.id, {
+      assigneeId: lead.id,
+      status: 'in_progress',
+      helpersWanted: 2,
+    })
+    await offer(sam, project.id, task.id)
+    await clientAs(lead).projects.submitTask({
+      projectId: project.id,
+      taskId: task.id,
+      note: 'Done',
+    })
+    expect((await row(sam.id, task.id)).responseMessage).toBe(PLACE_FILLED)
+    expect((await row(sam.id, project.id)).status).toBe('withdrawn')
+    expect(
+      await clientAs(sam).projects.getTask({ projectId: project.id, taskId: task.id }),
+    ).toMatchObject({ hasOffered: false, offeredBy: [] })
+  })
+
+  it('refuses an offer to help on a task they already asked to take', async () => {
+    const { owner, project } = await setup()
+    const sam = await createVolunteer()
+    const task = await createTask(project.id, { helpersWanted: 1 })
+    await clientAs(sam).projects.updateTask({
+      projectId: project.id,
+      taskId: task.id,
+      data: { assigneeId: sam.id },
+    })
+    expect(
+      await clientAs(sam).projects.getTask({ projectId: project.id, taskId: task.id }),
+    ).toMatchObject({ canJoinAsHelper: false })
+    await expect(offer(sam, project.id, task.id)).rejects.toMatchObject({
+      message: "You've already asked to take this task",
+    })
+    // Accepted, they lead it and hear nothing about a place.
+    await answer(owner, project.id, (await row(sam.id, project.id)).id, 'accepted')
+    expect((await prisma.workItem.findUniqueOrThrow({ where: { id: task.id } })).assigneeId).toBe(
+      sam.id,
+    )
+    expect(await notes(sam.id, 'helper_place_filled')).toHaveLength(0)
+  })
+
+  it('leaves an invite unanswered when the place they tried for is gone', async () => {
+    const member = await createVolunteer()
+    const { owner, project } = await setup([member])
+    const sam = await createVolunteer()
+    const task = await createTask(project.id, { helpersWanted: 1 })
+    await clientAs(owner).projects.invite({ projectId: project.id, volunteerId: sam.id })
+    await offer(member, project.id, task.id)
+    await expect(offer(sam, project.id, task.id)).rejects.toMatchObject({
+      message: 'This task has all the helpers it wants',
+    })
+    expect((await row(sam.id, project.id)).status).toBe('invited')
+  })
+
+  it('tells only the owner about a request that comes with an offer to lead', async () => {
+    const { owner, deputy, project } = await setup()
+    const ann = await createVolunteer()
+    await prisma.workItemInterest.create({
+      data: {
+        workItemId: project.id,
+        volunteerId: ann.id,
+        interestType: 'want_to_own',
+        status: 'pending',
+      },
+    })
+    await offer(ann, project.id, (await createTask(project.id, { helpersWanted: 1 })).id)
+    await noted(owner.id, 'new_interest')
+    expect(await notes(deputy.id, 'new_interest')).toHaveLength(0)
   })
 })

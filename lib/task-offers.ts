@@ -21,8 +21,7 @@ export async function lockTask(tx: Tx, taskId: number): Promise<void> {
 }
 
 /** Helper places still open on a task, read under `lockTask`. */
-export async function openPlaces(tx: Tx, task: { id: number; helpersWanted: number | null }) {
-  if (task.helpersWanted === null) return 0
+export async function openPlaces(tx: Tx, task: { id: number; helpersWanted: number }) {
   const helping = await tx.workItemInterest.count({
     where: { workItemId: task.id, status: InterestStatus.accepted },
   })
@@ -30,7 +29,9 @@ export async function openPlaces(tx: Tx, task: { id: number; helpersWanted: numb
 }
 
 /** A task still taking helpers: not handed in, not done, and asking for some. */
-function takesHelpers(task: { status: string; helpersWanted: number | null }): boolean {
+function takesHelpers<T extends { status: string; helpersWanted: number | null }>(
+  task: T,
+): task is T & { helpersWanted: number } {
   return (
     task.helpersWanted !== null &&
     task.status !== TaskStatus.under_review &&
@@ -52,7 +53,7 @@ async function tellPlaceFilled(
   await notifyUser(
     to,
     'helper_place_filled',
-    `Place filled: '${task.title}' has all the helpers it wants`,
+    `Place filled: '${task.title}' is not taking more helpers`,
     null,
     `/projects/${task.parentId}/tasks/${task.id}`,
     undefined,
@@ -90,8 +91,9 @@ export async function dropEmptyRequest(projectId: number, volunteerId: number): 
 }
 
 /**
- * Once a task has all the helpers it wants, closes the offers still waiting on it as filled,
- * tells each person, and drops their request to join if that was all it asked for.
+ * Once a task has all the helpers it wants, or stops taking any (handed in, done, or seeking
+ * none), closes the offers still waiting on it as filled, tells each person, and drops their
+ * request to join if that was all it asked for.
  */
 export async function closeOffersOnFullTask(projectId: number, taskId: number): Promise<void> {
   const task = await prisma.workItem.findUniqueOrThrow({ where: { id: taskId } })
@@ -185,48 +187,45 @@ export async function endHelperOffers(
 
 /**
  * Makes `volunteerId` a member of the project when a manager puts them on one of its tasks.
- * A pending request becomes accepted; anyone else is added. Returns whether they were already
- * on it.
+ * A pending request is accepted as it stands, without the lead it may have offered; any other
+ * past row, or none, is a fresh add. Someone already on it is left as they are.
  */
 export async function addToProject(
   projectId: number,
   volunteerId: number,
   message: string | null,
-): Promise<{ wasMember: boolean; interestId: number }> {
+): Promise<void> {
   const existing = await prisma.workItemInterest.findFirst({
     where: { workItemId: projectId, volunteerId },
   })
-  if (existing?.status === InterestStatus.accepted) {
-    return { wasMember: true, interestId: existing.id }
-  }
   const now = new Date()
-  const row = existing
-    ? await prisma.workItemInterest.update({
-        where: { id: existing.id },
-        data:
-          existing.status === InterestStatus.pending
-            ? { status: InterestStatus.accepted, respondedAt: now }
-            : {
-                status: InterestStatus.accepted,
-                origin: InterestOrigin.added,
-                interestType: 'want_to_contribute',
-                respondedAt: now,
-                responseMessage: null,
-              },
-      })
-    : await prisma.workItemInterest.create({
-        data: {
-          volunteerId,
-          workItemId: projectId,
-          interestType: 'want_to_contribute',
-          status: InterestStatus.accepted,
-          origin: InterestOrigin.added,
-          message,
-          respondedAt: now,
-        },
-      })
-  if (existing?.status === InterestStatus.invited)
-    await clearNotifications('project_invite', row.id)
-  if (existing?.status === InterestStatus.pending) await clearNotifications('new_interest', row.id)
-  return { wasMember: false, interestId: row.id }
+  const member = {
+    status: InterestStatus.accepted,
+    interestType: 'want_to_contribute',
+    respondedAt: now,
+  }
+  if (!existing) {
+    await prisma.workItemInterest.create({
+      data: {
+        ...member,
+        volunteerId,
+        workItemId: projectId,
+        origin: InterestOrigin.added,
+        message,
+      },
+    })
+    return
+  }
+  await prisma.workItemInterest.updateMany({
+    where: { id: existing.id, status: { not: InterestStatus.accepted } },
+    data:
+      existing.status === InterestStatus.pending
+        ? member
+        : { ...member, origin: InterestOrigin.added, responseMessage: null },
+  })
+  const answered: Record<string, string> = {
+    [InterestStatus.invited]: 'project_invite',
+    [InterestStatus.pending]: 'new_interest',
+  }
+  if (answered[existing.status]) await clearNotifications(answered[existing.status], existing.id)
 }

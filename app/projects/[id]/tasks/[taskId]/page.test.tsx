@@ -8,6 +8,7 @@ import { fullText, renderApp } from '@/test/render'
 import { addDays, startOfUtcDay } from '@/lib/schedule'
 import { formatDateShort, toDateInputValue } from '@/lib/format-date'
 import { initials } from '@/components/WorkItemHeader'
+import { REOPEN_PROJECT_TO_CHANGE } from '@/lib/work-item-lock'
 import TaskDetailPage from './page'
 
 const row = (id: number) => prisma.workItem.findUniqueOrThrow({ where: { id } })
@@ -971,3 +972,39 @@ const clientJoin = (volunteerId: number, workItemId: number) =>
     where: { volunteerId_workItemId: { volunteerId, workItemId } },
     data: { status: 'accepted' },
   })
+
+describe('task detail page — offering to help before joining', () => {
+  it('offers, shows the offer waiting to everyone, and takes it back', async () => {
+    const owner = await createVolunteer({ name: 'Olive Owner' })
+    const sam = await createVolunteer({ name: 'Sam Newcomer' })
+    const project = await createProject({ assigneeId: owner.id, status: 'in_progress' })
+    const task = await createTask(project.id, { title: 'Practise', helpersWanted: 1 })
+
+    await mount(project.id, task.id, sam)
+    await userEvent.click(await screen.findByRole('button', { name: 'Offer to help' }))
+    await screen.findByText(/^Offer sent/)
+    await screen.findByText(/^You've offered to help/)
+    expect(screen.queryByRole('button', { name: 'Offer to help' })).toBeNull()
+
+    cleanup()
+    queryClient.clear()
+    await mount(project.id, task.id, owner)
+    expect(await screen.findByText(/offered to help, waiting for the owner/)).toHaveTextContent(
+      'Sam Newcomer offered to help',
+    )
+    expect(screen.queryByRole('button', { name: 'Withdraw request' })).toBeNull()
+
+    cleanup()
+    queryClient.clear()
+    await mount(project.id, task.id, sam)
+    // Taking it back fails once the project is completed, and says why.
+    const withdraw = await screen.findByRole('button', { name: 'Withdraw request' })
+    await prisma.workItem.update({ where: { id: project.id }, data: { status: 'completed' } })
+    await userEvent.click(withdraw)
+    await screen.findByText(REOPEN_PROJECT_TO_CHANGE)
+    await prisma.workItem.update({ where: { id: project.id }, data: { status: 'in_progress' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Withdraw request' }))
+    await screen.findByText('Offer withdrawn')
+    await screen.findByRole('button', { name: 'Offer to help' })
+  })
+})

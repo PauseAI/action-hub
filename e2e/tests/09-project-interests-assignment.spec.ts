@@ -117,7 +117,7 @@ test.describe('Project Interests and Assignment', () => {
   }) => {
     const projectId = await setupSeekingProject(baseUrl)
     // Asking for a task says which one, in the request the owner reads.
-    const applicantMessage = "Asked to take 'Initial task'"
+    const applicantMessage = 'Asks to take Initial task'
 
     await volunteer.page.goto(`${baseUrl}/projects/${projectId}`)
     await askToTakeTask(volunteer.page)
