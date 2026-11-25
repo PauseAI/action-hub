@@ -12,7 +12,9 @@ import {
 import { APPLICATION_ANONYMISATION_MS } from '@/lib/applications'
 import { ApplicationActionSchema } from '@/lib/schemas'
 import { staffProcedure } from '../../procedures'
-import { ApprovalStatus } from '@/generated/prisma/enums'
+import { ApprovalStatus, ChapterAuditAction } from '@/generated/prisma/enums'
+import type { Prisma } from '@/generated/prisma/client'
+import { audit } from '@/lib/chapter-roles'
 import { clearNotifications, createNotification } from '@/lib/notify'
 import { logger } from '@/lib/logger'
 import { hashEmail } from '@/lib/auth'
@@ -26,6 +28,31 @@ async function applicantRunBy<T extends { nationalChapterId: number | null }>(
     throw new ORPCError('NOT_FOUND', { message: 'Volunteer not found' })
   }
   return applicant
+}
+
+/**
+ * Saves a decision on an application with the chapter audit event that records who made it, so
+ * each step stays on record after the next reviewer overwrites `reviewerId`.
+ */
+function decide(
+  applicant: {
+    id: number
+    nationalChapterId: number | null
+    approvalStatus: ApprovalStatus | null
+  },
+  actorId: number,
+  action: ChapterAuditAction,
+  data: Prisma.VolunteerUpdateInput,
+) {
+  return prisma.$transaction(async (tx) => {
+    await tx.volunteer.update({ where: { id: applicant.id }, data })
+    await audit(tx, action, {
+      actorId,
+      chapterId: applicant.nationalChapterId,
+      targetVolunteerId: applicant.id,
+      details: { from: applicant.approvalStatus },
+    })
+  })
 }
 
 /** Applications are decided by the applicant's chapter, or the global admins for the pool. */
@@ -291,14 +318,11 @@ export const adminApplicationsRouter = {
             message: `Cannot request info on a ${volunteer.approvalStatus} application`,
           })
         }
-        await prisma.volunteer.update({
-          where: { id: input.id },
-          data: {
-            approvalStatus: ApprovalStatus.needs_info,
-            reviewerId: admin.id,
-            ...(adminNotes !== undefined && { applicationAdminNotes: adminNotes }),
-            ...(applicantNotes !== undefined && { applicationApplicantNotes: applicantNotes }),
-          },
+        await decide(volunteer, admin.id, ChapterAuditAction.APPLICATION_INFO_REQUESTED, {
+          approvalStatus: ApprovalStatus.needs_info,
+          reviewer: { connect: { id: admin.id } },
+          ...(adminNotes !== undefined && { applicationAdminNotes: adminNotes }),
+          ...(applicantNotes !== undefined && { applicationApplicantNotes: applicantNotes }),
         })
         if (volunteer.email) {
           const resolvedApplicantNotes =
@@ -318,15 +342,12 @@ export const adminApplicationsRouter = {
             message: `Cannot reopen a ${volunteer.approvalStatus} application`,
           })
         }
-        await prisma.volunteer.update({
-          where: { id: input.id },
-          data: {
-            approvalStatus: ApprovalStatus.needs_info,
-            rejectedAt: null,
-            reviewerId: admin.id,
-            ...(adminNotes !== undefined && { applicationAdminNotes: adminNotes }),
-            ...(applicantNotes !== undefined && { applicationApplicantNotes: applicantNotes }),
-          },
+        await decide(volunteer, admin.id, ChapterAuditAction.APPLICATION_REOPENED, {
+          approvalStatus: ApprovalStatus.needs_info,
+          rejectedAt: null,
+          reviewer: { connect: { id: admin.id } },
+          ...(adminNotes !== undefined && { applicationAdminNotes: adminNotes }),
+          ...(applicantNotes !== undefined && { applicationApplicantNotes: applicantNotes }),
         })
         if (volunteer.email) {
           const resolvedApplicantNotes =
@@ -352,16 +373,20 @@ export const adminApplicationsRouter = {
 
       const newStatus = action === 'approve' ? ApprovalStatus.approved : ApprovalStatus.rejected
 
-      await prisma.volunteer.update({
-        where: { id: input.id },
-        data: {
+      await decide(
+        volunteer,
+        admin.id,
+        action === 'approve'
+          ? ChapterAuditAction.APPLICATION_APPROVED
+          : ChapterAuditAction.APPLICATION_REJECTED,
+        {
           approvalStatus: newStatus,
-          reviewerId: admin.id,
+          reviewer: { connect: { id: admin.id } },
           ...(adminNotes !== undefined && { applicationAdminNotes: adminNotes }),
           ...(applicantNotes !== undefined && { applicationApplicantNotes: applicantNotes }),
           ...(action === 'reject' && { rejectedAt: new Date() }),
         },
-      })
+      )
 
       if (volunteer.email) {
         const resolvedApplicantNotes =

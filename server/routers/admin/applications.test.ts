@@ -139,6 +139,75 @@ describe('admin.applications by chapter', () => {
   })
 })
 
+describe('admin.applications decisions on record', () => {
+  it('logs who made each decision, and from which status, in the chapter audit', async () => {
+    const chapter = await createChapter()
+    const [first, second] = [await createChapterDeputy(chapter), await createChapterDeputy(chapter)]
+    const applicant = await createMember(chapter, { approvalStatus: 'pending' })
+    const events = () =>
+      prisma.chapterAuditEvent.findMany({
+        where: { targetVolunteerId: applicant.id },
+        orderBy: { id: 'asc' },
+        select: { action: true, actorId: true, nationalChapterId: true, details: true },
+      })
+
+    await clientAs(first).admin.applications.action({ id: applicant.id, action: 'request_info' })
+    await clientAs(second).admin.applications.action({ id: applicant.id, action: 'reject' })
+    await clientAs(first).admin.applications.action({ id: applicant.id, action: 'reopen' })
+    await clientAs(second).admin.applications.action({ id: applicant.id, action: 'approve' })
+    // Starting a review and editing notes are not decisions.
+    const other = await createMember(chapter, { approvalStatus: 'pending' })
+    await clientAs(first).admin.applications.action({ id: other.id, action: 'start_review' })
+    await clientAs(first).admin.applications.action({
+      id: other.id,
+      action: 'update_notes',
+      adminNotes: 'x',
+    })
+
+    const at = { nationalChapterId: chapter.id }
+    expect(await events()).toEqual([
+      {
+        action: 'APPLICATION_INFO_REQUESTED',
+        actorId: first.id,
+        ...at,
+        details: { from: 'pending' },
+      },
+      {
+        action: 'APPLICATION_REJECTED',
+        actorId: second.id,
+        ...at,
+        details: { from: 'needs_info' },
+      },
+      { action: 'APPLICATION_REOPENED', actorId: first.id, ...at, details: { from: 'rejected' } },
+      {
+        action: 'APPLICATION_APPROVED',
+        actorId: second.id,
+        ...at,
+        details: { from: 'needs_info' },
+      },
+    ])
+    expect(await prisma.chapterAuditEvent.count({ where: { targetVolunteerId: other.id } })).toBe(0)
+  })
+
+  it('logs a pool application under no chapter, and nothing for a refused decision', async () => {
+    const admin = await createSuperAdmin()
+    const pooled = await createVolunteer({ approvalStatus: 'approved' })
+    await expect(
+      clientAs(admin).admin.applications.action({ id: pooled.id, action: 'approve' }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    const applicant = await createVolunteer({ approvalStatus: 'pending' })
+    await clientAs(admin).admin.applications.action({ id: applicant.id, action: 'reject' })
+    expect(
+      await prisma.chapterAuditEvent.findMany({
+        where: { targetVolunteerId: { in: [pooled.id, applicant.id] } },
+        select: { action: true, targetVolunteerId: true, nationalChapterId: true },
+      }),
+    ).toEqual([
+      { action: 'APPLICATION_REJECTED', targetVolunteerId: applicant.id, nationalChapterId: null },
+    ])
+  })
+})
+
 describe('admin.applications.action', () => {
   it('update_notes, start_review, request_info', async () => {
     const me = await createSuperAdmin()

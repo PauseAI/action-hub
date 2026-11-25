@@ -13,6 +13,7 @@ import {
 import { emails } from '@/test/fakes/email'
 import { navigation } from '@/test/next-navigation'
 import { fullText, renderApp } from '@/test/render'
+import { clientAs } from '@/test/rpc'
 import AdminChaptersPage from './page'
 import AdminChapterPage from './[id]/page'
 
@@ -140,6 +141,28 @@ describe('one chapter', () => {
       expect(within(history).getAllByRole('listitem').length).toBeGreaterThanOrEqual(3),
     )
     expect(within(history).getByText(/made the lead: Ann/)).toBeInTheDocument()
+  })
+
+  it("lists the chapter's application decisions in its history", async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter, { name: 'Lena Lead' })
+    const applicant = await createMember(chapter, {
+      name: 'Ada Applicant',
+      approvalStatus: 'pending',
+    })
+    for (const action of ['request_info', 'reject', 'reopen', 'approve'] as const) {
+      await clientAs(lead).admin.applications.action({ id: applicant.id, action })
+    }
+    await renderApp(chapterPage(chapter.id), { as: lead })
+    const history = (await screen.findByRole('heading', { name: 'History' })).parentElement!
+    for (const line of [
+      'asked an applicant for more: Ada Applicant',
+      'rejected an application: Ada Applicant',
+      'reopened an application: Ada Applicant',
+      'approved an application: Ada Applicant',
+    ]) {
+      expect(await within(history).findByText(new RegExp(line))).toBeInTheDocument()
+    }
   })
 
   it('tells two same-named members apart by email when appointing a lead', async () => {
