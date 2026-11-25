@@ -120,7 +120,11 @@ describe('ProjectEditor — new volunteer proposal', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Add task' }))
     expect(await screen.findByText('A title is required, even for a draft.')).toBeInTheDocument()
     await userEvent.type(screen.getByLabelText('Project title'), 'With task')
+    await userEvent.click(screen.getByRole('button', { name: 'More details' }))
     await userEvent.type(screen.getByLabelText('Details (optional)'), 'detail')
+    await userEvent.type(screen.getByLabelText('Helpers wanted (optional)'), '3')
+    await userEvent.type(screen.getByLabelText('What to submit (optional)'), 'A link')
+    await userEvent.click(screen.getByRole('checkbox', { name: /quick task/i }))
     await userEvent.click(screen.getByRole('button', { name: 'Add task' }))
     const draft = await waitFor(
       async () =>
@@ -132,6 +136,17 @@ describe('ProjectEditor — new volunteer proposal', () => {
     )
     // The just-created draft's first load may have raced the task insert; the editor must still show it.
     await waitFor(() => expect(screen.getByDisplayValue('First task')).toBeInTheDocument())
+    expect(await prisma.workItem.findFirstOrThrow({ where: { parentId: draft.id } })).toMatchObject(
+      {
+        description: 'detail',
+        helpersWanted: 3,
+        submissionPrompt: 'A link',
+        featuredAsQuickTask: true,
+      },
+    )
+    // The form empties and folds its details away for the next task.
+    expect(screen.getByLabelText('Task title', { selector: '#new-task-title' })).toHaveValue('')
+    expect(screen.queryByLabelText('Helpers wanted (optional)')).toBeNull()
   })
 
   it('makes one draft when Add task lands while a create is already in flight', async () => {

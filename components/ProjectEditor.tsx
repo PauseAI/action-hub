@@ -18,6 +18,7 @@ import FormLabel from '@/components/FormLabel'
 import Input from '@/components/ui/Input'
 import { P } from '@/components/Text'
 import Textarea from '@/components/ui/Textarea'
+import NewTaskForm, { type NewTask } from '@/components/NewTaskForm'
 import { useToast } from '@/lib/toast'
 import { toDateInputValue, fromDateInputValue } from '@/lib/format-date'
 import { orpc } from '@/lib/orpc'
@@ -105,8 +106,6 @@ export default function ProjectEditor(props: ProjectEditorProps) {
     projectId: number
     taskId: number
   } | null>(null)
-  const [newTaskTitle, setNewTaskTitle] = useState('')
-  const [newTaskDescription, setNewTaskDescription] = useState('')
   const [taskDrafts, setTaskDrafts] = useState<
     Record<number, { title: string; description: string }>
   >({})
@@ -461,29 +460,24 @@ export default function ProjectEditor(props: ProjectEditorProps) {
     setShowPublishModal(true)
   }
 
-  async function handleAddTask(e: React.FormEvent) {
-    e.preventDefault()
+  async function handleAddTask(task: NewTask): Promise<boolean> {
     if (projectId === undefined && !title.trim()) {
       toast('A title is required, even for a draft.', 'error')
-      return
+      return false
     }
     const id = await ensureProjectExists()
-    if (id === null) return
+    if (id === null) return false
     try {
-      await createTaskMutation.mutateAsync({
-        projectId: id,
-        title: newTaskTitle.trim(),
-        description: newTaskDescription.trim() || undefined,
-      })
-      setNewTaskTitle('')
-      setNewTaskDescription('')
+      await createTaskMutation.mutateAsync({ projectId: id, ...task })
       // When the draft was just created, its first getById fetch can still be in flight here,
       // possibly having read the project before the task landed. Invalidating alone would not
       // refetch an in-flight initial load, so cancel it first.
       await queryClient.cancelQueries({ queryKey: orpc.projects.getById.key() })
       void queryClient.invalidateQueries({ queryKey: orpc.projects.getById.key() })
+      return true
     } catch {
       // createTaskMutation's onError already toasted.
+      return false
     }
   }
 
@@ -1073,40 +1067,12 @@ export default function ProjectEditor(props: ProjectEditorProps) {
                   </div>
                 )
               })}
-            <div className="bg-brand-bg rounded-lg p-3 border border-brand-border">
-              <div className="mb-2">
-                <FormLabel htmlFor="new-task-title" className="text-sm" required>
-                  Task title
-                </FormLabel>
-                <Input
-                  id="new-task-title"
-                  type="text"
-                  value={newTaskTitle}
-                  onChange={(e) => setNewTaskTitle(e.target.value)}
-                  placeholder="e.g. Draft copy for homepage"
-                />
-              </div>
-              <div className="mb-2">
-                <FormLabel htmlFor="new-task-description" className="text-sm">
-                  Details (optional)
-                </FormLabel>
-                <Textarea
-                  id="new-task-description"
-                  rows={2}
-                  value={newTaskDescription}
-                  onChange={(e) => setNewTaskDescription(e.target.value)}
-                  placeholder="More detail about what needs doing…"
-                />
-              </div>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={handleAddTask}
-                disabled={creatingDraft || createTaskMutation.isPending || !newTaskTitle.trim()}
-              >
-                {creatingDraft || createTaskMutation.isPending ? 'Adding…' : 'Add task'}
-              </Button>
-            </div>
+            <NewTaskForm
+              onCreate={handleAddTask}
+              pending={creatingDraft || createTaskMutation.isPending}
+              submitLabel="Add task"
+              pendingLabel="Adding…"
+            />
           </div>
         )}
 

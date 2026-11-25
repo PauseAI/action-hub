@@ -280,6 +280,7 @@ test.describe('Task Deadlines', () => {
     await adminPage.goto(`${baseUrl}/projects/${projectId}#tasks`)
     await adminPage.getByRole('button', { name: 'Add task' }).click()
     await adminPage.getByLabel('Task title').fill('Task with deadline')
+    await adminPage.getByRole('button', { name: 'More details' }).click()
     await adminPage.getByLabel('Effort: about').fill('4')
     await adminPage.getByLabel('Deadline', { exact: true }).fill(deadlineValue)
     await adminPage.getByRole('button', { name: 'Create task' }).click()
