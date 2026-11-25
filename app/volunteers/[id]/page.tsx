@@ -30,7 +30,7 @@ type Endorsement = {
   skillName: string
   rating: string | null
   source: string | null
-  /** Null once the endorser has deleted their account. */
+  /** Null for a viewer outside the person's chapter staff, or once the endorser is deleted. */
   endorsedByName: string | null
   createdAt: Date | null
 }

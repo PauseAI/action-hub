@@ -8,7 +8,7 @@ import { redactVolunteer } from '@/lib/auth'
 import { TimeZoneSchema, UpdateVolunteerSchema } from '@/lib/schemas'
 import { projectScopeWhere } from '@/lib/work-item'
 import { historySelect, historyWhere, projectHistory } from '@/lib/volunteer-history'
-import { contactRelations } from '@/lib/contact'
+import { contactRelations, seesFullProfile } from '@/lib/contact'
 import {
   canAdminChapter,
   canAppointDeputies,
@@ -324,13 +324,15 @@ export const volunteersRouter = {
         categoryName: vs.skill.category.name,
         proficiencyLevel: vs.proficiencyLevel,
       }))
-      // Who verified each skill and how, for the tooltip on its chip; never the reviewer's notes.
+      // How and when each skill was verified, for the tooltip on its chip; never the reviewer's
+      // notes. Who verified it is for the person's chapter staff and those who see full profiles.
+      const seesVerifier = isAdmin || seesFullProfile(context.access, vol)
       const endorsements = vol.skillEndorsementsReceived.map((se) => ({
         skillId: se.skillId,
         rating: se.rating,
         skillName: se.skill.name,
         source: se.source,
-        endorsedByName: se.endorsedBy.deletedAt ? null : se.endorsedBy.name,
+        endorsedByName: seesVerifier && !se.endorsedBy.deletedAt ? se.endorsedBy.name : null,
         createdAt: se.createdAt,
       }))
 
