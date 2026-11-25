@@ -109,6 +109,11 @@
     "yaml": "^2.9.1",
     "zod-prisma-types": "^3.3.11"
   },
+  "overrides": {
+    "@storybook/builder-webpack5": {
+      "webpack-dev-middleware": "7.4.6"
+    }
+  },
   "allowScripts": {
     "@prisma/client@6.19.3": true,
     "@prisma/engines@6.19.3": true,
