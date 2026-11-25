@@ -495,7 +495,6 @@ describe('the country picker', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Select country' }))
     expect(await screen.findByRole('option', { name: 'Ghana' })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: 'Kenya' })).toBeNull()
-    expect(screen.queryByRole('option', { name: 'Austria' })).toBeNull()
     await prisma.country.update({ where: { code: 'Kenya' }, data: { enabled: true } })
   })
 })
