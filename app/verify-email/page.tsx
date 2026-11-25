@@ -146,7 +146,7 @@ function VerifyEmailContent() {
                   placeholder="Your email address"
                   value={resendEmail}
                   onChange={(e) => setResendEmail(e.target.value)}
-                  className="flex-1 px-3 py-2 text-sm"
+                  className="flex-1 px-3 py-2"
                 />
                 <Button type="submit" disabled={resendCooldown > 0}>
                   Send

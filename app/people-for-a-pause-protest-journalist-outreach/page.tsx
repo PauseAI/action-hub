@@ -478,7 +478,7 @@ function Outreach({ onSignOut }: { onSignOut: () => void }) {
           />
         </div>
         <FormLabel htmlFor="outreach-phone">Your phone number (optional)</FormLabel>
-        <input
+        <Input
           id="outreach-phone"
           type="tel"
           value={phone}

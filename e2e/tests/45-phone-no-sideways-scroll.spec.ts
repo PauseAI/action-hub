@@ -18,6 +18,25 @@ async function expectNoSidewaysScroll(page: Page, url: string): Promise<void> {
   expect(scrollWidth, url).toBeLessThanOrEqual(innerWidth)
 }
 
+// iOS zooms the page in when it focuses a field whose text is smaller than 16px.
+async function expectNoZoomingFields(page: Page, url: string): Promise<void> {
+  if (page.url() !== url) await page.goto(url)
+  await page.waitForLoadState('networkidle')
+  const small = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('input, textarea, select')]
+      .filter(
+        (el) => !['checkbox', 'radio', 'file', 'hidden'].includes((el as HTMLInputElement).type),
+      )
+      .filter((el) => el.offsetParent !== null)
+      .map((el) => ({
+        field: el.id || el.outerHTML.slice(0, 80),
+        px: parseFloat(getComputedStyle(el).fontSize),
+      }))
+      .filter((f) => f.px < 16),
+  )
+  expect(small, url).toEqual([])
+}
+
 test.describe('Phone layout', () => {
   test('no page scrolls sideways at phone width', async ({ adminPage, browser, baseUrl }) => {
     const adminApi = createApiClient(baseUrl, readAdminToken(baseUrl))
@@ -56,5 +75,38 @@ test.describe('Phone layout', () => {
       await expectNoSidewaysScroll(anon, `${baseUrl}${path}`)
     }
     await anon.close()
+  })
+
+  test('no text field is small enough for a phone to zoom in on it', async ({
+    adminPage,
+    volunteer,
+    browser,
+    baseUrl,
+  }) => {
+    const projectId = await adminCreateProjectViaApi(
+      baseUrl,
+      fake.projectTitle(),
+      'A project to import into on a phone',
+    )
+    await adminPage.setViewportSize(PHONE)
+    for (const path of ['/settings', `/projects/${projectId}/import`]) {
+      await expectNoZoomingFields(adminPage, `${baseUrl}${path}`)
+    }
+
+    const outreach = `${baseUrl}/people-for-a-pause-protest-journalist-outreach`
+    await volunteer.page.setViewportSize(PHONE)
+    await volunteer.page.goto(outreach)
+    await volunteer.page.getByRole('button', { name: `Continue as ${volunteer.email}` }).click()
+    await expect(volunteer.page.getByLabel('Your phone number (optional)')).toBeVisible({
+      timeout: 10_000,
+    })
+    await expectNoZoomingFields(volunteer.page, outreach)
+
+    const context = await browser.newContext({ viewport: PHONE, isMobile: true, hasTouch: true })
+    const anon = await context.newPage()
+    for (const path of ['/login', '/signup', '/forgot-password', '/verify-email']) {
+      await expectNoZoomingFields(anon, `${baseUrl}${path}`)
+    }
+    await context.close()
   })
 })

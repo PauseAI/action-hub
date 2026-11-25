@@ -155,6 +155,16 @@ body {
   min-height: 100vh;
 }
 
+/* iOS zooms the page in when it focuses a field with text under 16px. Unlayered, so it beats
+   a `text-sm` on the field. Not `maximum-scale=1`, which stops pinch zoom on Android. */
+@media (pointer: coarse), (width < 40rem) {
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}
+
 :where(a, button, input, textarea, select, [tabindex]):focus-visible {
   outline: 2px solid var(--color-primary-dark);
   outline-offset: 2px;
