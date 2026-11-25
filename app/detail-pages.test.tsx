@@ -11,12 +11,27 @@ import {
 } from '@/test/factories'
 import { fullText, renderApp } from '@/test/render'
 import { clientAs } from '@/test/rpc'
+import { navigation } from '@/test/next-navigation'
 import QuickTaskDetailPage from './quick-tasks/[id]/page'
 import BugReportDetailPage from './bugs/[id]/page'
 
 const row = (id: number) => prisma.workItem.findUniqueOrThrow({ where: { id } })
 
 describe('quick task detail', () => {
+  it('sends an old link to the request the quick task became', async () => {
+    const me = await createVolunteer()
+    const asked = await clientAs(me).requests.ask({ title: 'Was a quick task', global: true })
+    await renderApp(<QuickTaskDetailPage params={Promise.resolve({ id: String(asked.id) })} />, {
+      as: me,
+    })
+    await waitFor(() =>
+      expect(navigation.replace).toHaveBeenCalledWith(
+        `/projects/${asked.projectId}/tasks/${asked.id}`,
+      ),
+    )
+    expect(screen.queryByText('Task not found.')).toBeNull()
+  })
+
   it('walks a task from open through claim, submit and review', async () => {
     const me = await createVolunteer()
     const skill = await createSkill()
