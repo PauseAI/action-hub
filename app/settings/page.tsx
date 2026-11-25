@@ -783,26 +783,27 @@ function SettingsPageContent() {
                 title="Password"
                 description="You sign in with Google. Want a password too?"
               >
-                {passwordLinkMutation.isSuccess ? (
-                  <P className="m-0" role="status">
-                    We&apos;ve sent a link to <strong>{user.email}</strong>. Open it to choose your
-                    password.
+                <P className="text-sm text-text-light mb-5">
+                  We&apos;ll email you a link to choose one. Once it&apos;s set, you&apos;ll be
+                  signed out everywhere, then you can sign in with Google or your password.
+                </P>
+                {passwordLinkMutation.isSuccess && (
+                  <P className="mb-5" role="status">
+                    Link sent to <strong>{user.email}</strong>. If it hasn&apos;t arrived in a few
+                    minutes, check your spam folder or send another.
                   </P>
-                ) : (
-                  <>
-                    <P className="text-sm text-text-light mb-5">
-                      We&apos;ll email you a link to choose one. Once it&apos;s set, you&apos;ll be
-                      signed out everywhere, then you can sign in with Google or your password.
-                    </P>
-                    <Button
-                      variant="secondary"
-                      disabled={passwordLinkMutation.isPending}
-                      onClick={() => passwordLinkMutation.mutate({ email: user.email })}
-                    >
-                      {passwordLinkMutation.isPending ? 'Sending…' : 'Send me a link'}
-                    </Button>
-                  </>
                 )}
+                <Button
+                  variant="secondary"
+                  disabled={passwordLinkMutation.isPending}
+                  onClick={() => passwordLinkMutation.mutate({ email: user.email })}
+                >
+                  {passwordLinkMutation.isPending
+                    ? 'Sending…'
+                    : passwordLinkMutation.isSuccess
+                      ? 'Send another link'
+                      : 'Send me a link'}
+                </Button>
               </SectionCard>
             )}
 

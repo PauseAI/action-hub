@@ -232,8 +232,8 @@ export const authRouter = {
         throw new ORPCError('UNAUTHORIZED', { message: 'Invalid email or password' })
 
       const volunteer = await prisma.volunteer.findFirst({ where: { email, deletedAt: null } })
-      // Signup already says whether an address is registered, so naming the missing
-      // password gives nothing away.
+      // Tells a caller the address signs in only with Google; signup already confirms an
+      // address is registered, and saying so spares a Google user guessing at a password.
       if (volunteer && !volunteer.passwordHash)
         throw new ORPCError('UNAUTHORIZED', {
           message:
@@ -545,7 +545,7 @@ export const authRouter = {
       const email = input.email.toLowerCase().trim()
       const volunteer = await prisma.volunteer.findFirst({
         where: { email, deletedAt: null },
-        select: { id: true, name: true, email: true },
+        select: { id: true, name: true, email: true, passwordHash: true },
       })
       if (!volunteer?.email) return { message: successMsg }
 
@@ -561,7 +561,12 @@ export const authRouter = {
           expiresAt: new Date(Date.now() + 60 * 60 * 1000),
         },
       })
-      await sendPasswordResetEmail({ to: volunteer.email, resetToken, name: volunteer.name })
+      await sendPasswordResetEmail({
+        to: volunteer.email,
+        resetToken,
+        name: volunteer.name,
+        firstPassword: !volunteer.passwordHash,
+      })
 
       return {
         message: successMsg,

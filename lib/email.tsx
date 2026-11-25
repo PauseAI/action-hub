@@ -247,24 +247,40 @@ export async function sendPendingApplicationsSummaryEmail({
   )
 }
 
-export function buildPasswordResetHtml(resetUrl: string, name: string): Promise<string> {
-  return render(<PasswordResetEmail resetUrl={resetUrl} name={name} appUrl={env.APP_URL} />)
+export const SET_PASSWORD_SUBJECT = 'Set a password for your Action Hub account'
+
+export function buildPasswordResetHtml(
+  resetUrl: string,
+  name: string,
+  firstPassword = false,
+): Promise<string> {
+  return render(
+    <PasswordResetEmail
+      resetUrl={resetUrl}
+      name={name}
+      appUrl={env.APP_URL}
+      firstPassword={firstPassword}
+    />,
+  )
 }
 
+/** `firstPassword`: the account has none yet, so the email offers to set one. */
 export async function sendPasswordResetEmail({
   to,
   resetToken,
   name = 'there',
+  firstPassword = false,
 }: {
   to: string
   resetToken: string
   name?: string
+  firstPassword?: boolean
 }): Promise<boolean> {
   const resetUrl = `${env.APP_URL}/reset-password?token=${resetToken}`
   return sendEssentialEmail(
     to,
-    'Reset your Action Hub password',
-    await buildPasswordResetHtml(resetUrl, name),
+    firstPassword ? SET_PASSWORD_SUBJECT : 'Reset your Action Hub password',
+    await buildPasswordResetHtml(resetUrl, name, firstPassword),
   )
 }
 

@@ -8,6 +8,7 @@ import { navigation } from '@/test/next-navigation'
 import { anon } from '@/test/rpc'
 import { emails, linkParam } from '@/test/fakes/email'
 import { rateLimit } from '@/test/fakes/rate-limit'
+import { SET_PASSWORD_SUBJECT } from '@/lib/email'
 import SettingsPage from './page'
 
 const me = (id: number) => prisma.volunteer.findUniqueOrThrow({ where: { id } })
@@ -208,9 +209,11 @@ describe('settings — account tab', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Send me a link' }))
     await screen.findByText(/Rate limited/)
     await userEvent.click(screen.getByRole('button', { name: 'Send me a link' }))
-    expect(await screen.findByRole('status')).toHaveTextContent(`sent a link to ${vol.email}`)
+    expect(await screen.findByRole('status')).toHaveTextContent(`Link sent to ${vol.email}`)
     const email = emails.lastTo(vol.email!)
-    expect(email.subject).toMatch(/password/i)
+    expect(email.subject).toBe(SET_PASSWORD_SUBJECT)
+    expect(email.html).toContain('set a password for your Action Hub account')
+    expect(screen.getByRole('button', { name: 'Send another link' })).toBeEnabled()
     await userEvent.click(screen.getByRole('button', { name: /Delete/ }))
     await userEvent.type(screen.getByPlaceholderText('DELETE'), 'nope')
     fireEvent.submit(screen.getByPlaceholderText('DELETE').closest('form')!)
