@@ -232,11 +232,14 @@ export const authRouter = {
         throw new ORPCError('UNAUTHORIZED', { message: 'Invalid email or password' })
 
       const volunteer = await prisma.volunteer.findFirst({ where: { email, deletedAt: null } })
-      if (
-        !volunteer ||
-        !volunteer.passwordHash ||
-        !verifyPassword(input.password, volunteer.passwordHash)
-      ) {
+      // Signup already says whether an address is registered, so naming the missing
+      // password gives nothing away.
+      if (volunteer && !volunteer.passwordHash)
+        throw new ORPCError('UNAUTHORIZED', {
+          message:
+            'This account has no password. Sign in with Google, or reset your password to set one.',
+        })
+      if (!volunteer?.passwordHash || !verifyPassword(input.password, volunteer.passwordHash)) {
         throw new ORPCError('UNAUTHORIZED', { message: 'Invalid email or password' })
       }
 

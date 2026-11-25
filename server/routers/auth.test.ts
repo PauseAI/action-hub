@@ -68,7 +68,15 @@ describe('auth.login', () => {
     const noPw = await createVolunteer({ passwordHash: null })
     await expect(anon().auth.login({ email: noPw.email!, password: 'x' })).rejects.toMatchObject({
       code: 'UNAUTHORIZED',
+      message:
+        'This account has no password. Sign in with Google, or reset your password to set one.',
     })
+    await expect(
+      anon().auth.login({ email: 'nobody@example.com', password: 'x' }),
+    ).rejects.toMatchObject({ message: 'Invalid email or password' })
+    await expect(
+      anon().auth.login({ email: 'ann@example.com', password: 'wrong' }),
+    ).rejects.toMatchObject({ message: 'Invalid email or password' })
     denyNext()
     await expect(
       anon().auth.login({ email: 'ann@example.com', password: TEST_PASSWORD }),

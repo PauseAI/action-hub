@@ -6,6 +6,8 @@ import { createVolunteer, createLocalGroup, createSkill, TEST_PASSWORD } from '@
 import { renderApp } from '@/test/render'
 import { navigation } from '@/test/next-navigation'
 import { anon } from '@/test/rpc'
+import { emails, linkParam } from '@/test/fakes/email'
+import { rateLimit } from '@/test/fakes/rate-limit'
 import SettingsPage from './page'
 
 const me = (id: number) => prisma.volunteer.findUniqueOrThrow({ where: { id } })
@@ -142,6 +144,14 @@ describe('settings — account tab', () => {
     await screen.findByText(/Email changed/)
     expect((await me(vol.id)).email).toBe('fresh@example.com')
 
+    await userEvent.type(screen.getByLabelText('Current password'), 'not-my-password')
+    await userEvent.type(screen.getByLabelText('New password'), 'another-long-one')
+    await userEvent.type(screen.getByLabelText('Confirm new password'), 'another-long-one')
+    fireEvent.submit(screen.getByLabelText('New password').closest('form')!)
+    await screen.findByText('Current password is incorrect')
+    await userEvent.clear(screen.getByLabelText('Current password'))
+    await userEvent.clear(screen.getByLabelText('New password'))
+    await userEvent.clear(screen.getByLabelText('Confirm new password'))
     await userEvent.type(screen.getByLabelText('Current password'), TEST_PASSWORD)
     await userEvent.type(screen.getByLabelText('New password'), 'another-long-one')
     await userEvent.type(screen.getByLabelText('Confirm new password'), 'mismatch')
@@ -188,11 +198,19 @@ describe('settings — account tab', () => {
     await userEvent.type(screen.getByLabelText('Your password'), 'anything')
     await userEvent.click(screen.getByRole('button', { name: 'Change email' }))
     await screen.findByText(/without a password/)
-    await userEvent.type(screen.getByLabelText('Current password'), 'anything')
-    await userEvent.type(screen.getByLabelText('New password'), 'another-long-one')
-    await userEvent.type(screen.getByLabelText('Confirm new password'), 'another-long-one')
-    fireEvent.submit(screen.getByLabelText('New password').closest('form')!)
-    await screen.findByText('Current password is incorrect')
+
+    // With no password to give, the account tab offers to email a link that sets one.
+    expect(screen.queryByLabelText('Current password')).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Change password' })).toBeNull()
+    expect(screen.getByText('You sign in with Google. Want a password too?')).toBeInTheDocument()
+    expect(screen.getByText(/signed out everywhere/)).toBeInTheDocument()
+    rateLimit.denyNext()
+    await userEvent.click(screen.getByRole('button', { name: 'Send me a link' }))
+    await screen.findByText(/Rate limited/)
+    await userEvent.click(screen.getByRole('button', { name: 'Send me a link' }))
+    expect(await screen.findByRole('status')).toHaveTextContent(`sent a link to ${vol.email}`)
+    const email = emails.lastTo(vol.email!)
+    expect(email.subject).toMatch(/password/i)
     await userEvent.click(screen.getByRole('button', { name: /Delete/ }))
     await userEvent.type(screen.getByPlaceholderText('DELETE'), 'nope')
     fireEvent.submit(screen.getByPlaceholderText('DELETE').closest('form')!)
@@ -205,6 +223,13 @@ describe('settings — account tab', () => {
     localStorage.setItem('authToken', 'stale')
     await userEvent.click(screen.getByRole('button', { name: 'Log out of all other sessions' }))
     await screen.findByText('Unauthorized')
+
+    // The emailed link sets a password, which ends every session.
+    await anon().auth.resetPassword({
+      token: linkParam(email, 'token'),
+      newPassword: 'another-long-one',
+    })
+    expect((await me(vol.id)).passwordHash).not.toBeNull()
   })
 })
 
@@ -298,7 +323,8 @@ describe('settings — notifications and privacy tabs', () => {
     expect(screen.getByLabelText(/Allow Google Analytics/)).toBeChecked()
     expect(screen.getByText('Current status:')).toHaveTextContent('on')
     await userEvent.click(screen.getByLabelText(/Allow Google Analytics/))
-    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    // The toast lands while the first save is still refetching, its button still "Saving…".
+    await userEvent.click(await screen.findByRole('button', { name: 'Save changes' }))
     await waitFor(() => expect(screen.getAllByText('Profile updated!')).toHaveLength(2))
     expect(await me(vol.id)).toMatchObject({
       consentMakeProfileVisibleInDirectory: false,

@@ -304,6 +304,13 @@ function SettingsPageContent() {
     },
   })
 
+  const passwordLinkMutation = useMutation({
+    ...orpc.auth.forgotPassword.mutationOptions(),
+    onError: (err: unknown) => {
+      showToast(err instanceof Error ? err.message : 'Could not send the link', 'error')
+    },
+  })
+
   const logoutOtherSessionsMutation = useMutation({
     ...orpc.auth.logoutOtherSessions.mutationOptions(),
     onSuccess: (data) => {
@@ -733,43 +740,71 @@ function SettingsPageContent() {
               </form>
             </SectionCard>
 
-            <SectionCard title="Change password">
-              <form method="post" onSubmit={handleChangePassword}>
-                <div className="mb-5">
-                  <FormLabel htmlFor="currentPassword">Current password</FormLabel>
-                  <Input
-                    type="password"
-                    id="currentPassword"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="mb-5">
-                  <FormLabel htmlFor="newPassword">New password</FormLabel>
-                  <Input
-                    type="password"
-                    id="newPassword"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="mb-5">
-                  <FormLabel htmlFor="confirm_password">Confirm new password</FormLabel>
-                  <Input
-                    type="password"
-                    id="confirm_password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    required
-                  />
-                </div>
-                <Button type="submit" disabled={changePasswordMutation.isPending}>
-                  {changePasswordMutation.isPending ? 'Changing…' : 'Change password'}
-                </Button>
-              </form>
-            </SectionCard>
+            {user.hasPassword ? (
+              <SectionCard title="Change password">
+                <form method="post" onSubmit={handleChangePassword}>
+                  <div className="mb-5">
+                    <FormLabel htmlFor="currentPassword">Current password</FormLabel>
+                    <Input
+                      type="password"
+                      id="currentPassword"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="mb-5">
+                    <FormLabel htmlFor="newPassword">New password</FormLabel>
+                    <Input
+                      type="password"
+                      id="newPassword"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="mb-5">
+                    <FormLabel htmlFor="confirm_password">Confirm new password</FormLabel>
+                    <Input
+                      type="password"
+                      id="confirm_password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <Button type="submit" disabled={changePasswordMutation.isPending}>
+                    {changePasswordMutation.isPending ? 'Changing…' : 'Change password'}
+                  </Button>
+                </form>
+              </SectionCard>
+            ) : (
+              <SectionCard
+                title="Password"
+                description="You sign in with Google. Want a password too?"
+              >
+                {passwordLinkMutation.isSuccess ? (
+                  <P className="m-0" role="status">
+                    We&apos;ve sent a link to <strong>{user.email}</strong>. Open it to choose your
+                    password.
+                  </P>
+                ) : (
+                  <>
+                    <P className="text-sm text-text-light mb-5">
+                      We&apos;ll email you a link to choose one. Once it&apos;s set, you&apos;ll be
+                      signed out everywhere, then you can sign in with Google or your password.
+                    </P>
+                    <Button
+                      variant="secondary"
+                      disabled={passwordLinkMutation.isPending}
+                      onClick={() => passwordLinkMutation.mutate({ email: user.email })}
+                    >
+                      {passwordLinkMutation.isPending ? 'Sending…' : 'Send me a link'}
+                    </Button>
+                  </>
+                )}
+              </SectionCard>
+            )}
 
             <SectionCard
               title="Sessions"
