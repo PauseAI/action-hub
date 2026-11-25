@@ -1,3 +1,5 @@
+import { openHelperPlaces } from '@/lib/open-helper-places'
+import { askingFor, offeredSummary } from '@/lib/helper-summary'
 import { prisma } from '@/lib/prisma'
 import { isStaff, type ChapterAccess } from '@/lib/chapter-access'
 import { loadTaskStatusViews, projectScopeWhere, type ProjectViewer } from '@/lib/work-item'
@@ -657,7 +659,7 @@ async function waitingFor(viewer: Viewer, skillIds: number[]) {
 async function findFor(
   viewer: Viewer,
   skillIds: number[],
-): Promise<{ quickTasks: FindRow; matches: FindRow; nearYou: FindRow }> {
+): Promise<{ quickTasks: FindRow; helpersWanted: FindRow; matches: FindRow; nearYou: FindRow }> {
   const { matchWhere, nearWhere, quickWhere } = await findWheres(viewer, skillIds)
   const hasChapter = viewer.nationalChapterId !== null
   const nearSelect = {
@@ -668,7 +670,8 @@ async function findFor(
     chapter: { select: { name: true } },
   } satisfies Prisma.WorkItemSelect
 
-  const [quickCount, quick, matchCount, matches, nearCount, near] = await Promise.all([
+  const [places, quickCount, quick, matchCount, matches, nearCount, near] = await Promise.all([
+    openHelperPlaces(viewer, { limit: FIND_ROW_SIZE }),
     prisma.workItem.count({ where: quickWhere }),
     prisma.workItem.findMany({
       where: quickWhere,
@@ -704,6 +707,17 @@ async function findFor(
 
   const mine = new Set(skillIds)
   return {
+    helpersWanted: {
+      count: places.total,
+      items: places.items.map((t) => ({
+        id: t.id,
+        title: t.title,
+        href: `/projects/${t.projectId}/tasks/${t.id}`,
+        reason: [askingFor(t.askedBy, t.placesLeft), offeredSummary(t.offeredBy)]
+          .filter(Boolean)
+          .join(' · '),
+      })),
+    },
     quickTasks: {
       count: quickCount,
       items: quick.map((t) => ({

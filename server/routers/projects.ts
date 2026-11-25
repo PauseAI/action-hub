@@ -78,7 +78,7 @@ import { canReach } from '@/lib/contact'
 import { assertTeamInChapter, projectLocation } from '@/lib/project-location'
 import { chapterNarrowing, chapterNarrowingSql } from '@/lib/chapter-access-server'
 import { audit } from '@/lib/chapter-roles'
-import { isStaff, type ChapterAccess } from '@/lib/chapter-access'
+import { isStaff, pickerChapter, type ChapterAccess } from '@/lib/chapter-access'
 import { can, NO_STANDING, permissionsOn } from '@/lib/permissions'
 import {
   assertCan,
@@ -1726,6 +1726,7 @@ export const projectsRouter = {
         canManageTasks,
         isDeputy,
         isMember,
+        searchChapter: pickerChapter(context.access, project),
         canMessageOwner:
           project.assigneeId !== null &&
           project.assigneeId !== volunteer.id &&
@@ -2921,17 +2922,49 @@ export const projectsRouter = {
         task.helpersWanted !== null &&
         helpers.length < task.helpersWanted
       const helperIds = new Set(helpers.map((h) => h.volunteerId))
+      // The project's own people, offered first by the pickers of whoever runs its tasks.
+      const members =
+        manages && !locked
+          ? (
+              await prisma.workItemInterest.findMany({
+                where: { workItemId: input.projectId, status: InterestStatus.accepted },
+                include: { volunteer: { select: { id: true, name: true } } },
+                orderBy: { volunteer: { name: 'asc' } },
+              })
+            ).map((r) => r.volunteer)
+          : []
       const eligibleHelpers = canAddHelpers
-        ? (
-            await prisma.workItemInterest.findMany({
-              where: { workItemId: input.projectId, status: InterestStatus.accepted },
-              include: { volunteer: { select: { id: true, name: true } } },
-              orderBy: { volunteer: { name: 'asc' } },
-            })
-          )
-            .map((r) => r.volunteer)
-            .filter((v) => v.id !== task.assigneeId && !helperIds.has(v.id))
+        ? members.filter((v) => v.id !== task.assigneeId && !helperIds.has(v.id))
         : []
+      const owner =
+        manages && project.assigneeId !== null
+          ? await prisma.volunteer.findUnique({
+              where: { id: project.assigneeId },
+              select: { id: true, name: true },
+            })
+          : null
+      const deputies = new Set(manages ? await deputyIdsOf(project.id) : [])
+      const asking =
+        manages && !locked
+          ? (
+              await prisma.workItemInterest.findMany({
+                where: {
+                  workItemId: input.projectId,
+                  status: InterestStatus.pending,
+                  interestType: 'want_to_contribute',
+                },
+                include: { volunteer: { select: { id: true, name: true } } },
+                orderBy: { id: 'asc' },
+              })
+            ).map((r) => r.volunteer)
+          : []
+      // The same groups, in the same order, as the project page's pickers.
+      const projectPeople = [
+        { title: 'Owner', people: owner ? [owner] : [] },
+        { title: 'Deputies', people: members.filter((m) => deputies.has(m.id)) },
+        { title: 'Members', people: members },
+        { title: 'Asking to join', people: asking },
+      ]
 
       return {
         ...serializeTask(task),
@@ -2945,10 +2978,12 @@ export const projectsRouter = {
         canJoinAsHelper,
         offeredBy,
         hasOffered: myHelperRow?.status === InterestStatus.pending,
+        searchChapter: pickerChapter(context.access, project),
         canLeaveAsHelper: takesHelpers && isHelper,
         canRemoveHelpers: takesHelpers && can(viewer, 'task.removeHelper', resource),
         canAddHelpers,
         eligibleHelpers,
+        projectPeople,
         changesRequested,
         autoAcceptTasks: project.autoAcceptTasks,
         projectTitle: project.title,

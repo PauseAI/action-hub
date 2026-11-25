@@ -5,12 +5,11 @@ import Link from 'next/link'
 import { Badge } from '@/components/Badge'
 import { LatenessBadge } from '@/components/StatusBadges'
 import Button from '@/components/Button'
-import FormLabel from '@/components/FormLabel'
 import { H3, H4 } from '@/components/Heading'
 import Linkify from '@/components/Linkify'
 import { P } from '@/components/Text'
 import Tooltip from '@/components/Tooltip'
-import Select from '@/components/ui/Select'
+import FullVolunteerSelect, { type PinnedGroup } from '@/components/FullVolunteerSelect'
 import { formatDateShort } from '@/lib/format-date'
 import DatesBlock from '@/components/DatesBlock'
 import TaskDatesSummary from '@/components/TaskDatesSummary'
@@ -36,8 +35,12 @@ export type PanelAssignment = {
   canAssign: boolean
   canClaim: boolean
   claimViewer: ClaimViewer
-  /** Volunteers the manager may pick from, already grouped and labelled by the caller. */
-  options: { value: string; label: string; header?: boolean }[]
+  /** People offered first (the project's own), before whoever the search finds. */
+  pinned: PinnedGroup[]
+  /** FullVolunteerSelect's `chapter`. */
+  chapter?: number | 'pool'
+  /** Who holds the task now, left out of the picker. */
+  assigneeId: number | null
   onAssign: (volunteerId: number) => void
   onClaim: () => void
   onUnassign: () => void
@@ -387,21 +390,17 @@ export default function GanttItemPanel({
             {assignment.canAssign && (
               <>
                 <div className="min-w-40 flex-1">
-                  <FormLabel htmlFor="panel-assignee" className="sr-only">
-                    Assign to a volunteer
-                  </FormLabel>
-                  <Select
+                  <FullVolunteerSelect
                     id="panel-assignee"
+                    label="Assign to a volunteer"
+                    ariaLabel="Assign to a volunteer"
+                    hideLabel
                     value={pickedAssignee}
-                    disabled={busy}
-                    onChange={(e) => setPickedAssignee(e.target.value)}
-                  >
-                    {assignment.options.map((o) => (
-                      <option key={o.value} value={o.value} disabled={o.header}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </Select>
+                    onChange={setPickedAssignee}
+                    pinned={assignment.pinned}
+                    exclude={assignment.assigneeId === null ? [] : [assignment.assigneeId]}
+                    chapter={assignment.chapter}
+                  />
                 </div>
                 <Button
                   size="sm"

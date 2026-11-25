@@ -145,13 +145,19 @@ export default function FilterDropdown<T extends string>({
   const selectedLabel =
     options.find((o) => o.value === value)?.label ?? placeholderLabel ?? options[0]?.label
 
-  const filtered =
+  // A heading stays while anything under it matches, and is never matched itself.
+  const matching =
     searchable && query
       ? options.filter(
           (o) =>
-            textMatches(o.label, query) || (!!o.description && textMatches(o.description, query)),
+            o.header ||
+            textMatches(o.label, query) ||
+            (!!o.description && textMatches(o.description, query)),
         )
       : options
+  const filtered = matching.filter(
+    (o, i) => !o.header || (i + 1 < matching.length && !matching[i + 1].header),
+  )
 
   /** Closes the list from inside it; the search input that held focus goes with the list. */
   function closeHere() {

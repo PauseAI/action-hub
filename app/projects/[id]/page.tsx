@@ -63,7 +63,7 @@ import Modal from '@/components/ui/Modal'
 import { EmptyPersonChip, PersonChip } from '@/components/ui/PersonChip'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import LocalVolunteerSelect from '@/components/ui/LocalVolunteerSelect'
-import FullVolunteerSelect from '@/components/FullVolunteerSelect'
+import FullVolunteerSelect, { type PinnedGroup } from '@/components/FullVolunteerSelect'
 import Input from '@/components/ui/Input'
 import Textarea from '@/components/ui/Textarea'
 import { useVolunteerSearch } from '@/lib/hooks/useVolunteerSearch'
@@ -213,7 +213,8 @@ function TaskTimeline({
   canAssignTasks,
   canClaimTasks,
   claimViewer,
-  assignOptions,
+  assignPinned,
+  assignChapter,
   onAssignTask,
   onClaimTask,
   onUnassignTask,
@@ -227,7 +228,8 @@ function TaskTimeline({
   canAssignTasks: boolean
   canClaimTasks: boolean
   claimViewer: ClaimViewer
-  assignOptions: { value: string; label: string; header?: boolean }[]
+  assignPinned: PinnedGroup[]
+  assignChapter: number | 'pool' | undefined
   onAssignTask: (taskId: number, volunteerId: number) => void
   onClaimTask: (taskId: number) => void
   onUnassignTask: (taskId: number) => void
@@ -561,7 +563,9 @@ function TaskTimeline({
                 // Claiming is only offered while the task is genuinely free.
                 canClaim: canClaimTasks && selectedTask.assignedToId === null,
                 claimViewer,
-                options: assignOptions,
+                pinned: assignPinned,
+                chapter: assignChapter,
+                assigneeId: selectedTask.assignedToId,
                 onAssign: (volunteerId) => onAssignTask(selectedRow.id, volunteerId),
                 onClaim: () => onClaimTask(selectedRow.id),
                 onUnassign: () => onUnassignTask(selectedRow.id),
@@ -910,13 +914,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     }
   }, [project?.status, idParam, router])
 
-  const { data: volunteersData } = useQuery({
-    ...orpc.volunteers.list.queryOptions({ input: { limit: 100 } }),
-    enabled:
-      !!project && (project.viewerCanAdmin || project.ownerId === user?.id || project.isDeputy),
-  })
-  const volunteers = volunteersData?.volunteers ?? []
-
   const ownerId = project?.ownerId ?? null
   const ownerCandidates = ownerSearch.candidates.filter((v) => v.id !== ownerId)
   const { data: ownerContact } = useQuery({
@@ -1210,9 +1207,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const volunteerInterests = (project.interests ?? []).filter(
     (i) => i.volunteerId !== project.ownerId,
   )
-  const interestedVolunteers = volunteerInterests.filter(
-    (i) => i.status === InterestStatus.pending || i.status === InterestStatus.accepted,
-  )
   const peopleGroups = [
     {
       key: 'requested',
@@ -1357,23 +1351,32 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       )}
     </li>
   )
-  const interestedVolunteerIds = new Set(interestedVolunteers.map((i) => i.volunteerId))
-  const assignVolunteerOptions = [
-    { value: '', label: '— Select volunteer —' },
-    ...(interestedVolunteers.length > 0
-      ? [
-          { value: '__interested_header', label: 'Interested in this project', header: true },
-          ...interestedVolunteers.map((i) => ({
-            value: String(i.volunteerId),
-            label: i.volunteerName,
-          })),
-          { value: '__all_header', label: 'All volunteers', header: true },
-        ]
-      : []),
-    ...volunteers
-      .filter((v) => !interestedVolunteerIds.has(v.id))
-      .map((v) => ({ value: String(v.id), label: v.name })),
+  // Whoever runs tasks picks from the project's own people first, then searches everyone else
+  // they may bring onto it (FullVolunteerSelect).
+  const memberRows = project.helpers ?? []
+  const assignPinned: PinnedGroup[] = [
+    {
+      title: 'Owner',
+      people: project.owner ? [{ id: project.owner.id, name: project.owner.name }] : [],
+    },
+    {
+      title: 'Deputies',
+      people: memberRows
+        .filter((h) => h.isDeputy)
+        .map((h) => ({ id: h.volunteerId, name: h.volunteerName })),
+    },
+    {
+      title: 'Members',
+      people: memberRows.map((h) => ({ id: h.volunteerId, name: h.volunteerName })),
+    },
+    {
+      title: 'Asking to join',
+      people: volunteerInterests
+        .filter((i) => i.status === InterestStatus.pending)
+        .map((i) => ({ id: i.volunteerId, name: i.volunteerName })),
+    },
   ]
+  const assignChapter = project.searchChapter
 
   // ── Task handlers ────────────────────────────────────────────────────────
 
@@ -1656,7 +1659,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             </details>
           )}
 
-          {!locked && volunteers.length > 0 && (
+          {!locked && (
             <form
               onSubmit={handleInvite}
               className="flex flex-col gap-2 mt-3 pt-3 border-t border-brand-border"
@@ -2468,7 +2471,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                     canAssignTasks={canManageTasks}
                     canClaimTasks={canClaimTasks}
                     claimViewer={project.claimViewer}
-                    assignOptions={assignVolunteerOptions}
+                    assignPinned={assignPinned}
+                    assignChapter={assignChapter}
                     onAssignTask={(taskId, volunteerId) =>
                       assignTaskMutation.mutate({
                         projectId: parseInt(idParam, 10),
@@ -2571,8 +2575,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                         isAssignee: task.assignedToId === user.id,
                         canReview: may('task.manage'),
                       }
-                      const canAssign =
-                        canRunTasks && task.status !== TaskStatus.completed && volunteers.length > 0
+                      const canAssign = canRunTasks && task.status !== TaskStatus.completed
                       const canUnassign =
                         canRunTasks && task.assignedToId !== null && !handedIn(task.status)
 
@@ -2739,19 +2742,22 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                                 <>
                                   {canAssign && (
                                     <div className="px-3 py-2 flex flex-col gap-2">
-                                      <FilterDropdown
+                                      <FullVolunteerSelect
                                         id={`assign-task-${task.id}`}
                                         label="Assign to"
                                         ariaLabel={`Assign volunteer to ${task.title}`}
                                         value={taskAssignSelections[task.id] ?? ''}
-                                        options={assignVolunteerOptions}
+                                        pinned={assignPinned}
+                                        exclude={
+                                          task.assignedToId === null ? [] : [task.assignedToId]
+                                        }
+                                        chapter={assignChapter}
                                         onChange={(v) =>
                                           setTaskAssignSelections((s) => ({
                                             ...s,
                                             [task.id]: v,
                                           }))
                                         }
-                                        searchable
                                       />
                                       <Button
                                         variant="secondary"

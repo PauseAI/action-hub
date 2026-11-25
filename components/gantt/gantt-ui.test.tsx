@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, act, within } from '@testing-library/react'
+import { render as rtlRender, screen, fireEvent, act, within } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
 import type { DragEndEvent } from '@dnd-kit/core'
 import type { ScheduledItem } from '@/lib/schedule'
@@ -12,6 +13,14 @@ import GanttDependencyLayer from './GanttDependencyLayer'
 import { barTone, barFill } from './palette'
 import { deltaToDays, moveFloor, patchFromDrag } from './useGanttDrag'
 import type { GanttRow } from './types'
+
+// The panel's volunteer picker searches the server, so it needs a query client.
+const render = (ui: React.ReactElement) =>
+  rtlRender(ui, {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider>
+    ),
+  })
 
 const drags = await vi.hoisted(() => import('@/test/dnd').then((m) => m.captureDrags()))
 vi.mock('@dnd-kit/core', (importOriginal) => drags.mockDndKit(importOriginal))
@@ -884,7 +893,8 @@ describe('GanttItemPanel', () => {
         canAssign: false,
         canClaim: false,
         claimViewer: { onProject: false, invited: false },
-        options: [],
+        pinned: [],
+        assigneeId: null,
         onAssign: vi.fn(),
         onClaim: vi.fn(),
         onUnassign: vi.fn(),
@@ -917,10 +927,8 @@ describe('GanttItemPanel', () => {
       canAssign: true,
       canClaim: true,
       claimViewer: { onProject: true, invited: false },
-      options: [
-        { value: '', label: 'Pick', header: true },
-        { value: '7', label: 'Zed' },
-      ],
+      pinned: [{ title: 'Members', people: [{ id: 7, name: 'Zed' }] }],
+      assigneeId: null,
       onAssign: vi.fn(),
       onClaim: vi.fn(),
       onUnassign: vi.fn(),
@@ -1014,7 +1022,9 @@ describe('GanttItemPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Claim task' }))
     expect(assignment.onClaim).toHaveBeenCalled()
     expect(screen.getByRole('button', { name: 'Assign' })).toBeDisabled()
-    await user.selectOptions(screen.getByLabelText('Assign to a volunteer'), '7')
+    // The project's own people come first, before any search.
+    await user.click(screen.getByRole('button', { name: 'Assign to a volunteer' }))
+    await user.click(screen.getByRole('option', { name: 'Zed' }))
     await user.click(screen.getByRole('button', { name: 'Assign' }))
     expect(assignment.onAssign).toHaveBeenCalledWith(7)
 
@@ -1052,7 +1062,8 @@ describe('GanttItemPanel', () => {
       canAssign: true,
       canClaim: true,
       claimViewer: { onProject: true, invited: false },
-      options: [{ value: '7', label: 'Sam' }],
+      pinned: [{ title: 'Members', people: [{ id: 7, name: 'Sam' }] }],
+      assigneeId: 7,
       onAssign: vi.fn(),
       onClaim: vi.fn(),
       onUnassign: vi.fn(),

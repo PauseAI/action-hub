@@ -473,6 +473,9 @@ export default function TaskDetailPage({
                   ariaLabel="Reassign to"
                   value={reassignTo}
                   onChange={setReassignTo}
+                  pinned={task.projectPeople}
+                  exclude={task.assignedToId === null ? [] : [task.assignedToId]}
+                  chapter={task.searchChapter}
                 />
               </div>
               <Button

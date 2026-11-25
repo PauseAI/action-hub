@@ -20,6 +20,7 @@ import {
   serializeStarterTask,
   submissionData,
 } from '@/lib/work-item'
+import { openHelperPlaces } from '@/lib/open-helper-places'
 import { recordChange, updateWorkItem } from '@/lib/work-item-events'
 import { approvedProcedure, authedProcedure, staffProcedure } from '../procedures'
 import { TERMINAL_STATUSES } from '@/lib/project-status'
@@ -160,6 +161,11 @@ export const quickTasksRouter = {
       projectTasks.flatMap((t) => (t.parent ? [t.parent] : [])),
       context.volunteer,
     )
+    // A featured task already listed to claim is not listed again for its helper places.
+    const listed = new Set(projectTasks.map((t) => t.id))
+    const helperPlaces = (await openHelperPlaces(context.volunteer)).items.filter(
+      (t) => !listed.has(t.id),
+    )
 
     return [
       ...quickTasks.map((t) => ({
@@ -192,6 +198,7 @@ export const quickTasksRouter = {
             ]
           : [],
       ),
+      ...helperPlaces,
     ].sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0))
   }),
 
