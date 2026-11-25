@@ -331,7 +331,9 @@ describe('ProjectEditor — new volunteer proposal', () => {
     expect(draft.isOrgProposed).toBe(true)
     await waitFor(
       async () =>
-        expect(await prisma.workItem.findFirst({ where: { parentId: draft.id } })).toMatchObject({
+        expect(
+          await prisma.workItem.findFirst({ where: { title: 'T1', creatorId: admin.id } }),
+        ).toMatchObject({
           description: 'detail',
           helpersWanted: 3,
           submissionPrompt: 'A link',
