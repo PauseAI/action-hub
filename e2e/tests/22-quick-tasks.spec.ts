@@ -120,11 +120,11 @@ test.describe('Quick Tasks: self-serve', () => {
     expect(project.status).toBe(200)
     const interests = (
       project.body as {
-        interests: { volunteerId: number; status: string; message: string | null }[]
+        interests: { volunteerId: number; status: string; asks: { title: string }[] }[]
       }
     ).interests
     const request = interests.find((i) => i.volunteerId && i.status === 'pending')
-    expect(request?.message).toContain(taskTitle)
+    expect(request?.asks.map((a) => a.title)).toEqual([taskTitle])
   })
 
   test('A superadmin sees a featured project task on the Quick Tasks admin page', async ({
