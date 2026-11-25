@@ -161,4 +161,29 @@ test.describe('Task helpers', () => {
     await expect(page.getByRole('button', { name: 'Withdraw from helping' })).toBeVisible()
     await expect(page.getByText("You've offered to help.")).toHaveCount(0)
   })
+
+  test('a task asking for helpers is listed on Quick Tasks, and offering from there opens it', async ({
+    volunteer,
+    baseUrl,
+  }) => {
+    const adminApi = createApiClient(baseUrl, readAdminToken(baseUrl))
+    const projectId = await adminCreateProjectViaApi(
+      baseUrl,
+      fake.projectTitle(),
+      'Helper places e2e project',
+    )
+    const title = fake.quickTaskTitle()
+    const created = await adminApi.projects.createTask({ body: { projectId, title } })
+    const taskId = (created.body as { id: number }).id
+    await adminApi.projects.updateTask({ body: { projectId, taskId, data: { helpersWanted: 2 } } })
+
+    const page = volunteer.page
+    await page.goto(`${baseUrl}/quick-tasks`)
+    await page.getByRole('tab', { name: /^Open/ }).click()
+    const card = page.getByRole('article').filter({ has: page.getByRole('link', { name: title }) })
+    await expect(card).toContainText('2 helpers', { timeout: 10_000 })
+    await card.getByRole('button', { name: 'Offer to help' }).click()
+    await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/tasks/${taskId}$`))
+    await expect(page.getByText("You've offered to help.")).toBeVisible({ timeout: 10_000 })
+  })
 })

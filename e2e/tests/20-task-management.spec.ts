@@ -232,7 +232,7 @@ test.describe('Task Assignment', () => {
     await context.close()
   })
 
-  test('Interested volunteers are grouped first in the assign dropdown', async ({
+  test('People asking to join are listed first in the assign dropdown', async ({
     adminPage,
     baseUrl,
   }) => {
@@ -244,7 +244,6 @@ test.describe('Task Assignment', () => {
     await adminApi.projects.createTask({ body: { projectId, title: 'Group test task' } })
 
     const interested = await signupApprovedVolunteer(baseUrl)
-    const other = await signupApprovedVolunteer(baseUrl)
     await askToJoinViaApi(baseUrl, interested.token, projectId)
 
     await adminPage.goto(`${baseUrl}/projects/${projectId}#tasks`)
@@ -255,13 +254,13 @@ test.describe('Task Assignment', () => {
     await adminPage.getByLabel('Assign volunteer to Group test task', { exact: true }).click()
     const listbox = adminPage.getByRole('listbox')
     await expect(listbox).toBeVisible({ timeout: 10_000 })
-    const optionTexts = await listbox.locator('div').allTextContents()
-    const interestedHeaderIndex = optionTexts.indexOf('Interested in this project')
-    const interestedNameIndex = optionTexts.indexOf(interested.name)
-    const otherNameIndex = optionTexts.indexOf(other.name)
-    expect(interestedHeaderIndex).toBeGreaterThanOrEqual(0)
-    expect(interestedNameIndex).toBeGreaterThan(interestedHeaderIndex)
-    expect(otherNameIndex).toBeGreaterThan(interestedNameIndex)
+    await expect(listbox.getByRole('option', { name: interested.name })).toBeVisible()
+    // Listed once, under its heading, ahead of everyone the search finds.
+    const text = (await listbox.textContent()) ?? ''
+    const heading = text.indexOf('Asking to join')
+    expect(heading).toBeGreaterThanOrEqual(0)
+    expect(text.indexOf(interested.name)).toBeGreaterThan(heading)
+    expect(text.lastIndexOf(interested.name)).toBe(text.indexOf(interested.name))
   })
 })
 

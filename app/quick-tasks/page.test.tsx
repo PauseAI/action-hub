@@ -199,6 +199,45 @@ describe('quick tasks — volunteer view', () => {
   })
 })
 
+describe('quick tasks — helper places', () => {
+  it('lists tasks asking for helpers, and offers help from the card', async () => {
+    const me = await createVolunteer()
+    const owner = await createVolunteer({ name: 'Olive Owner' })
+    const sam = await createVolunteer({ name: 'Sam' })
+    const project = await createProject({ title: 'Briefing', assigneeId: owner.id })
+    const task = await createTask(project.id, { title: 'Practise', helpersWanted: 2 })
+    await prisma.workItemInterest.create({
+      data: { workItemId: task.id, volunteerId: sam.id, interestType: 'want_to_help_task' },
+    })
+
+    await renderApp(<QuickTasksPage />, { as: me })
+    await userEvent.click(await screen.findByRole('tab', { name: /^Open \(/ }))
+    const card = (await screen.findByRole('link', { name: 'Practise' })).closest(
+      '[role=article]',
+    ) as HTMLElement
+    expect(card).toHaveTextContent('Part of: Briefing')
+    expect(card).toHaveTextContent('Olive Owner is asking for 2 helpers')
+    expect(card).toHaveTextContent('Sam has offered')
+    await userEvent.click(within(card).getByRole('button', { name: 'Offer to help' }))
+    await screen.findByText(/^Offer sent/)
+    await waitFor(() =>
+      expect(navigation.push).toHaveBeenCalledWith(`/projects/${project.id}/tasks/${task.id}`),
+    )
+
+    // A place that went meanwhile says so.
+    const other = await createTask(project.id, { title: 'Stall', helpersWanted: 1 })
+    cleanup()
+    await renderApp(<QuickTasksPage />, { as: me })
+    await userEvent.click(await screen.findByRole('tab', { name: /^Open \(/ }))
+    const stall = (await screen.findByRole('link', { name: 'Stall' })).closest(
+      '[role=article]',
+    ) as HTMLElement
+    await prisma.workItem.update({ where: { id: other.id }, data: { helpersWanted: null } })
+    await userEvent.click(within(stall).getByRole('button', { name: 'Offer to help' }))
+    await screen.findByText('This task is not looking for helpers')
+  })
+})
+
 describe('quick tasks — admin view', () => {
   it('fills work in review and outlines work sent back to the assignee', async () => {
     const admin = await createAdmin()

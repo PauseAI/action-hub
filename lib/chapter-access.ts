@@ -51,6 +51,18 @@ export function seesEveryChapter(access: ChapterAccess): boolean {
   return access.globalAdmin || access.coordinator
 }
 
+/**
+ * The chapter a volunteer picker searches for whoever runs a project's tasks: the project's own,
+ * for someone whose directory spans chapters (they may bring on only its chapter's people).
+ * Undefined for everyone else, whose search is held to their own chapter already.
+ */
+export function pickerChapter(
+  access: ChapterAccess,
+  project: { nationalChapterId: number | null },
+): number | 'pool' | undefined {
+  return seesEveryChapter(access) ? (project.nationalChapterId ?? 'pool') : undefined
+}
+
 /** Whether something in `chapterId` is visible to `access`; pool members see the pool. */
 export function inChapter(access: ChapterAccess, chapterId: number | null): boolean {
   return access.globalAdmin || access.chapterId === chapterId

@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { H2 } from '@/components/Heading'
 import { P } from '@/components/Text'
-import LocalVolunteerSelect from '@/components/ui/LocalVolunteerSelect'
+import FullVolunteerSelect from '@/components/FullVolunteerSelect'
 import { PersonChip } from '@/components/ui/PersonChip'
 import { ADD_HELPER, LEAVE_HELPING, REMOVE_HELPER } from '@/lib/action-labels'
 import { helperSummary } from '@/lib/helper-summary'
@@ -19,7 +19,12 @@ export type TaskHelpersState = {
   canLeaveAsHelper: boolean
   canRemoveHelpers: boolean
   canAddHelpers: boolean
+  /** The project's members free to help, offered before whoever the search finds. */
   eligibleHelpers: { id: number; name: string }[]
+  /** People waiting to join the project who offered to help on this task. */
+  offeredBy: { volunteerId: number; name: string }[]
+  /** FullVolunteerSelect's `chapter`. */
+  searchChapter?: number | 'pool'
   /** The task's lead. */
   assignedToId: number | null
   projectOwnerId: number | null
@@ -118,16 +123,30 @@ export default function TaskHelpers({
           ))}
         </ul>
       )}
-      {state.canAddHelpers && state.eligibleHelpers.length > 0 && (
+      {state.canAddHelpers && (
         <div className="mt-2 max-w-56">
-          <LocalVolunteerSelect
+          <FullVolunteerSelect
             id="task-add-helper"
-            label="Add a member as a helper"
-            ariaLabel="Add a member as a helper"
-            candidates={state.eligibleHelpers}
-            onAdd={(volunteerId) => add.mutate({ projectId, taskId, volunteerId })}
+            label="Add a helper"
+            ariaLabel="Add a helper"
+            value=""
+            onChange={(v) => {
+              if (v) add.mutate({ projectId, taskId, volunteerId: parseInt(v, 10) })
+            }}
             placeholder={ADD_HELPER}
             hideLabel
+            pinned={[
+              {
+                title: 'Offered to help',
+                people: state.offeredBy.map((o) => ({ id: o.volunteerId, name: o.name })),
+              },
+              { title: 'Members', people: state.eligibleHelpers },
+            ]}
+            exclude={[
+              ...(state.assignedToId === null ? [] : [state.assignedToId]),
+              ...state.helpers.map((h) => h.volunteerId),
+            ]}
+            chapter={state.searchChapter}
           />
         </div>
       )}

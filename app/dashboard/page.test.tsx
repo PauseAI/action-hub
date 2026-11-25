@@ -253,6 +253,22 @@ describe('home', () => {
     expect(within(find).getByRole('link', { name: 'Local one' })).toBeInTheDocument()
   })
 
+  it('offers tasks asking for helpers in Find', async () => {
+    const me = await createVolunteer()
+    const owner = await createVolunteer({ name: 'Olive Owner' })
+    const project = await createProject({ assigneeId: owner.id, status: 'in_progress' })
+    await createTask(project.id, { title: 'Practise', helpersWanted: 1 })
+    await renderApp(<HomePage />, { as: me, url: '/dashboard' })
+    const find = await screen.findByRole('region', { name: 'Find something to do' })
+    const row = within(find).getByRole('heading', { name: /^Helpers wanted/ }).parentElement!
+      .parentElement!
+    expect(within(row).getByRole('link', { name: 'Practise' })).toHaveAttribute(
+      'href',
+      expect.stringMatching(/^\/projects\/\d+\/tasks\/\d+$/),
+    )
+    expect(row).toHaveTextContent('Olive Owner is asking for 1 helper')
+  })
+
   it('moves finished projects into a folded Finished section after Find', async () => {
     const me = await createVolunteer()
     await createProject({ title: 'Wrapped up', assigneeId: me.id, status: 'completed' })

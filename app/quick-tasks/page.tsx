@@ -30,7 +30,15 @@ import {
   QUICK_TASK_CLAIMED_MESSAGE,
   TASK_REQUESTED_MESSAGE,
 } from '@/lib/action-messages'
-import { ASSIGN_PICKED, CLAIM_TASK, CLAIMING, UNASSIGN, claimLabel } from '@/lib/action-labels'
+import {
+  ASSIGN_PICKED,
+  CLAIM_TASK,
+  CLAIMING,
+  UNASSIGN,
+  claimLabel,
+  joinAsHelperLabel,
+} from '@/lib/action-labels'
+import { askingFor, offeredSummary } from '@/lib/helper-summary'
 import type { WorkViewer } from '@/lib/status-emphasis'
 import { orpc } from '@/lib/orpc'
 import { useToast } from '@/lib/toast'
@@ -234,6 +242,17 @@ function VolunteerQuickTasksView({ user }: { user: ApprovedUser }) {
       showToast(err instanceof Error ? err.message : 'Failed to claim task', 'error'),
   })
 
+  const offerHelpMutation = useMutation({
+    ...orpc.projects.expressInterest.mutationOptions(),
+    onSuccess: (data, variables) => {
+      showToast(data.message, 'success')
+      invalidateAvailable()
+      router.push(`/projects/${variables.projectId}/tasks/${variables.taskId}`)
+    },
+    onError: (err: unknown) =>
+      showToast(err instanceof Error ? err.message : 'Failed to offer help', 'error'),
+  })
+
   return (
     <>
       <main className="container py-5 pb-15">
@@ -396,6 +415,60 @@ function VolunteerQuickTasksView({ user }: { user: ApprovedUser }) {
                       {claimQuickMutation.isPending && claimQuickMutation.variables?.id === task.id
                         ? CLAIMING
                         : CLAIM_TASK}
+                    </Button>
+                  </QuickTaskCard>
+                ) : task.kind === 'helper_place' ? (
+                  <QuickTaskCard
+                    key={`helper-place-${task.id}`}
+                    title={task.title}
+                    titleHref={`/projects/${task.projectId}/tasks/${task.id}`}
+                    status={task.status}
+                    viewer={ONLOOKER}
+                    description={task.description}
+                    meta={[
+                      <span key="project" className="text-text-light text-sm">
+                        Part of:{' '}
+                        <Link
+                          className="text-primary-text underline"
+                          href={`/projects/${task.projectId}`}
+                        >
+                          {task.projectTitle}
+                        </Link>
+                      </span>,
+                      <span key="asking" className="text-sm">
+                        {askingFor(task.askedBy, task.placesLeft)}
+                      </span>,
+                      offeredSummary(task.offeredBy) && (
+                        <span key="offered" className="text-text-light text-sm">
+                          {offeredSummary(task.offeredBy)}
+                        </span>
+                      ),
+                      task.deadline && (
+                        <DueChip
+                          key="deadline"
+                          deadline={task.deadline}
+                          done={false}
+                          viewer={ONLOOKER}
+                          className="text-sm"
+                        />
+                      ),
+                    ]}
+                  >
+                    <Button
+                      variant="secondary"
+                      onClick={() =>
+                        offerHelpMutation.mutate({
+                          projectId: task.projectId,
+                          taskId: task.id,
+                          interestType: 'want_to_help_task',
+                        })
+                      }
+                      disabled={
+                        offerHelpMutation.isPending &&
+                        offerHelpMutation.variables?.taskId === task.id
+                      }
+                    >
+                      {joinAsHelperLabel(task.claimViewer)}
                     </Button>
                   </QuickTaskCard>
                 ) : (
