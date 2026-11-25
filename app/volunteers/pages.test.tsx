@@ -763,6 +763,11 @@ describe('volunteer profile', () => {
       'COORDINATOR_APPOINTED',
       'COORDINATOR_REMOVED',
       'PROFILE_PICTURE_REMOVED',
+      'APPLICATION_REVIEW_STARTED',
+      'APPLICATION_INFO_REQUESTED',
+      'APPLICATION_REJECTED',
+      'APPLICATION_REOPENED',
+      'APPLICATION_APPROVED',
     ] as const
     await prisma.chapterAuditEvent.createMany({
       data: actions.map((action) => ({
@@ -802,6 +807,11 @@ describe('volunteer profile', () => {
       'made them a coordinator',
       'removed them as a coordinator',
       'took down their profile picture',
+      'started reviewing their application',
+      'asked them for more about their application',
+      'rejected their application',
+      'reopened their application',
+      'approved their application',
       'approved their move to the holding pool',
       'removed them as a deputy of a chapter since closed',
     ]) {

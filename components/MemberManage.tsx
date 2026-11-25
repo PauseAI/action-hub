@@ -262,6 +262,11 @@ const DONE_TO_THEM: Record<ChapterAuditAction, (chapter: string) => string> = {
   COORDINATOR_APPOINTED: () => 'made them a coordinator',
   COORDINATOR_REMOVED: () => 'removed them as a coordinator',
   PROFILE_PICTURE_REMOVED: () => 'took down their profile picture',
+  APPLICATION_REVIEW_STARTED: () => 'started reviewing their application',
+  APPLICATION_INFO_REQUESTED: () => 'asked them for more about their application',
+  APPLICATION_REJECTED: () => 'rejected their application',
+  APPLICATION_REOPENED: () => 'reopened their application',
+  APPLICATION_APPROVED: () => 'approved their application',
 }
 
 const INTO_POOL = new Set<ChapterAuditAction>([
