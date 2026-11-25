@@ -166,7 +166,7 @@ export default function VolunteerDetailPage({ params }: { params: Promise<{ id: 
             </section>
           )}
           <div className={`${SECTION_CARD} mb-4 overflow-hidden wrap-break-word`}>
-            <div className="flex items-center gap-4 mb-3">
+            <div className="flex flex-wrap items-center gap-4 mb-3">
               <Avatar id={volunteer.id} name={volunteer.name} size="lg" />
               <div className="min-w-0">
                 <div className="flex items-center">
@@ -180,6 +180,16 @@ export default function VolunteerDetailPage({ params }: { params: Promise<{ id: 
                   <RemovePicture volunteerId={volunteer.id} name={volunteer.name} />
                 )}
               </div>
+              {isMe && (
+                <Button
+                  href="/settings?tab=profile"
+                  variant="secondary"
+                  size="sm"
+                  className="ml-auto"
+                >
+                  Edit profile
+                </Button>
+              )}
             </div>
 
             {user.access.globalAdmin && (
