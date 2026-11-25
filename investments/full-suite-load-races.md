@@ -4,12 +4,11 @@ Size: M. Kind: tools.
 
 ## Problem
 
-A test that races only under full-suite load fails one `check-all` run, passes 8/8 when run alone, and the next race shows only on the next run of up to ten minutes. The causes repeat: a `getBy…` or `getByText` read before a refetch or query lands (a textarea's value mirrored into its text counts as "on screen"), a `vi.waitFor` or `findBy…` one-second default outlasted under load, a wait for any alert satisfied by an earlier toast, and the access matrix (`test/access-matrix.ts`) building a fresh world for each persona in turn, so `tasks-access` and `projects-access` sit near the node timeout even alone.
+A test that races only under full-suite load fails one `check-all` run, passes 8/8 when run alone, and the next race shows only on the next run of up to ten minutes. The causes repeat: a `getBy…` or `getByText` read before a refetch or query lands (a textarea's value mirrored into its text counts as "on screen"), a `vi.waitFor` or `findBy…` default outlasted under load, an element looked up once and then replaced by a refetch, and a wait for any alert satisfied by an earlier toast.
 
 ## Fix
 
-1. A script that reruns one suspect file under the same parallel load (all unit files at once, only the suspect repeated), so a race is found in one pass instead of one per full run.
-2. Build each access matrix's world once per file, or run the roles of one `expectAccess` concurrently, to keep it well clear of the timeout.
+A script that reruns one suspect file under the same parallel load (all unit files at once, only the suspect repeated), so a race is found in one pass instead of one per full run. `TEST_RPC_JITTER_MS` (`test/rpc-fetch.ts`) already reorders a component test's requests the way load does, which finds many such races in a single file's reruns.
 
 `flaky-tests-under-load-sweep.md` covers the same cost from the other side (several full runs, every failure listed); doing either may be enough.
 
@@ -43,3 +42,4 @@ A test that races only under full-suite load fails one `check-all` run, passes 8
 - 2026-11-25: render-standby rebase: `check-all` (load average about 4 on 12 cores) timed out five `tasks-access`/`projects-access` tests at 20 s; the pair passed 42/42 alone, and CI passed
 - 2026-11-25 (x3): three small UX PRs: `check-all` timed out 1–4 access-matrix tests on the first and 13 tests across `ProjectEditor`, the project page, `misc`, `cron-jobs`, `projects-tasks`, `projects-helpers` and the access matrix on the second (load average 10–13 on 12 cores); each touched file passed alone; CI used as the full run; `app/settings/page.test.tsx` also raced a second Save while the first save's `onSuccess` still showed "Saving…" (fixed by waiting for the button)
 - 2026-11-25 (x3): task-joining (offers to help): `check-all` at load about 15 timed out 25 tests in 15 files (12-minute run), all passing together once load dropped; a new 15-test file failed one or two tests in two of eight solo runs, each a whole run slowed from 14 s to 57 s; `projects-helpers` + `projects-interests` alone swung from 12 s to 56 s between identical runs. CI used as the full run
+- 2026-11-25 (x4): main's CI failed on `ProfilePictureSettings` (a held lookup claimed by the wrong request); sweeping the flaky files with `TEST_RPC_JITTER_MS` found three more: the task page's Past plan box replaced under a click, `ProjectEditor` publishing before its task had saved (the cause not found on 11 Nov), and a previous test's request answering 401 into the next and signing its page out

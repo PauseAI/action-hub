@@ -62,7 +62,22 @@ export function resetRpcFetch(): void {
   requested.length = 0
 }
 
-export async function rpcFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+const inFlight = new Set<Promise<Response>>()
+
+/** Lets any held request go, and resolves once none is in flight, counting any they start. */
+export async function settleRpcFetch(): Promise<void> {
+  held?.release()
+  while (inFlight.size > 0) await Promise.allSettled(inFlight)
+}
+
+export function rpcFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const pending = answer(input, init)
+  inFlight.add(pending)
+  void pending.catch(() => {}).finally(() => inFlight.delete(pending))
+  return pending
+}
+
+async function answer(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const request = new Request(input, init)
   const { pathname } = new URL(request.url)
   requested.push(pathname)
@@ -73,16 +88,21 @@ export async function rpcFetch(input: RequestInfo | URL, init?: RequestInit): Pr
   if (!pathname.startsWith('/api/rpc')) {
     throw new Error(`Unexpected fetch in a component test: ${request.method} ${request.url}`)
   }
+  // Claimed on arrival, so a later request to the same procedure that is answered sooner is
+  // never the one held.
+  const hold = held && pathname === `/api/rpc/${heldPath}` ? held : undefined
+  if (hold) heldPath = undefined
   handler ??= load()
   const { rpc, createContext } = await handler
+  // `TEST_RPC_JITTER_MS` delays each request by up to that long at random, so requests are
+  // answered out of order as on a loaded machine: a race that needs CI's load shows up locally.
+  const jitter = Number(process.env.TEST_RPC_JITTER_MS)
+  if (jitter > 0) await new Promise((resolve) => setTimeout(resolve, Math.random() * jitter))
   const { response } = await rpc.handle(request, {
     prefix: '/api/rpc',
     context: (await createContext(request)) as Record<never, never>,
   })
-  if (held && pathname === `/api/rpc/${heldPath}`) {
-    heldPath = undefined
-    await held.released
-  }
+  if (hold) await hold.released
   // A real fetch rejects once its signal is aborted; react-query relies on that to discard a
   // cancelled refetch's result rather than let a stale response overtake a newer one.
   if (init?.signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError')

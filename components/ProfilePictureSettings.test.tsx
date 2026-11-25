@@ -6,7 +6,7 @@ import { prisma } from '@/lib/prisma'
 import { MAX_UPLOAD_BYTES } from '@/lib/profile-picture'
 import { createVolunteer } from '@/test/factories'
 import { renderApp } from '@/test/render'
-import { holdNextFetch } from '@/test/rpc-fetch'
+import { holdNextFetch, requestsTo } from '@/test/rpc-fetch'
 import ProfilePictureSettings from './ProfilePictureSettings'
 
 const fileInput = () => screen.getByLabelText('Profile picture file')
@@ -44,6 +44,8 @@ describe('ProfilePictureSettings', () => {
       .toBuffer()
     const releaseLookup = holdNextFetch('volunteers/lookup')
     await renderApp(<ProfilePictureSettings id={me.id} name={me.name} />, { as: me })
+    // The lookup waits for the signed-in user, so the upload must wait for the lookup to be asked.
+    await waitFor(() => expect(requestsTo('volunteers/lookup')).toHaveLength(1))
 
     await userEvent.upload(
       fileInput(),

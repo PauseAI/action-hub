@@ -10,6 +10,7 @@ import { formatDateShort, toDateInputValue } from '@/lib/format-date'
 import { initials } from '@/components/WorkItemHeader'
 import { REOPEN_PROJECT_TO_CHANGE } from '@/lib/work-item-lock'
 import TaskDetailPage from './page'
+import { dismissToast } from '@/test/toast'
 
 const row = (id: number) => prisma.workItem.findUniqueOrThrow({ where: { id } })
 const submitBox = () => screen.findByRole('region', { name: 'Submit your work' })
@@ -288,14 +289,12 @@ describe('task detail page', () => {
     await screen.findByRole('button', { name: 'Accept' })
     await prisma.workItem.update({ where: { id: task.id }, data: { status: 'in_progress' } })
     await userEvent.click(screen.getByRole('button', { name: 'Accept' }))
-    await screen.findByText('This task is not waiting for review')
+    await dismissToast('This task is not waiting for review')
     await userEvent.click(screen.getByRole('button', { name: 'Ask for changes' }))
     const ask = await screen.findByRole('dialog', { name: 'Ask for changes' })
     await userEvent.type(within(ask).getByLabelText('What needs changing?'), 'x')
     await userEvent.click(within(ask).getByRole('button', { name: 'Send back' }))
-    await waitFor(() =>
-      expect(screen.getAllByText('This task is not waiting for review')).toHaveLength(2),
-    )
+    await screen.findByText('This task is not waiting for review')
   })
 
   it('shows a task, lets a volunteer claim it, and the owner edit it and manage dependencies', async () => {
@@ -647,29 +646,33 @@ describe('task detail page — past plan', () => {
   it('lets the owner reassign or unassign it, and cancel a replan', async () => {
     const { owner, pat, project, late } = await lateTask('B')
     await mount(project.id, late.id, owner)
-    const box = await screen.findByRole('region', { name: 'Past plan' })
-    await userEvent.click(within(box).getByRole('button', { name: 'Replan' }))
+    // Looked up afresh each time: a refetch can unmount the box and render a new one.
+    const box = () => screen.getByRole('region', { name: 'Past plan' })
+    await screen.findByRole('region', { name: 'Past plan' })
+    await userEvent.click(within(box()).getByRole('button', { name: 'Replan' }))
     await userEvent.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancel' }),
     )
     expect(screen.queryByRole('dialog')).toBeNull()
 
-    await userEvent.click(within(box).getByRole('button', { name: 'Reassign to' }))
+    await userEvent.click(within(box()).getByRole('button', { name: 'Reassign to' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Pat Next B' }))
-    await userEvent.click(within(box).getByRole('button', { name: 'Reassign' }))
+    await userEvent.click(within(box()).getByRole('button', { name: 'Reassign' }))
     await screen.findByText('Reassigned. The previous assignee has been told.')
     await waitFor(async () => expect((await row(late.id)).assigneeId).toBe(pat.id))
+    // The refetch must land before the task is completed below, or it would show it done.
+    await waitFor(() => expect(box()).toHaveTextContent('Pat Next B has it'))
 
     // A failed reassignment says why.
-    await userEvent.click(within(box).getByRole('button', { name: 'Reassign to' }))
-    await userEvent.click((await screen.findAllByRole('option', { name: 'Pat Next B' }))[0])
+    await userEvent.click(within(box()).getByRole('button', { name: 'Reassign to' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Sam Slow B' }))
     await prisma.workItem.update({ where: { id: late.id }, data: { status: 'completed' } })
-    await userEvent.click(within(box).getByRole('button', { name: 'Reassign' }))
+    await userEvent.click(within(box()).getByRole('button', { name: 'Reassign' }))
     await screen.findByText('Reopen the task to change it')
     await prisma.workItem.update({ where: { id: late.id }, data: { status: 'in_progress' } })
 
     // Unassigned, the task is nobody's to be late with, so there is no decision left to make.
-    await userEvent.click(await within(box).findByRole('button', { name: 'Unassign' }))
+    await userEvent.click(await within(box()).findByRole('button', { name: 'Unassign' }))
     await waitFor(async () => expect((await row(late.id)).assigneeId).toBeNull())
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Past plan' })).toBeNull())
 

@@ -78,7 +78,17 @@ export function testUrl(name: string): string {
   // Prisma's default pool is 2 × cores + 1 per client; with a worker per core that overruns
   // Postgres's default max_connections on a large machine. Test files are mostly sequential.
   url.searchParams.set('connection_limit', '3')
+  withoutCommitSync(url)
   return url.toString()
+}
+
+/**
+ * Test data is thrown away, so a commit need not wait for its WAL to reach disk. That wait is
+ * most of a router test's time on a local disk, and grows with whatever else is writing to it.
+ * Readers still see each commit at once; only a server crash could lose the last few.
+ */
+export function withoutCommitSync(url: URL): void {
+  url.searchParams.set('options', '-c synchronous_commit=off')
 }
 
 async function connect(connectionString: string): Promise<Client> {
