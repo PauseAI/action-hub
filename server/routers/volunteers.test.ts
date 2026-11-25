@@ -163,8 +163,16 @@ describe('volunteers.getById', () => {
     const view = await clientAs(me).volunteers.getById({ id: vol.id })
     expect(view.discordHandle).toBe('vol#1')
     expect(view).toMatchObject({ canMessage: true, canRequestContact: false })
+    // How and when it was verified, for the chip's tooltip; never the notes, nor by whom.
     expect(view.endorsements).toEqual([
-      { skillId: skill.id, rating: 'strong', skillName: skill.name },
+      {
+        skillId: skill.id,
+        rating: 'strong',
+        skillName: skill.name,
+        source: 'direct_observation',
+        endorsedByName: null,
+        createdAt: expect.any(Date),
+      },
     ])
     expect(view.projects.map((p) => [p.id, p.roles.map((r) => r.role)]).sort()).toEqual(
       [
@@ -581,5 +589,40 @@ describe('volunteers.getById manage', () => {
       chapterLead: null,
       moveChapter: { chapterId: null },
     })
+  })
+})
+
+describe('volunteers.getById endorsements', () => {
+  it("names who verified a skill only to the person's chapter staff and those who see full profiles", async () => {
+    const chapter = await createChapter()
+    const verifier = await createChapterLead(chapter, { name: 'Vera Verifier' })
+    const vol = await createMember(chapter, { consentMakeProfileVisibleInDirectory: true })
+    const skill = await createSkill()
+    await prisma.skillEndorsement.create({
+      data: { volunteerId: vol.id, skillId: skill.id, endorsedById: verifier.id },
+    })
+    const verifiedBy = async (viewer: Parameters<typeof clientAs>[0]) =>
+      (await clientAs(viewer).volunteers.getById({ id: vol.id })).endorsements?.map(
+        (e) => e.endorsedByName,
+      )
+
+    expect(await verifiedBy(await createChapterDeputy(chapter))).toEqual(['Vera Verifier'])
+    expect(await verifiedBy(verifier)).toEqual(['Vera Verifier'])
+    expect(await verifiedBy(await createAdmin())).toEqual(['Vera Verifier'])
+    expect(await verifiedBy(await createCoordinator())).toEqual(['Vera Verifier'])
+    // A fellow member, the person themselves, and another chapter's staff see only how and when.
+    expect(await verifiedBy(await createMember(chapter))).toEqual([null])
+    expect(await verifiedBy(vol)).toEqual([null])
+    const elsewhere = await createChapterDeputy(await createChapter())
+    // Working on a project together lets them open the profile at all.
+    await prisma.workItemInterest.create({
+      data: {
+        workItemId: (await createProject({ assigneeId: vol.id })).id,
+        volunteerId: elsewhere.id,
+        interestType: 'want_to_contribute',
+        status: 'accepted',
+      },
+    })
+    expect(await verifiedBy(elsewhere)).toEqual([null])
   })
 })
