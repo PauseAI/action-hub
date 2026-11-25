@@ -129,7 +129,7 @@ describe('/suggest-local-group', () => {
     await renderApp(<SuggestLocalGroupPage />, { as: elsewhere })
     await screen.findByLabelText('Local group name')
     expect(screen.getByRole('button', { name: 'Select country/group' })).toHaveTextContent(
-      'Australia',
+      'Afghanistan',
     )
     await userEvent.click(screen.getByRole('button', { name: 'Select country/group' }))
     await userEvent.click(screen.getByRole('option', { name: 'France' }))
