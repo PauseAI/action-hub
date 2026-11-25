@@ -9,7 +9,12 @@ import { TimeZoneSchema, UpdateVolunteerSchema } from '@/lib/schemas'
 import { projectScopeWhere } from '@/lib/work-item'
 import { historySelect, historyWhere, projectHistory } from '@/lib/volunteer-history'
 import { contactRelations } from '@/lib/contact'
-import { canAdminChapter, seesEveryChapter } from '@/lib/chapter-access'
+import {
+  canAdminChapter,
+  canAppointDeputies,
+  seesEveryChapter,
+  type ChapterAccess,
+} from '@/lib/chapter-access'
 import { peopleInfo, viewableVolunteers } from '@/lib/people'
 import { chapterFilter } from '@/lib/chapter-access-server'
 import { isActiveRecently } from '@/lib/activity'
@@ -21,6 +26,29 @@ import {
   QuickTaskStatus,
   WorkItemType,
 } from '@/generated/prisma/enums'
+
+/**
+ * Whether the viewer may make this person a deputy of their chapter, or stand them down: a chapter
+ * lead for their own members, or a global admin. Null when neither applies.
+ */
+async function deputyControl(
+  viewerId: number,
+  access: ChapterAccess,
+  vol: { id: number; nationalChapterId: number | null; duplicateOfId: number | null },
+): Promise<{ chapterId: number; isDeputy: boolean } | null> {
+  const chapterId = vol.nationalChapterId
+  if (vol.id === viewerId || chapterId === null || !canAppointDeputies(access, chapterId)) {
+    return null
+  }
+  const chapter = await prisma.nationalChapter.findUniqueOrThrow({
+    where: { id: chapterId },
+    select: { leadId: true, deputies: { where: { volunteerId: vol.id }, select: { id: true } } },
+  })
+  if (chapter.leadId === vol.id) return null
+  const isDeputy = chapter.deputies.length > 0
+  if (!isDeputy && vol.duplicateOfId !== null) return null
+  return { chapterId, isDeputy }
+}
 
 export const volunteersRouter = {
   list: approvedProcedure
@@ -200,7 +228,7 @@ export const volunteersRouter = {
       // Contact details go only to people who work with the volunteer, or whom they have
       // accepted a contact request from; their chapter's staff and coordinators see them too
       // (lib/contact.ts).
-      const [relations, incoming] = await Promise.all([
+      const [relations, incoming, deputy] = await Promise.all([
         contactRelations(currentVolunteer, context.access, [vol.id]),
         prisma.contactRequest.findFirst({
           where: {
@@ -210,6 +238,7 @@ export const volunteersRouter = {
           },
           select: { id: true, message: true },
         }),
+        deputyControl(currentVolunteer.id, context.access, vol),
       ])
       const showContact = isAdmin || relations.reachable.has(vol.id)
 
@@ -297,6 +326,7 @@ export const volunteersRouter = {
           Boolean(vol.consentMakeProfileVisibleInDirectory),
         activeRecently: isActiveRecently(vol.lastActiveAt),
         chapter: vol.chapter,
+        deputy,
         projects: projectHistory(projects, input.id),
         completedTasks: completedTasks.map((t) => ({
           title: t.title,

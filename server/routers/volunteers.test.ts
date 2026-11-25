@@ -437,3 +437,44 @@ describe('volunteers.updateMe', () => {
     expect(untouched.bio).toBe('A different bio that is long enough')
   })
 })
+
+describe('volunteers.getById deputy', () => {
+  it("offers a chapter's lead and global admins the deputy control, and nobody else", async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter)
+    const member = await createMember(chapter, { consentMakeProfileVisibleInDirectory: true })
+    const deputy = await createChapterDeputy(chapter)
+    const control = async (viewer: Parameters<typeof clientAs>[0], id: number) =>
+      (await clientAs(viewer).volunteers.getById({ id })).deputy
+
+    expect(await control(lead, member.id)).toEqual({ chapterId: chapter.id, isDeputy: false })
+    expect(await control(lead, deputy.id)).toEqual({ chapterId: chapter.id, isDeputy: true })
+    expect(await control(await createAdmin(), member.id)).toEqual({
+      chapterId: chapter.id,
+      isDeputy: false,
+    })
+    // Nobody gets it for themselves, nor does a deputy or a fellow member.
+    expect(await control(lead, lead.id)).toBeNull()
+    const admin = await createAdmin({ nationalChapterId: chapter.id, country: chapter.country })
+    expect(await control(admin, admin.id)).toBeNull()
+    expect(await control(deputy, member.id)).toBeNull()
+    expect(await control(await createMember(chapter), member.id)).toBeNull()
+    // Nor does anyone for someone in the holding pool.
+    expect(await control(await createAdmin(), (await createVolunteer()).id)).toBeNull()
+  })
+
+  it('is not offered to appoint a duplicate account, but is to stand one down', async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter)
+    const original = await createMember(chapter)
+    const duplicate = await createMember(chapter, { duplicateOfId: original.id })
+    expect((await clientAs(lead).volunteers.getById({ id: duplicate.id })).deputy).toBeNull()
+    await prisma.chapterDeputy.create({
+      data: { nationalChapterId: chapter.id, volunteerId: duplicate.id },
+    })
+    expect((await clientAs(lead).volunteers.getById({ id: duplicate.id })).deputy).toEqual({
+      chapterId: chapter.id,
+      isDeputy: true,
+    })
+  })
+})

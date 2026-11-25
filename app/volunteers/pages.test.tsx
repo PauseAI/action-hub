@@ -372,6 +372,60 @@ describe('volunteer profile', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Remove picture' })).toBeNull())
   })
 
+  it("lets a chapter's lead make a member a chapter deputy, and stand them down", async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter)
+    const member = await createMember(chapter, { name: 'Dee Puty' })
+    await renderApp(<VolunteerDetailPage params={Promise.resolve({ id: String(member.id) })} />, {
+      as: lead,
+    })
+    await userEvent.click(await screen.findByRole('button', { name: 'Make chapter deputy' }))
+    const appoint = screen.getByRole('dialog', {
+      name: `Make Dee Puty a ${chapter.name} chapter deputy?`,
+    })
+    await userEvent.click(within(appoint).getByRole('button', { name: 'Make chapter deputy' }))
+    await screen.findByText('Dee Puty is now a deputy')
+    expect(
+      await prisma.chapterDeputy.findUnique({ where: { volunteerId: member.id } }),
+    ).toMatchObject({ nationalChapterId: chapter.id, appointedById: lead.id })
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Remove as chapter deputy' }))
+    const remove = screen.getByRole('dialog', {
+      name: `Remove Dee Puty as a ${chapter.name} chapter deputy?`,
+    })
+    await userEvent.click(within(remove).getByRole('button', { name: 'Remove as chapter deputy' }))
+    await screen.findByText('Deputy removed')
+    await screen.findByRole('button', { name: 'Make chapter deputy' })
+    expect(await prisma.chapterDeputy.findUnique({ where: { volunteerId: member.id } })).toBeNull()
+
+    // A refused save is reported.
+    await userEvent.click(screen.getByRole('button', { name: 'Make chapter deputy' }))
+    localStorage.setItem('authToken', 'stale')
+    await userEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Make chapter deputy' }),
+    )
+    await screen.findByText('Unauthorized')
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('shows the deputy control as it now is when someone else changed it first', async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter)
+    const member = await createMember(chapter, { name: 'Raced Member' })
+    await renderApp(<VolunteerDetailPage params={Promise.resolve({ id: String(member.id) })} />, {
+      as: lead,
+    })
+    await userEvent.click(await screen.findByRole('button', { name: 'Make chapter deputy' }))
+    await prisma.chapterDeputy.create({
+      data: { nationalChapterId: chapter.id, volunteerId: member.id },
+    })
+    await userEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Make chapter deputy' }),
+    )
+    await screen.findByText('Raced Member is already a deputy')
+    await screen.findByRole('button', { name: 'Remove as chapter deputy' })
+  })
+
   it('shows a minimal profile, and a not-found state', async () => {
     const me = await createVolunteer()
     const bare = await createVolunteer({

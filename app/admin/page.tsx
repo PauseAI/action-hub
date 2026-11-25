@@ -74,7 +74,12 @@ export default function AdminLandingPage() {
           count: counts?.pendingApplications,
         },
         ...(user.chapter && user.access.role
-          ? [{ href: `/admin/chapters/${user.chapter.id}`, label: `${user.chapter.name} chapter` }]
+          ? [
+              {
+                href: `/admin/chapters/${user.chapter.id}`,
+                label: `${user.chapter.name} chapter: deputies and members`,
+              },
+            ]
           : []),
         { href: '/admin/transfers', label: 'Chapter moves' },
         { href: '/admin/chapters', label: 'National chapters', globalOnly: true },
