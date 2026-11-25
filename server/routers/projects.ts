@@ -912,8 +912,8 @@ async function askOwnerToComplete(projectId: number): Promise<void> {
       id: projectId,
       status: ProjectStatus.in_progress,
       children: {
-        some: { type: WorkItemType.TASK },
-        none: { type: WorkItemType.TASK, status: { not: TaskStatus.completed } },
+        some: { type: WorkItemType.TASK, isOutline: false },
+        none: { type: WorkItemType.TASK, status: { not: TaskStatus.completed }, isOutline: false },
       },
     },
     select: { id: true, title: true, assigneeId: true },
@@ -3567,7 +3567,15 @@ export const projectsRouter = {
       if (input.data.submissionAsksLink !== undefined)
         data.submissionAsksLink = input.data.submissionAsksLink
       if (input.data.helpersWanted !== undefined) data.helpersWanted = input.data.helpersWanted
-      if (input.data.isOutline !== undefined) data.isOutline = input.data.isOutline
+      if (input.data.isOutline !== undefined && task.isOutline) {
+        // Planned, it joins the end of the task list, as a newly added task does.
+        const max = await prisma.workItem.aggregate({
+          where: { parentId: input.projectId, type: WorkItemType.TASK, isOutline: false },
+          _max: { sortOrder: true },
+        })
+        data.isOutline = false
+        data.sortOrder = (max._max.sortOrder ?? 0) + 1
+      }
       if (input.data.isAnchor !== undefined) data.isAnchor = input.data.isAnchor
       if (input.data.timing !== undefined) data.timing = input.data.timing
       applyScheduleWrite(data, { ...input.data, taskDeadline: input.data.deadline })
@@ -3616,6 +3624,8 @@ export const projectsRouter = {
         await recordChange(tx, { row: task, data, actorId: volunteer.id })
       })
       if (data.status === TaskStatus.completed) await askOwnerToComplete(project.id)
+      // A newly planned task is open work again, as a newly added one is.
+      if (data.isOutline === false) await clearNotifications(READY_TO_COMPLETE, project.id)
       if (typeof data.assigneeId === 'number') await stopHelpingAsLead(task.id, data.assigneeId)
       await bringOn?.(volunteer.id)
       if (data.helpersWanted !== undefined || data.status !== undefined) {

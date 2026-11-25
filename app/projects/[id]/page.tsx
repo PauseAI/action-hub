@@ -2324,6 +2324,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 totalHours={project.estimatedTotalHours}
                 taskHours={orderedTasks.reduce((sum, t) => sum + (t.estimatedHours ?? 0), 0)}
                 canFinish={!locked && canManageProject}
+                canPlan={canManageTasks}
                 editHref={`/projects/${idParam}/edit`}
                 onChanged={() => void invalidateProject()}
               />
@@ -2589,7 +2590,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 <OutlineList
                   projectId={project.id}
                   outline={outline}
-                  canPlan={canManageTasks}
+                  canPlan={canManageTasks && project.stage !== 'proposal'}
                   onChanged={() => void invalidateProject()}
                 />
               )}

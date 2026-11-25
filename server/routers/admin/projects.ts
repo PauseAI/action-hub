@@ -187,7 +187,10 @@ export const adminProjectsRouter = {
           )
         }
 
-        notifyMatchingVolunteers(input.id).catch((e) => logger.error(e, '[MATCH NOTIFY]'))
+        // A project going into Planning tells matching volunteers when its planning finishes.
+        if (project.plannedAt !== null) {
+          notifyMatchingVolunteers(input.id).catch((e) => logger.error(e, '[MATCH NOTIFY]'))
+        }
 
         if (project.teamId) {
           notifyTeamOfProject(project.teamId, project.id, project.title).catch((e) =>
@@ -355,6 +358,7 @@ export const adminProjectsRouter = {
           none: {
             type: WorkItemType.TASK,
             status: { not: TaskStatus.completed },
+            isOutline: false,
           },
         },
       },

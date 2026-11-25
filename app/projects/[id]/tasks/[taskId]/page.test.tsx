@@ -1121,6 +1121,6 @@ describe('task detail page — an outline item', () => {
     await mount(project.id, task.id, me)
     await screen.findByRole('heading', { name: 'Find a venue' })
     expect(screen.getByRole('note')).toHaveTextContent("a step from the project's rough outline")
-    expect(screen.queryByRole('button', { name: /take this|Claim/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /take this|Claim|Offer to help/i })).toBeNull()
   })
 })

@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { prisma } from '@/lib/prisma'
 import {
   createAdmin,
+  createChapter,
   createProject,
   createSkill,
   createTask,
@@ -299,5 +300,63 @@ describe('outline items left over on a running project', () => {
     await createTask(project.id, { status: 'completed', completedAt: new Date() })
     const after = await o.projects.getById({ id: project.id })
     expect(after.allTasksDone).toMatchObject({ count: 1 })
+  })
+})
+
+describe('planning a leftover outline item on a running project', () => {
+  it('asks to complete despite outline items, and takes the ask back once one is planned', async () => {
+    const owner = await createVolunteer()
+    const project = await createProject({ assigneeId: owner.id, status: 'in_progress' })
+    const real = await createTask(project.id, { assigneeId: owner.id, sortOrder: 5 })
+    const rough = await createTask(project.id, { isOutline: true, sortOrder: 1 })
+    const o = clientAs(owner)
+    const asks = () =>
+      prisma.notification.findMany({
+        where: { type: 'project_ready_to_complete', entityId: project.id },
+      })
+    await o.projects.updateTask({
+      projectId: project.id,
+      taskId: real.id,
+      data: { status: 'completed' },
+    })
+    expect(await asks()).toHaveLength(1)
+
+    await o.projects.updateTask({
+      projectId: project.id,
+      taskId: rough.id,
+      data: { isOutline: false },
+    })
+    expect(await asks()).toEqual([])
+    // It joins the end of the task list.
+    expect((await task(rough.id)).sortOrder).toBe(6)
+  })
+})
+
+describe('approval and skill matches', () => {
+  it('leaves the alert for Finish planning when a proposal goes into Planning', async () => {
+    const admin = await createAdmin()
+    const chapter = await createChapter()
+    const [a, b] = [await createSkill(), await createSkill()]
+    const proposal = await createProject({
+      status: 'pending_review',
+      nationalChapterId: chapter.id,
+      skills: { create: [a, b].map((s) => ({ skillId: s.id, isRequired: true })) },
+    })
+    const fan = await createVolunteer({
+      emailDigest: 'match',
+      nationalChapterId: chapter.id,
+      skills: { create: [{ skillId: a.id }, { skillId: b.id }] },
+    })
+    await clientAs(admin).admin.projects.review({ id: proposal.id, status: 'approved' })
+    await new Promise((r) => setTimeout(r, 200))
+    expect(emails.to(fan.email!)).toEqual([])
+
+    // A planned project sent back and approved again is live at once, so it still tells them.
+    await prisma.workItem.update({
+      where: { id: proposal.id },
+      data: { status: 'needs_discussion', plannedAt: new Date() },
+    })
+    await clientAs(admin).admin.projects.review({ id: proposal.id, status: 'approved' })
+    await vi.waitFor(() => expect(emails.to(fan.email!)).toHaveLength(1))
   })
 })

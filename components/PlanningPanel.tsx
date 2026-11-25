@@ -28,6 +28,7 @@ export function PlanningBanner({
   totalHours,
   taskHours,
   canFinish,
+  canPlan,
   editHref,
   onChanged,
 }: {
@@ -39,6 +40,8 @@ export function PlanningBanner({
   totalHours: number | null
   taskHours: number
   canFinish: boolean
+  /** A deputy plans outline items but leaves finishing to the owner. */
+  canPlan: boolean
   editHref: string
   onChanged: () => void
 }) {
@@ -57,7 +60,10 @@ export function PlanningBanner({
     return (
       <section aria-label="Planning" className={banner}>
         <P className="m-0">
-          <strong>{title}</strong> is being planned. Its tasks open up as the owner plans them.
+          <strong>{title}</strong> is being planned.{' '}
+          {canPlan
+            ? 'Plan its outline items into tasks; the owner finishes planning.'
+            : 'Its tasks open up as the owner plans them.'}
         </P>
       </section>
     )
@@ -83,7 +89,7 @@ export function PlanningBanner({
         )}
         <li>
           {totalHours !== null ? (
-            `About ${plural(totalHours, 'hour')} in total${taskHours > 0 ? `; the tasks add up to ${plural(taskHours, 'hour')}` : ''}`
+            `About ${plural(totalHours, 'hour')} in total${taskHours > 0 ? `; the tasks add up to ${plural(Math.round(taskHours * 10) / 10, 'hour')}` : ''}`
           ) : (
             <>
               No total hours yet: <a href={editHref}>add an estimate</a>
@@ -135,7 +141,8 @@ export function OutlineList({
       await plan.mutateAsync({
         projectId,
         taskId: item.id,
-        data: { ...task, isOutline: false },
+        // A note emptied in the form is cleared, not kept from the outline item.
+        data: { ...task, description: task.description ?? null, isOutline: false },
       })
       return true
     } catch {
