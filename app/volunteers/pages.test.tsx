@@ -136,8 +136,38 @@ describe('volunteer profile', () => {
       skills: { create: [{ skillId: skill.id }] },
     })
     await prisma.skillEndorsement.create({
-      data: { volunteerId: vol.id, skillId: skill.id, endorsedById: me.id, rating: 'strong' },
+      data: {
+        volunteerId: vol.id,
+        skillId: skill.id,
+        endorsedById: me.id,
+        rating: 'strong',
+        createdAt: new Date(Date.UTC(2026, 3, 4, 12)),
+        notes: 'Private review notes',
+      },
     })
+    const unlisted = await createSkill({ name: 'Unlisted but verified' })
+    await prisma.skillEndorsement.create({
+      data: {
+        volunteerId: vol.id,
+        skillId: unlisted.id,
+        endorsedById: me.id,
+        source: 'quick_task',
+        createdAt: null,
+      },
+    })
+    const developing = await createSkill({ name: 'Still developing' })
+    await prisma.skillEndorsement.create({
+      data: {
+        volunteerId: vol.id,
+        skillId: developing.id,
+        endorsedById: (await createVolunteer({ deletedAt: new Date() })).id,
+        rating: 'developing',
+        source: 'project_outcome',
+        createdAt: null,
+      },
+    })
+    const plain = await createSkill({ name: 'Unverified skill' })
+    await prisma.volunteerSkill.create({ data: { volunteerId: vol.id, skillId: plain.id } })
     await createQuickTask({
       title: 'Done task',
       assigneeId: vol.id,
@@ -182,7 +212,24 @@ describe('volunteer profile', () => {
     expect(within(place).getByText('🇬🇧 United Kingdom chapter')).toBeInTheDocument()
     expect(within(place).getByText('👥 North')).toBeInTheDocument()
     expect(within(place).getByText('📍 Leeds')).toBeInTheDocument()
-    expect(screen.getByText(`${skill.name} ✓`)).toBeInTheDocument()
+    // Endorsed skills are marked in the skills list, with who endorsed them on hover.
+    const skillList = document.getElementById('volunteerSkills') as HTMLElement
+    expect(within(skillList).getByText('Unverified skill')).toHaveTextContent(/^Unverified skill$/)
+    const strong = within(skillList).getByText(skill.name)
+    await userEvent.hover(strong)
+    expect(screen.getByRole('tooltip')).toHaveTextContent(
+      `Verified as strong by ${me.name} from direct observation, 4 April 2026`,
+    )
+    expect(screen.getByRole('tooltip')).not.toHaveTextContent('Private review notes')
+    await userEvent.unhover(strong)
+    expect(within(skillList).getByText('Unlisted but verified').parentElement).toHaveTextContent(
+      `(verified: Verified by ${me.name} for a reviewed quick task)`,
+    )
+    // Rated only as developing: not marked verified, and a deleted endorser is not named.
+    expect(within(skillList).getByText('Still developing').parentElement).toHaveTextContent(
+      /^Still developing\(rated: Rated as developing for delivering a project\)$/,
+    )
+    expect(screen.queryByText('Verified skills')).toBeNull()
     expect(screen.getByText('juggling')).toBeInTheDocument()
     expect(screen.getByText('3 hours/week')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'profiled@example.org' })).toHaveAttribute(
@@ -196,7 +243,6 @@ describe('volunteer profile', () => {
     expect(screen.queryByText(/Duplicate account of/)).toBeNull()
     expect(screen.getByText('Discord: d#1')).toBeInTheDocument()
     expect(screen.getByText('evenings')).toBeInTheDocument()
-    expect(screen.getByText('Verified skills')).toBeInTheDocument()
     expect(screen.getByText('Done task')).toBeInTheDocument()
     const current = screen.getByRole('list', { name: 'Current projects' })
     expect(within(current).getByRole('link', { name: 'Led' })).toBeInTheDocument()

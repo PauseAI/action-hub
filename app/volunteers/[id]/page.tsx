@@ -8,6 +8,8 @@ import Button from '@/components/Button'
 import ProjectHistory from '@/components/ProjectHistory'
 import ContactButton from '@/components/ContactButton'
 import ActiveDot from '@/components/ActiveDot'
+import Tooltip from '@/components/Tooltip'
+import { formatDate } from '@/lib/format-date'
 import Linkify from '@/components/Linkify'
 import { useToast } from '@/lib/toast'
 import { countryFlag } from '@/lib/flags'
@@ -22,6 +24,87 @@ import PersonName, { RoleBadge } from '@/components/PersonName'
 import { usePerson } from '@/lib/hooks/usePerson'
 import Avatar from '@/components/Avatar'
 import MemberManage from '@/components/MemberManage'
+
+type Endorsement = {
+  skillId: number
+  skillName: string
+  rating: string | null
+  source: string | null
+  /** Null for a viewer outside the person's chapter staff, or once the endorser is deleted. */
+  endorsedByName: string | null
+  createdAt: Date | null
+}
+
+const ENDORSED_FOR: Record<string, string> = {
+  project_outcome: ' for delivering a project',
+  quick_task: ' for a reviewed quick task',
+  direct_observation: ' from direct observation',
+}
+
+/** One line per endorsement: who verified the skill, for what, and when. */
+function verifiedBy(e: Endorsement): string {
+  const how =
+    e.rating === 'strong'
+      ? 'Verified as strong'
+      : e.rating === 'developing'
+        ? 'Rated as developing'
+        : 'Verified'
+  const by = e.endorsedByName ? ` by ${e.endorsedByName}` : ''
+  const when = e.createdAt ? `, ${formatDate(e.createdAt)}` : ''
+  return `${how}${by}${ENDORSED_FOR[e.source ?? ''] ?? ''}${when}`
+}
+
+type Chip = { id: number; name: string; lines: string[]; verified: boolean }
+
+/** The skills someone lists, then any endorsed skill they do not, each with its endorsements. */
+function skillChips(listed: { id: number; name: string }[], endorsements: Endorsement[]) {
+  const chips = new Map<number, Chip>(
+    listed.map((s) => [s.id, { id: s.id, name: s.name, lines: [], verified: false }]),
+  )
+  for (const e of endorsements) {
+    const chip = chips.get(e.skillId) ?? {
+      id: e.skillId,
+      name: e.skillName,
+      lines: [],
+      verified: false,
+    }
+    chip.lines.push(verifiedBy(e))
+    chip.verified ||= e.rating !== 'developing'
+    chips.set(e.skillId, chip)
+  }
+  return [...chips.values()]
+}
+
+/**
+ * A skill, with a tooltip saying who endorsed it when anyone has; marked ✓ only once someone has
+ * verified it, so one rated only as developing does not read as verified.
+ */
+function SkillChip({ name, lines, verified }: Chip) {
+  const chip =
+    'inline-flex items-center px-3 py-1 bg-chip text-chip-text rounded-full text-sm font-medium'
+  if (lines.length === 0) return <span className={chip}>{name}</span>
+  return (
+    <Tooltip
+      content={lines.map((l, i) => (
+        <span key={i} className="block">
+          {l}
+        </span>
+      ))}
+    >
+      <span tabIndex={0} className={`${chip} gap-1${verified ? ' ring-1 ring-success' : ''}`}>
+        <span>{name}</span>
+        {verified && (
+          <span aria-hidden="true" className="text-success">
+            ✓
+          </span>
+        )}
+        <span className="sr-only">
+          ({verified ? 'verified' : 'rated'}: {lines.join('; ')})
+        </span>
+      </span>
+    </Tooltip>
+  )
+}
 
 /** Fast track (lib/fast-track.ts): staff put someone on it, or take them off, from here. */
 function FastTrackControl({
@@ -128,9 +211,7 @@ export default function VolunteerDetailPage({ params }: { params: Promise<{ id: 
     )
   }
 
-  const skills = volunteer.skills ?? []
-  const endorsements = volunteer.endorsements ?? []
-  const endorsedSkillIds = new Set(endorsements.map((e) => e.skillId))
+  const skills = skillChips(volunteer.skills ?? [], volunteer.endorsements ?? [])
   const isMe = volunteer.id === user.id
   const incoming = volunteer.incomingContactRequest
 
@@ -249,15 +330,7 @@ export default function VolunteerDetailPage({ params }: { params: Promise<{ id: 
             <H3>Skills</H3>
             <div id="volunteerSkills" className="flex flex-wrap gap-1.5 mb-5">
               {skills.length > 0 ? (
-                skills.map((s) => (
-                  <span
-                    key={s.id}
-                    className={`inline-flex items-center px-3 py-1 bg-chip text-chip-text rounded-full text-sm font-medium${endorsedSkillIds.has(s.id) ? ' matched' : ''}`}
-                  >
-                    {s.name}
-                    {endorsedSkillIds.has(s.id) ? ' ✓' : ''}
-                  </span>
-                ))
+                skills.map(({ id, ...s }) => <SkillChip key={id} id={id} {...s} />)
               ) : (
                 <em className="text-text-light">No skills listed</em>
               )}
@@ -328,31 +401,6 @@ export default function VolunteerDetailPage({ params }: { params: Promise<{ id: 
               manage={volunteer.manage}
               hasPicture={Boolean(person?.picture)}
             />
-          )}
-
-          {endorsements.length > 0 && (
-            <div
-              id="endorsementsSection"
-              className={`${SECTION_CARD} mb-4 overflow-hidden wrap-break-word`}
-            >
-              <H2>Verified skills</H2>
-              <P className="text-text-light mb-3">
-                Skills verified through completed work on the platform.
-              </P>
-              <div id="endorsementsList" className="flex flex-wrap gap-1.5">
-                {endorsements.map((e) => (
-                  <span
-                    key={e.skillId}
-                    className={`inline-flex items-center px-3 py-1 bg-chip text-chip-text rounded-full text-sm font-medium border-l-[3px] ${e.rating === 'strong' ? 'border-l-success' : 'border-l-secondary'}`}
-                  >
-                    {e.skillName}{' '}
-                    <small className={e.rating === 'strong' ? 'text-success' : 'text-text-light'}>
-                      {e.rating}
-                    </small>
-                  </span>
-                ))}
-              </div>
-            </div>
           )}
 
           {volunteer.completedTasks.length > 0 && (

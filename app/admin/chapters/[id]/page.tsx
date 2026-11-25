@@ -35,6 +35,11 @@ const ACTION_LABELS: Record<ChapterAuditAction, string> = {
   JOINED_FROM_POOL: 'joined from the holding pool',
   COORDINATOR_APPOINTED: 'made a coordinator:',
   COORDINATOR_REMOVED: 'removed a coordinator:',
+  APPLICATION_REVIEW_STARTED: 'started reviewing an application:',
+  APPLICATION_APPROVED: 'approved an application:',
+  APPLICATION_REJECTED: 'rejected an application:',
+  APPLICATION_INFO_REQUESTED: 'asked an applicant for more:',
+  APPLICATION_REOPENED: 'reopened an application:',
 }
 
 const NONE = ''

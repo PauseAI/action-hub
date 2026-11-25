@@ -184,6 +184,7 @@ test.describe('Volunteer Management', () => {
     adminPage,
     volunteer,
     baseUrl,
+    snap,
   }) => {
     const skill = await createSkillViaApi(baseUrl)
 
@@ -204,14 +205,14 @@ test.describe('Volunteer Management', () => {
     // Endorsement appears in Verified Skills section on the admin detail page
     await expect(adminPage.locator('#endorsements')).toContainText(skill.name, { timeout: 10_000 })
 
-    // Navigate to the volunteer's public profile to confirm the endorsement is visible there too
+    // On the volunteer's public profile the skill is marked verified, saying by whom on focus or hover
     const volunteerId = new URL(adminPage.url()).pathname.split('/').pop()
     await adminPage.goto(`${baseUrl}/volunteers/${volunteerId}`)
-    await expect(adminPage.getByRole('heading', { name: 'Verified Skills', level: 2 })).toBeVisible(
-      { timeout: 10_000 },
-    )
-    await expect(adminPage.locator('#endorsementsList')).toContainText(skill.name, {
-      timeout: 10_000,
-    })
+    const chip = adminPage
+      .locator('#volunteerSkills [tabindex="0"]')
+      .filter({ hasText: skill.name })
+    await chip.focus({ timeout: 10_000 })
+    await expect(adminPage.getByRole('tooltip')).toContainText('Verified by')
+    await snap(adminPage, 'verified skill tooltip')
   })
 })

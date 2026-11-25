@@ -135,7 +135,9 @@ export async function withGlobalAdmin(volunteer: Volunteer): Promise<Volunteer> 
 }
 
 // showContact controls whether email and direct contact fields are included.
-export function redactVolunteer(
+export function redactVolunteer<
+  E extends { skillId: number; rating: string | null; skillName: string },
+>(
   vol: Volunteer & { group: { name: string } | null },
   opts: {
     showContact?: boolean
@@ -149,7 +151,7 @@ export function redactVolunteer(
       categoryName: string
       proficiencyLevel: string | null
     }>
-    endorsements?: Array<{ skillId: number; rating: string | null; skillName: string }>
+    endorsements?: E[]
   } = {},
 ) {
   const { showContact = false, skills, endorsements } = opts
