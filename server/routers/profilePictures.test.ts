@@ -187,10 +187,8 @@ describe('profile pictures', () => {
     ).rejects.toMatchObject({ code: 'FORBIDDEN' })
 
     const profile = await clientAs(lead).volunteers.getById({ id: member.id })
-    expect(profile.canRemovePicture).toBe(true)
-    expect((await clientAs(member).volunteers.getById({ id: member.id })).canRemovePicture).toBe(
-      false,
-    )
+    expect(profile.manage).not.toBeNull()
+    expect((await clientAs(member).volunteers.getById({ id: member.id })).manage).toBeNull()
 
     expect(await clientAs(deputy).profilePictures.removeFor({ volunteerId: member.id })).toEqual({
       message: 'Picture removed',

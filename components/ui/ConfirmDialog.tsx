@@ -15,6 +15,8 @@ interface ConfirmDialogProps {
   /** Disables both buttons and shows `busyLabel` while the action runs. */
   busy?: boolean
   busyLabel?: string
+  /** Keeps the confirm button disabled, as while a required choice is still to be made. */
+  confirmDisabled?: boolean
   onConfirm: () => void
   onClose: () => void
 }
@@ -29,6 +31,7 @@ export default function ConfirmDialog({
   danger = false,
   busy = false,
   busyLabel,
+  confirmDisabled = false,
   onConfirm,
   onClose,
 }: ConfirmDialogProps) {
@@ -39,7 +42,11 @@ export default function ConfirmDialog({
         <Button variant="secondary" onClick={onClose} disabled={busy}>
           {cancelLabel}
         </Button>
-        <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm} disabled={busy}>
+        <Button
+          variant={danger ? 'danger' : 'primary'}
+          onClick={onConfirm}
+          disabled={busy || confirmDisabled}
+        >
           {busy ? (busyLabel ?? confirmLabel) : confirmLabel}
         </Button>
       </div>
