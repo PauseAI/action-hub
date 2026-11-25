@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma'
 import { MAX_UPLOAD_BYTES } from '@/lib/profile-picture'
 import { createVolunteer } from '@/test/factories'
 import { renderApp } from '@/test/render'
+import { holdNextFetch } from '@/test/rpc-fetch'
 import ProfilePictureSettings from './ProfilePictureSettings'
 
 const fileInput = () => screen.getByLabelText('Profile picture file')
@@ -34,6 +35,24 @@ describe('ProfilePictureSettings', () => {
     expect(await screen.findByText('Picture removed')).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'Upload picture' })).toBeInTheDocument()
     expect(await pictureOf(me.id)).toBeNull()
+  })
+
+  it('shows the new picture when it lands before the page has looked the person up', async () => {
+    const me = await createVolunteer()
+    const png = await sharp({ create: { width: 8, height: 8, channels: 3, background: '#c63' } })
+      .png()
+      .toBuffer()
+    const releaseLookup = holdNextFetch('volunteers/lookup')
+    await renderApp(<ProfilePictureSettings id={me.id} name={me.name} />, { as: me })
+
+    await userEvent.upload(
+      fileInput(),
+      new File([new Uint8Array(png)], 'me.png', { type: 'image/png' }),
+    )
+    // Without the cancel, the refresh would wait on this lookup and the toast would never show.
+    expect(await screen.findByText('Picture updated')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Change picture' })).toBeInTheDocument()
+    releaseLookup()
   })
 
   it('says why a file is refused', async () => {
