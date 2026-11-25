@@ -330,14 +330,19 @@ export default function TaskDetailPage({
           underTitle={
             // The form below holds the same dates, so the summary steps aside while it is open.
             !isEditing && (
-              <TaskDatesSummary
-                className=""
-                estimatedHours={task.estimatedHours}
-                deadline={task.deadline}
-                openStart={task.startDate === null && task.waitsOn.length === 0}
-                placement={task.placement}
-                handedIn={handedIn(task.status)}
-              />
+              <>
+                {task.isRequest && task.createdByName && (
+                  <P className="text-sm m-0 mb-1">Asked by {task.createdByName}</P>
+                )}
+                <TaskDatesSummary
+                  className=""
+                  estimatedHours={task.estimatedHours}
+                  deadline={task.deadline}
+                  openStart={task.startDate === null && task.waitsOn.length === 0}
+                  placement={task.placement}
+                  handedIn={handedIn(task.status)}
+                />
+              </>
             )
           }
           person={
@@ -606,10 +611,12 @@ export default function TaskDetailPage({
             ask={task}
             reviewer={
               awaitsOwnerReview(
-                { autoAcceptTasks: task.autoAcceptTasks, ownerId: task.projectOwnerId },
+                { autoAcceptTasks: task.autoAcceptTasks, ownerId: task.reviewerId },
                 task.canManage,
               )
-                ? 'The project owner'
+                ? task.isRequest
+                  ? (task.createdByName ?? 'Whoever asked')
+                  : 'The project owner'
                 : null
             }
           />

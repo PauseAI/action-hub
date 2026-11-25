@@ -290,6 +290,12 @@ export async function runDeadlineRemindersJob(now: Date = new Date()) {
     for (const [i, task] of tasks.entries()) {
       if (!OPEN_TASK_STATUSES.includes(task.status)) continue
       const href = `/projects/${project.id}/tasks/${task.id}`
+      // A request for help has no owner: whoever asked for it looks after it.
+      const ownedBy = project.standingRequests
+        ? task.creatorId === null
+          ? []
+          : [task.creatorId]
+        : owners
       const placed = taskIsDated(task, hasPredecessor.has(task.id)) ? schedule.scheduled[i] : null
 
       const pastPlan = placed
@@ -301,7 +307,7 @@ export async function runDeadlineRemindersJob(now: Date = new Date()) {
           today,
         )
         const title = `“${task.title}” is ${plural(pastPlan, 'day')} past plan`
-        for (const owner of owners) {
+        for (const owner of ownedBy) {
           await tell(
             owner,
             { workItemId: task.id, stage: 'needs_decision', finishBy: placed.end },
@@ -332,7 +338,7 @@ export async function runDeadlineRemindersJob(now: Date = new Date()) {
           { ...task, deadline: task.deadline },
           startOfUtcDay(task.deadline),
           ownStart ? (placed?.start ?? null) : null,
-          owners,
+          ownedBy,
           project.title,
           href,
           pastPlan !== null,

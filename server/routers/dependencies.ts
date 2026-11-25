@@ -22,6 +22,7 @@ const ENDPOINT_SELECT = {
   assigneeId: true,
   teamId: true,
   nationalChapterId: true,
+  standingRequests: true,
 } as const
 
 type Endpoint = {

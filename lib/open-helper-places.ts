@@ -17,7 +17,7 @@ export type OpenHelperPlace = {
   status: string
   projectId: number
   projectTitle: string
-  /** Who is asking for help: the task's lead, else the project's owner. */
+  /** Who is asking for help: on a request, whoever asked; else the task's lead or the owner. */
   askedBy: { id: number; name: string } | null
   placesLeft: number
   /** People waiting to join the project who have offered for these places already. */
@@ -75,6 +75,7 @@ export async function openHelperPlaces(
     },
     include: {
       assignee: { select: { id: true, name: true } },
+      creator: { select: { id: true, name: true } },
       parent: {
         select: {
           id: true,
@@ -82,6 +83,7 @@ export async function openHelperPlaces(
           teamId: true,
           assigneeId: true,
           alwaysAskToJoin: true,
+          standingRequests: true,
           assignee: { select: { id: true, name: true } },
         },
       },
@@ -113,7 +115,7 @@ export async function openHelperPlaces(
       status: task.status,
       projectId: parent.id,
       projectTitle: parent.title,
-      askedBy: task.assignee ?? parent.assignee,
+      askedBy: parent.standingRequests ? task.creator : (task.assignee ?? parent.assignee),
       placesLeft,
       offeredBy: task.interests
         .filter((i) => i.status === InterestStatus.pending)

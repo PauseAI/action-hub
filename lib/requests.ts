@@ -1,0 +1,54 @@
+import type { Prisma } from '@/generated/prisma/client'
+import { ProjectStatus, WorkItemType } from '@/generated/prisma/enums'
+
+/**
+ * Requests for help: tasks anyone approved can ask for, held in a standing project per national
+ * chapter, plus 'Global requests' for the holding pool (no chapter). A standing project is made
+ * the first time someone asks there. It has no owner, never finishes, and is left out of project
+ * lists; chapter staff run it as they run every project in their chapter, and each request's
+ * asker reviews the work handed in on it (`requester` in lib/permissions.ts).
+ */
+
+export const GLOBAL_REQUESTS_TITLE = 'Global requests'
+
+export function requestsProjectTitle(chapter: { name: string } | null): string {
+  return chapter ? `Requests for help: ${chapter.name}` : GLOBAL_REQUESTS_TITLE
+}
+
+/** Leaves standing projects out of a project query. */
+export const NOT_STANDING = { standingRequests: false } as const
+
+type Tx = Prisma.TransactionClient
+
+/** The standing project for `chapterId` (null: global), made if it does not exist yet. */
+export async function requestsProjectFor(tx: Tx, chapterId: number | null) {
+  // Two first asks at once must not make two projects.
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`requests:${chapterId ?? 'global'}`}))`
+  const found = await tx.workItem.findFirst({
+    where: { type: WorkItemType.PROJECT, standingRequests: true, nationalChapterId: chapterId },
+    orderBy: { id: 'asc' },
+  })
+  if (found) return found
+  const chapter =
+    chapterId === null
+      ? null
+      : await tx.nationalChapter.findUniqueOrThrow({
+          where: { id: chapterId },
+          select: { name: true },
+        })
+  return tx.workItem.create({
+    data: {
+      type: WorkItemType.PROJECT,
+      status: ProjectStatus.in_progress,
+      standingRequests: true,
+      title: requestsProjectTitle(chapter),
+      description: chapter
+        ? `Small things people in ${chapter.name} have asked for help with. Anyone can take one.`
+        : 'Small things people anywhere have asked for help with. Anyone can take one.',
+      nationalChapterId: chapterId,
+      isOrgProposed: true,
+      autoAcceptTasks: false,
+      reviewedAt: new Date(),
+    },
+  })
+}

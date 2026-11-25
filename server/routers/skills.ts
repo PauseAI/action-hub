@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma'
 import { ADVERTISABLE_STATUSES } from '@/lib/project-status'
 import { WorkItemType } from '@/generated/prisma/enums'
 import { publicProcedure } from '../procedures'
+import { NOT_STANDING } from '@/lib/requests'
 
 const MOST_NEEDED = 10
 
@@ -40,6 +41,7 @@ export const skillsRouter = {
       where: {
         workItem: {
           type: WorkItemType.PROJECT,
+          ...NOT_STANDING,
           status: { in: ADVERTISABLE_STATUSES },
           OR: [{ isSeekingHelp: true }, { assigneeId: null }],
         },

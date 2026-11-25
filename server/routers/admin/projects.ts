@@ -18,6 +18,7 @@ import { canAdminChapter, type ChapterAccess } from '@/lib/chapter-access'
 import { chapterFilter } from '@/lib/chapter-access-server'
 import { ProjectStatus, TaskStatus, WorkItemType } from '@/generated/prisma/enums'
 import { logger } from '@/lib/logger'
+import { NOT_STANDING } from '@/lib/requests'
 
 /** A project in a chapter the caller runs; any other is not found. */
 async function projectRunBy(access: ChapterAccess, id: number) {
@@ -344,6 +345,7 @@ export const adminProjectsRouter = {
     const projects = await prisma.workItem.findMany({
       where: {
         type: WorkItemType.PROJECT,
+        ...NOT_STANDING,
         nationalChapterId: chapterFilter(context.access),
         status: ProjectStatus.in_progress,
         children: {

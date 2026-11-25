@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { staffProcedure } from '../../procedures'
 import { chapterFilter } from '@/lib/chapter-access-server'
 import { InterestStatus, WorkItemType } from '@/generated/prisma/enums'
+import { NOT_STANDING } from '@/lib/requests'
 
 export const adminInterestsRouter = {
   list: staffProcedure
@@ -18,6 +19,7 @@ export const adminInterestsRouter = {
         where: {
           workItem: {
             type: WorkItemType.PROJECT,
+            ...NOT_STANDING,
             nationalChapterId: chapterFilter(context.access, input.chapter),
           },
           ...(input.status ? { status: input.status } : {}),

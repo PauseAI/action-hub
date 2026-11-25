@@ -145,7 +145,12 @@ type ScopedProject = {
   creatorId: number | null
   assigneeId: number | null
   nationalChapterId: number | null
+  /** Global requests (lib/requests.ts) are in every chapter's scope. */
+  standingRequests?: boolean
 }
+
+/** The holding pool's Requests for help project, which every chapter sees. */
+const GLOBAL_REQUESTS = { standingRequests: true, nationalChapterId: null } as const
 
 /** Is this project in a chapter other than the viewer's? */
 export function isOutsideChapter(
@@ -179,6 +184,7 @@ export async function resolveProjectPrivy(
   const chapter =
     team ||
     !isOutsideChapter(project, viewer.nationalChapterId) ||
+    (project.standingRequests === true && project.nationalChapterId === null) ||
     (await isOnProject(project.id, viewer.id))
   return { team, chapter }
 }
@@ -214,6 +220,7 @@ export function projectScopeSql(viewer: ProjectViewer): Prisma.Sql {
       : Prisma.sql`national_chapter_id = ${viewer.nationalChapterId}`
   return Prisma.sql`${team} AND (
     ${chapter}
+    OR (standing_requests AND national_chapter_id IS NULL)
     OR ${involved}
     OR id IN (SELECT work_item_id FROM work_item_interests WHERE volunteer_id = ${id})
     OR id IN (SELECT parent_id FROM work_items WHERE assignee_id = ${id} AND parent_id IS NOT NULL)
@@ -242,6 +249,7 @@ export function projectScopeWhere(viewer: ProjectViewer): Prisma.WorkItemWhereIn
       {
         OR: [
           { nationalChapterId: viewer.nationalChapterId },
+          GLOBAL_REQUESTS,
           ...involved,
           { interests: { some: { volunteerId: id } } },
           { children: { some: { assigneeId: id } } },
@@ -282,6 +290,7 @@ type ClaimProject = {
   teamId: number | null
   assigneeId: number | null
   alwaysAskToJoin: boolean
+  standingRequests: boolean
 }
 
 /**
@@ -314,6 +323,8 @@ export async function resolveClaimViewers(
   return (p) => {
     const onProject =
       Boolean(volunteer.isAdmin) ||
+      // Anyone takes a request for help straight away (lib/requests.ts).
+      p.standingRequests ||
       p.assigneeId === volunteer.id ||
       (p.teamId !== null && myTeams.has(p.teamId)) ||
       statusOn.get(p.id) === InterestStatus.accepted
@@ -413,6 +424,7 @@ export type EnrichedProject = ScheduleFieldsLike & {
   autoAcceptTasks: boolean
   alwaysAskToJoin: boolean
   showTimeline: boolean
+  standingRequests: boolean
   outcome: string | null
   outcomeNotes: string | null
   completedAt: Date | null
@@ -474,6 +486,7 @@ export function withProjectExtras(
     autoAcceptTasks: p.autoAcceptTasks,
     alwaysAskToJoin: p.alwaysAskToJoin,
     showTimeline: p.showTimeline,
+    standingRequests: p.standingRequests,
     // Derived, not stored — see isSeekingOwner() in lib/project-status.ts.
     isSeekingOwner: isSeekingOwner(p),
     // An owned project with an empty backlog. Surfaced as a badge rather than a status:

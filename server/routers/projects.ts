@@ -294,9 +294,11 @@ async function requestToJoin(
  * it waits for an answer, which joining as a member would quietly drop.
  */
 async function joinsOnFastTrack(
-  project: { id: number; alwaysAskToJoin: boolean },
+  project: { id: number; alwaysAskToJoin: boolean; standingRequests: boolean },
   volunteerId: number,
 ): Promise<boolean> {
+  // Requests for help are open to everyone (lib/requests.ts).
+  if (project.standingRequests) return true
   if (project.alwaysAskToJoin) return false
   const [volunteer, leadOffer] = await Promise.all([
     prisma.volunteer.findUnique({ where: { id: volunteerId }, select: { fastTrack: true } }),
@@ -332,6 +334,29 @@ async function tellOfFastTrackStart(
       task.id,
     )
   }
+}
+
+/** Tells whoever asked for help that someone has taken their request, or come to help on it. */
+async function tellAsker(
+  project: { id: number; standingRequests: boolean },
+  task: { id: number; title: string; creatorId: number | null },
+  volunteer: { id: number; name: string },
+  asHelper: boolean,
+): Promise<void> {
+  if (!project.standingRequests || task.creatorId === null || task.creatorId === volunteer.id) {
+    return
+  }
+  await notifyUser(
+    task.creatorId,
+    'request_taken',
+    asHelper
+      ? `${volunteer.name} is helping on your request '${task.title}'`
+      : `${volunteer.name} has taken your request '${task.title}'`,
+    'You review the work when they hand it in.',
+    `/projects/${project.id}/tasks/${task.id}`,
+    undefined,
+    task.id,
+  )
 }
 
 /**
@@ -604,6 +629,7 @@ async function joinTaskAsHelper(
   }
 
   await closeOffersOnFullTask(projectId, taskId)
+  await tellAsker(project, task, volunteer, true)
   // On fast track the owner has heard already; only a lead other than the owner hears again.
   if (!fastTracked || task.assigneeId !== null) {
     await tellLeadAboutHelpers(
@@ -803,6 +829,14 @@ async function addTaskHelper(
 }
 
 /** A submitted task the volunteer may accept or send back: the project's owner, a deputy or an admin. */
+/** Who reviews the work handed in on a task: on a request, whoever asked; else the owner. */
+function reviewerOf(
+  project: { standingRequests: boolean; assigneeId: number | null },
+  task: { creatorId: number | null },
+): number | null {
+  return project.standingRequests ? task.creatorId : project.assigneeId
+}
+
 async function findTaskToReview(
   projectId: number,
   taskId: number,
@@ -810,12 +844,14 @@ async function findTaskToReview(
   access: ChapterAccess,
 ) {
   const found = await findProjectTask(projectId, taskId)
-  const resource = await projectResource(found.project, volunteer.id)
+  const resource = await taskResource(found.project, found.task, volunteer.id)
   assertCan(
     { id: volunteer.id, access },
     'task.manage',
     resource,
-    'Only the project owner or a deputy can review this task',
+    found.project.standingRequests
+      ? 'Only whoever asked for help, or chapter staff, can review this request'
+      : 'Only the project owner or a deputy can review this task',
   )
   const isDeputy = resource.standing.deputy
   if (found.task.status !== TaskStatus.under_review) {
@@ -984,7 +1020,10 @@ export const projectsRouter = {
       })
       const viewerTeamIds = new Set(teamMemberships.map((m) => m.teamId))
 
-      const conditions: Prisma.Sql[] = [Prisma.sql`type = ${WorkItemType.PROJECT}`]
+      const conditions: Prisma.Sql[] = [
+        Prisma.sql`type = ${WorkItemType.PROJECT}`,
+        Prisma.sql`NOT standing_requests`,
+      ]
 
       if (input.status) {
         conditions.push(Prisma.sql`status = ${input.status}`)
@@ -1139,6 +1178,7 @@ export const projectsRouter = {
 
       const sharedConditions: Prisma.Sql[] = [
         Prisma.sql`type = ${WorkItemType.PROJECT}`,
+        Prisma.sql`NOT standing_requests`,
         Prisma.raw(
           `status NOT IN ('${ProjectStatus.archived}', ${UNAPPROVED_STATUSES.map((s) => `'${s}'`).join(', ')})`,
         ),
@@ -1578,6 +1618,7 @@ export const projectsRouter = {
       // `lastDoneAt` changes whenever a task is done again, which brings back a dismissed ask.
       const allTasksDone =
         can(viewer, 'project.changeStatus', resource) &&
+        !project.standingRequests &&
         project.status === ProjectStatus.in_progress &&
         sortedTasks.length > 0 &&
         sortedTasks.every((t) => t.status === TaskStatus.completed)
@@ -1873,6 +1914,9 @@ export const projectsRouter = {
       }
       const body: typeof input = locked ? { id: input.id, status: input.status } : input
       const newStatus = body.status
+      if (project.standingRequests && newStatus !== undefined && newStatus !== project.status) {
+        throw new ORPCError('BAD_REQUEST', { message: 'Requests for help never finish' })
+      }
       const reopening = locked && !isProjectLocked({ status: newStatus as string })
 
       // Until an admin has triaged it, a proposal's status is the admins' to change; the
@@ -2140,6 +2184,9 @@ export const projectsRouter = {
         project,
         'Only an admin can delete a project',
       )
+      if (project.standingRequests) {
+        throw new ORPCError('BAD_REQUEST', { message: 'Requests for help cannot be deleted' })
+      }
       await prisma.workItem.delete({ where: { id: input.id } })
       return { message: `Project '${project.title}' deleted` }
     }),
@@ -2177,6 +2224,7 @@ export const projectsRouter = {
           id: input.projectId,
           type: WorkItemType.PROJECT,
           assigneeId: null,
+          standingRequests: false,
           status: { in: SEEKING_OWNER_STATUSES },
         },
       })
@@ -3053,6 +3101,8 @@ export const projectsRouter = {
         autoAcceptTasks: project.autoAcceptTasks,
         projectTitle: project.title,
         projectOwnerId: project.assigneeId,
+        isRequest: project.standingRequests,
+        reviewerId: reviewerOf(project, task),
         projectStatus: project.status,
         projectCompletedAt: project.completedAt,
         canClaim,
@@ -3504,6 +3554,8 @@ export const projectsRouter = {
         }
       }
 
+      if (isSelfClaim) await tellAsker(project, task, volunteer, false)
+
       if (releasedFrom !== null && releasedFrom !== volunteer.id) {
         await tellPreviousAssignee(task, null, 'released')
         await clearNotifications('task_needs_decision', task.id)
@@ -3560,7 +3612,7 @@ export const projectsRouter = {
         throw new ORPCError('BAD_REQUEST', { message: 'Say what you did or add a link to it' })
       }
 
-      const reviewerId = project.assigneeId
+      const reviewerId = reviewerOf(project, task)
       const accepted = !awaitsOwnerReview(
         { autoAcceptTasks: project.autoAcceptTasks, ownerId: reviewerId },
         can(viewer, 'task.manage', resource),

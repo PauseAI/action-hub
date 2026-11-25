@@ -25,6 +25,7 @@ import SubmissionAskFields, {
 import SubmittedWork, { type Submission } from '@/components/SubmittedWork'
 import RequestChangesButton from '@/components/RequestChangesButton'
 import QuickTaskReviewDialog from '@/components/QuickTaskReviewDialog'
+import AskForHelpButton from '@/components/AskForHelpButton'
 import {
   PROJECT_TASK_CLAIMED_MESSAGE,
   QUICK_TASK_CLAIMED_MESSAGE,
@@ -113,6 +114,8 @@ const SKILL_CHIP_CLASSES =
 const ASSIGNEE: WorkViewer = { isAssignee: true, canReview: false }
 const ONLOOKER: WorkViewer = { isAssignee: false, canReview: false }
 const ADMIN: WorkViewer = { isAssignee: false, canReview: true }
+/** Whoever asked for help reviews the work on their request. */
+const ASKER: WorkViewer = ADMIN
 
 // One card shape shared by every quick-task list — volunteer or admin, standalone quick
 // task or featured project task. What differs between them is the meta/description
@@ -187,7 +190,7 @@ export default function QuickTasksPage() {
 
   // A chapter's staff run its quick tasks, as a global admin runs everyone's.
   return user.isAdmin || user.access.role ? (
-    <AdminQuickTasksView />
+    <AdminQuickTasksView user={user} />
   ) : (
     <VolunteerQuickTasksView user={user} />
   )
@@ -213,9 +216,12 @@ function VolunteerQuickTasksView({ user }: { user: ApprovedUser }) {
     void queryClient.invalidateQueries({ queryKey: orpc.my.quickTasks.key() })
   }
 
-  // Opens on my own tasks when there are any; a claim moves me there to see it land.
+  const { data: myRequests = [] } = useQuery({ ...orpc.requests.mine.queryOptions() })
+  const mineCount = tasks.length + myRequests.length
+
+  // Opens on my own tasks or requests when there are any; a claim moves me there to see it land.
   const [chosenTab, setChosenTab] = useState<'mine' | 'open' | null>(null)
-  const tab = chosenTab ?? (tasks.length > 0 ? 'mine' : 'open')
+  const tab = chosenTab ?? (mineCount > 0 ? 'mine' : 'open')
 
   const claimQuickMutation = useMutation({
     ...orpc.quickTasks.claim.mutationOptions(),
@@ -256,13 +262,16 @@ function VolunteerQuickTasksView({ user }: { user: ApprovedUser }) {
   return (
     <>
       <main className="container py-5 pb-15">
-        <H1>Quick tasks</H1>
+        <div className="flex justify-between items-center gap-3 flex-wrap mb-3">
+          <H1 className="m-0">Quick tasks</H1>
+          <AskForHelpButton chapterName={user.chapter?.name ?? null} />
+        </div>
         <P className="text-text-light mb-4">
           Small, self-contained tasks to help you get started and make an impact quickly.
         </P>
         <Tabs
           tabs={[
-            { key: 'mine', label: `Mine${tasks.length ? ` (${tasks.length})` : ''}` },
+            { key: 'mine', label: `Mine${mineCount ? ` (${mineCount})` : ''}` },
             {
               key: 'open',
               label: `Open${availableTasks.length ? ` (${availableTasks.length})` : ''}`,
@@ -275,7 +284,8 @@ function VolunteerQuickTasksView({ user }: { user: ApprovedUser }) {
         {/* The two lists are separate landmarks: a task moves between them when it is
             claimed, and both refetch independently, so anything addressing "the card for
             task X" needs to say which list it means. */}
-        {tab === 'mine' && (
+        {/* Someone who has only asked for help sees just their requests. */}
+        {tab === 'mine' && (tasks.length > 0 || myRequests.length === 0) && (
           <section aria-labelledby="my-quick-tasks">
             <H2 id="my-quick-tasks" className="mt-0">
               My quick tasks
@@ -352,6 +362,43 @@ function VolunteerQuickTasksView({ user }: { user: ApprovedUser }) {
           </section>
         )}
 
+        {tab === 'mine' && myRequests.length > 0 && (
+          <section aria-labelledby="my-requests" className={tasks.length > 0 ? 'mt-8' : ''}>
+            <H2 id="my-requests" className="mt-0">
+              Your requests for help
+            </H2>
+            {myRequests.map((r) => (
+              <QuickTaskCard
+                key={`my-request-${r.id}`}
+                title={r.title}
+                titleHref={`/projects/${r.projectId}/tasks/${r.id}`}
+                status={r.status}
+                viewer={ASKER}
+                description={r.description}
+                meta={[
+                  <span key="taken" className="text-text-light text-sm">
+                    {r.takenBy ? `Taken by ${r.takenBy.name}` : 'Nobody has taken it yet'}
+                  </span>,
+                  r.global && (
+                    <span key="global" className={SKILL_CHIP_CLASSES}>
+                      Every chapter
+                    </span>
+                  ),
+                  r.deadline && (
+                    <DueChip
+                      key="deadline"
+                      deadline={r.deadline}
+                      done={handedIn(r.status)}
+                      viewer={ASKER}
+                      className="text-sm"
+                    />
+                  ),
+                ]}
+              />
+            ))}
+          </section>
+        )}
+
         {tab === 'open' && (
           <section aria-labelledby="browse-quick-tasks">
             <H2 id="browse-quick-tasks" className="mt-0">
@@ -413,6 +460,58 @@ function VolunteerQuickTasksView({ user }: { user: ApprovedUser }) {
                       }
                     >
                       {claimQuickMutation.isPending && claimQuickMutation.variables?.id === task.id
+                        ? CLAIMING
+                        : CLAIM_TASK}
+                    </Button>
+                  </QuickTaskCard>
+                ) : task.kind === 'request' ? (
+                  <QuickTaskCard
+                    key={`request-${task.id}`}
+                    title={task.title}
+                    titleHref={`/projects/${task.projectId}/tasks/${task.id}`}
+                    status="not_started"
+                    viewer={ONLOOKER}
+                    description={task.description}
+                    meta={[
+                      <span key="asked" className="text-sm">
+                        Asked by {task.askedBy?.name ?? 'PauseAI'}
+                      </span>,
+                      task.global && (
+                        <span key="global" className={SKILL_CHIP_CLASSES}>
+                          Every chapter
+                        </span>
+                      ),
+                      task.estimatedHours !== null && (
+                        <span key="hours" className="text-text-light text-sm">
+                          ~{task.estimatedHours}h
+                        </span>
+                      ),
+                      task.deadline && (
+                        <DueChip
+                          key="deadline"
+                          deadline={task.deadline}
+                          done={false}
+                          viewer={ONLOOKER}
+                          className="text-sm"
+                        />
+                      ),
+                    ]}
+                  >
+                    <Button
+                      onClick={() =>
+                        claimProjectTaskMutation.mutate({
+                          projectId: task.projectId,
+                          taskId: task.id,
+                          data: { assigneeId: user.id },
+                        })
+                      }
+                      disabled={
+                        claimProjectTaskMutation.isPending &&
+                        claimProjectTaskMutation.variables?.taskId === task.id
+                      }
+                    >
+                      {claimProjectTaskMutation.isPending &&
+                      claimProjectTaskMutation.variables?.taskId === task.id
                         ? CLAIMING
                         : CLAIM_TASK}
                     </Button>
@@ -536,7 +635,7 @@ function VolunteerQuickTasksView({ user }: { user: ApprovedUser }) {
   )
 }
 
-function AdminQuickTasksView() {
+function AdminQuickTasksView({ user }: { user: ApprovedUser }) {
   const queryClient = useQueryClient()
   const {
     value: statusFilter,
@@ -794,7 +893,10 @@ function AdminQuickTasksView() {
       <main className="container py-5 pb-15">
         <div className="flex justify-between items-center mb-3">
           <H1>Quick tasks</H1>
-          <Button onClick={() => setShowCreate(true)}>Create task</Button>
+          <div className="flex gap-3 flex-wrap">
+            <AskForHelpButton chapterName={user.chapter?.name ?? null} />
+            <Button onClick={() => setShowCreate(true)}>Create task</Button>
+          </div>
         </div>
 
         <P className="text-text-light mb-6">

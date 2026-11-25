@@ -9,6 +9,9 @@ import {
   createTask,
   createQuickTask,
   createSkill,
+  createChapter,
+  createChapterLead,
+  createMember,
 } from '@/test/factories'
 import { renderApp } from '@/test/render'
 import { navigation } from '@/test/next-navigation'
@@ -528,5 +531,103 @@ describe('quick tasks — admin view', () => {
     await userEvent.type(screen.getByLabelText('Title'), 'x')
     fireEvent.submit(screen.getByLabelText('Title').closest('form')!)
     await screen.findByText('Unauthorized')
+  })
+})
+
+describe('requests for help', () => {
+  it('asks for help, lists the request for others to take, and shows it to the asker', async () => {
+    const chapter = await createChapter()
+    const asker = await createMember(chapter, { name: 'Ada Asker' })
+    const taker = await createMember(chapter, { name: 'Tom Taker' })
+    await renderApp(<QuickTasksPage />, { as: asker })
+    await userEvent.click(await screen.findByRole('button', { name: '+ Ask for help' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Ask for help' })
+    expect(
+      within(dialog).getByText(new RegExp(`Anyone in ${chapter.name} can take it`)),
+    ).toBeInTheDocument()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: '+ Ask for help' }))
+    const again = await screen.findByRole('dialog', { name: 'Ask for help' })
+    // A request the server refuses says why, and the form stays open.
+    fireEvent.submit(within(again).getByLabelText('What do you need?').closest('form')!)
+    await screen.findByText('Title is required')
+    await userEvent.type(within(again).getByLabelText('What do you need?'), 'Proofread the flyer')
+    await userEvent.type(within(again).getByLabelText('Details'), 'Two pages')
+    await userEvent.type(within(again).getByLabelText('Hours, roughly'), '2')
+    fireEvent.change(within(again).getByLabelText('Needed by'), {
+      target: { value: '2099-03-04' },
+    })
+    await userEvent.type(within(again).getByLabelText('Helpers as well'), '1')
+    await userEvent.click(within(again).getByText(/Ask people in every chapter/))
+    expect(within(again).getByText(/Anyone in any chapter can take it/)).toBeInTheDocument()
+    await userEvent.click(within(again).getByText(/Ask people in every chapter/))
+    await userEvent.click(within(again).getByRole('button', { name: 'Post request' }))
+    const request = await waitFor(async () =>
+      prisma.workItem.findFirstOrThrow({ where: { title: 'Proofread the flyer' } }),
+    )
+    expect(request).toMatchObject({
+      creatorId: asker.id,
+      description: 'Two pages',
+      estimatedHours: 2,
+      helpersWanted: 1,
+    })
+    await waitFor(() =>
+      expect(navigation.push).toHaveBeenCalledWith(
+        `/projects/${request.parentId}/tasks/${request.id}`,
+      ),
+    )
+    cleanup()
+
+    await renderApp(<QuickTasksPage />, { as: taker })
+    const card = within(
+      (await screen.findByText('Proofread the flyer')).closest('[role=article]') as HTMLElement,
+    )
+    expect(card.getByText('Asked by Ada Asker')).toBeInTheDocument()
+    expect(card.getByText('~2h')).toBeInTheDocument()
+    expect(card.getByText('Due 4 Mar 2099')).toBeInTheDocument()
+    await userEvent.click(card.getByRole('button', { name: 'Claim task' }))
+    await waitFor(async () => expect((await row(request.id)).assigneeId).toBe(taker.id))
+    cleanup()
+
+    await renderApp(<QuickTasksPage />, { as: asker })
+    const mine = (await screen.findByRole('heading', { name: 'Your requests for help' })).closest(
+      'section',
+    )!
+    expect(within(mine).getByText('Taken by Tom Taker')).toBeInTheDocument()
+    expect(within(mine).getByRole('link', { name: 'Proofread the flyer' })).toHaveAttribute(
+      'href',
+      `/projects/${request.parentId}/tasks/${request.id}`,
+    )
+  })
+
+  it('asks everyone from the holding pool, and lists global requests as such', async () => {
+    const pooled = await createVolunteer({ name: 'Pat Pool' })
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter)
+    await renderApp(<QuickTasksPage />, { as: pooled })
+    await userEvent.click(await screen.findByRole('button', { name: '+ Ask for help' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Ask for help' })
+    expect(within(dialog).queryByText(/Ask people in every chapter/)).toBeNull()
+    await userEvent.type(within(dialog).getByLabelText('What do you need?'), 'Check a sheet')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Post request' }))
+    await waitFor(() => expect(navigation.push).toHaveBeenCalled())
+    cleanup()
+
+    const member = await createMember(chapter)
+    await renderApp(<QuickTasksPage />, { as: member })
+    await userEvent.click(await screen.findByRole('tab', { name: /^Open/ }))
+    const card = within(
+      (await screen.findByText('Check a sheet')).closest('[role=article]') as HTMLElement,
+    )
+    expect(card.getByText('Every chapter')).toBeInTheDocument()
+    expect(card.getByText('Asked by Pat Pool')).toBeInTheDocument()
+    cleanup()
+
+    // Chapter staff run quick tasks here, and ask for help too.
+    await renderApp(<QuickTasksPage />, { as: lead })
+    expect(await screen.findByRole('button', { name: '+ Ask for help' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Create task' })).toBeInTheDocument()
   })
 })

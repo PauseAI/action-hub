@@ -219,6 +219,12 @@ export const ROLES = {
     heldBy: 'Whoever added the task',
     grants: ['task.delete'],
   },
+  requester: {
+    scope: 'task',
+    name: 'Requester',
+    heldBy: 'Whoever asked for help, on their request in a Requests for help project',
+    grants: ['task.manage', 'task.delete', 'task.removeHelper'],
+  },
 } as const satisfies Record<string, RoleInfo>
 
 export type Role = keyof typeof ROLES
@@ -231,6 +237,8 @@ export type ProjectFacts = {
   assigneeId: number | null
   creatorId: number | null
   status: string
+  /** A Requests for help project (lib/requests.ts). */
+  standingRequests: boolean
 }
 
 /** What the database says about the viewer on a project; `loadStanding` reads it. */
@@ -290,7 +298,9 @@ export function rolesOn(viewer: Viewer, resource: Resource): Role[] {
     case 'task': {
       const roles = projectRoles(viewer, resource.project, resource.standing)
       if (resource.task.assigneeId === viewer.id) roles.push('taskHolder')
-      if (resource.task.creatorId === viewer.id) roles.push('taskCreator')
+      if (resource.task.creatorId === viewer.id) {
+        roles.push(resource.project.standingRequests ? 'requester' : 'taskCreator')
+      }
       return roles
     }
   }

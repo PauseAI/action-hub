@@ -20,6 +20,7 @@ const project: ProjectFacts = {
   assigneeId: 2,
   creatorId: 3,
   status: 'in_progress',
+  standingRequests: false,
 }
 const on = (overrides: Partial<ProjectFacts> = {}, standing = NO_STANDING): Resource => ({
   type: 'project',
@@ -84,6 +85,19 @@ describe('rolesOn', () => {
     }
     expect(rolesOn(volunteer(5), task)).toEqual(['projectMember', 'taskHolder', 'taskCreator'])
     expect(rolesOn(volunteer(2), { ...task, standing: NO_STANDING })).toEqual(['projectOwner'])
+  })
+
+  it('lets whoever asked for help run their own request, and not anyone else’s', () => {
+    const request = (creatorId: number): Resource => ({
+      type: 'task',
+      project: { ...project, assigneeId: null, creatorId: null, standingRequests: true },
+      standing: NO_STANDING,
+      task: { assigneeId: null, creatorId },
+    })
+    expect(rolesOn(volunteer(5), request(5))).toEqual(['requester'])
+    expect(can(volunteer(5), 'task.manage', request(5))).toBe(true)
+    expect(can(volunteer(5), 'task.manage', request(6))).toBe(false)
+    expect(can(volunteer(5), 'task.assign', request(5))).toBe(false)
   })
 })
 
