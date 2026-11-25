@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { afterEach, describe, it, expect } from 'vitest'
 import { prisma } from '@/lib/prisma'
 import {
   chapterFor,
@@ -7,6 +7,7 @@ import {
   createMember,
   createVolunteer,
 } from '@/test/factories'
+import { countryFlag } from '@/lib/flags'
 import { anon, clientAs } from '@/test/rpc'
 
 const enabled = async (code: string) =>
@@ -15,18 +16,35 @@ const enabled = async (code: string) =>
 const setEnabled = (code: string, on: boolean) =>
   prisma.country.update({ where: { code }, data: { enabled: on } })
 
+afterEach(async () => {
+  await prisma.country.updateMany({ data: { enabled: true } })
+})
+
 describe('countries.list', () => {
-  it('gives anyone every country by name, the ones the migration left disabled included', async () => {
+  it('gives anyone every country by name, a disabled one included', async () => {
+    await setEnabled('Austria', false)
     const countries = await anon().countries.list()
     expect(countries).toContainEqual({ code: 'UK', name: 'United Kingdom', enabled: true })
     expect(countries).toContainEqual({ code: 'Austria', name: 'Austria', enabled: false })
-    expect(countries.map((c) => c.name)).toEqual(countries.map((c) => c.name).sort())
+    const names = countries.map((c) => c.name)
+    expect(names).toEqual(names.toSorted(new Intl.Collator('en').compare))
+  })
+
+  it('offers every country in the world, each with its flag', async () => {
+    const countries = await anon().countries.list()
+    expect(countries.length).toBeGreaterThanOrEqual(198)
+    expect(countries.filter((c) => !c.enabled)).toEqual([])
+    for (const name of ['Peru', 'Vietnam', "Côte d'Ivoire", 'Austria', 'Brazil']) {
+      expect(countries.map((c) => c.name)).toContain(name)
+    }
+    expect(countries.filter((c) => !countryFlag(c.code)).map((c) => c.code)).toEqual([])
   })
 })
 
 describe('admin.countries.setEnabled', () => {
   it('is for global admins only', async () => {
     const lead = await createChapterLead(await chapterFor('UK'))
+    await setEnabled('Austria', false)
     const input = { code: 'Austria', enabled: true }
     await expect(anon().admin.countries.setEnabled(input)).rejects.toMatchObject({
       code: 'UNAUTHORIZED',
@@ -74,7 +92,6 @@ describe('a disabled country', () => {
     expect((await prisma.volunteer.findUniqueOrThrow({ where: { id: already.id } })).country).toBe(
       'Nigeria',
     )
-    await setEnabled('Nigeria', true)
   })
 
   it('is enabled when a local group suggested there is accepted', async () => {
@@ -98,6 +115,7 @@ describe('a disabled country', () => {
   })
 
   it('can have a chapter opened for it, which enables it', async () => {
+    await setEnabled('Brazil', false)
     const admin = clientAs(await createAdmin())
     const { availableCountries } = await admin.admin.chapters.list()
     expect(availableCountries).toContainEqual({ value: 'Brazil', label: 'Brazil' })

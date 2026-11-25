@@ -61,22 +61,22 @@ describe('platform settings', () => {
     expect(within(countries).getByText('Austria').parentElement).not.toHaveTextContent('chapter')
 
     const austria = within(countries).getByRole('checkbox', { name: 'Austria' })
-    expect(austria).not.toBeChecked()
-    await userEvent.click(austria)
-    await screen.findByText('Austria enabled')
-    await waitFor(() => expect(austria).toBeChecked())
-    expect((await prisma.country.findUniqueOrThrow({ where: { code: 'Austria' } })).enabled).toBe(
-      true,
-    )
+    expect(austria).toBeChecked()
     await userEvent.click(austria)
     await screen.findByText('Austria disabled')
     await waitFor(() => expect(austria).not.toBeChecked())
+    expect((await prisma.country.findUniqueOrThrow({ where: { code: 'Austria' } })).enabled).toBe(
+      false,
+    )
+    await userEvent.click(austria)
+    await screen.findByText('Austria enabled')
+    await waitFor(() => expect(austria).toBeChecked())
 
     localStorage.setItem('authToken', 'stale')
     await userEvent.click(austria)
     await screen.findByText('Failed to save settings')
     expect((await prisma.country.findUniqueOrThrow({ where: { code: 'Austria' } })).enabled).toBe(
-      false,
+      true,
     )
   })
 })

@@ -83,10 +83,10 @@ describe('settings — profile tab', () => {
   })
 
   it('still names a country that has since been disabled', async () => {
-    await prisma.country.create({ data: { code: 'XK', name: 'Kosovo', enabled: false } })
-    const vol = await createVolunteer({ country: 'XK' })
+    await prisma.country.create({ data: { code: 'ZB', name: 'Zubrowka', enabled: false } })
+    const vol = await createVolunteer({ country: 'ZB' })
     await renderApp(<SettingsPage />, { as: vol, url: '/settings' })
-    expect(await screen.findByText('Kosovo · Holding pool')).toBeInTheDocument()
+    expect(await screen.findByText('Zubrowka · Holding pool')).toBeInTheDocument()
   })
 
   it('lets a needs-info applicant update and resubmit their application', async () => {
@@ -271,6 +271,8 @@ describe('settings — notifications and privacy tabs', () => {
     await userEvent.click(screen.getByRole('radio', { name: 'In-app only' }))
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
     await screen.findByText('Profile updated!')
+    // The toast shows while onSuccess is still refetching; the button reads "Saving…" until then.
+    await screen.findByRole('button', { name: 'Save changes' })
     expect(await me(vol.id)).toMatchObject({
       emailDigest: 'fortnightly',
       dailySummary: 'in_app_only',

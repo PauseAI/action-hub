@@ -72,7 +72,7 @@ test.describe('Admin Platform Settings', () => {
     baseUrl,
     snap,
   }) => {
-    // Austria starts disabled; no other spec uses it, and the test leaves it disabled.
+    // No other spec uses Austria, and this test leaves it disabled.
     const api = createApiClient(baseUrl, readAdminToken(baseUrl))
     await api.admin.countries.setEnabled({ code: 'Austria', enabled: true })
 
