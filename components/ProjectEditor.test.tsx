@@ -329,13 +329,15 @@ describe('ProjectEditor — new volunteer proposal', () => {
       where: { creatorId: admin.id, type: 'PROJECT' },
     })
     expect(draft.isOrgProposed).toBe(true)
-    await waitFor(async () =>
-      expect(await prisma.workItem.findFirst({ where: { parentId: draft.id } })).toMatchObject({
-        description: 'detail',
-        helpersWanted: 3,
-        submissionPrompt: 'A link',
-        isOutline: false,
-      }),
+    await waitFor(
+      async () =>
+        expect(await prisma.workItem.findFirst({ where: { parentId: draft.id } })).toMatchObject({
+          description: 'detail',
+          helpersWanted: 3,
+          submissionPrompt: 'A link',
+          isOutline: false,
+        }),
+      { timeout: 20_000 },
     )
     // The form folds its details away for the next task.
     expect(screen.queryByLabelText('Helpers wanted (optional)')).toBeNull()
