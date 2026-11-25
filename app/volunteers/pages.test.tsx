@@ -19,6 +19,7 @@ import {
   chapterFor,
 } from '@/test/factories'
 import { renderApp } from '@/test/render'
+import { clientAs } from '@/test/rpc'
 import { queryClient } from '@/lib/query-client'
 import { navigation } from '@/test/next-navigation'
 import { emails } from '@/test/fakes/email'
@@ -653,6 +654,49 @@ describe('volunteer profile', () => {
       `/admin/volunteers/${admin.id}`,
     )
     expect(screen.queryByRole('heading', { name: 'Manage' })).toBeNull()
+  })
+
+  it("shows a member's history to their chapter's staff once opened", async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter, { name: 'History Lead' })
+    const member = await createMember(chapter, { name: 'Has History' })
+    await openProfile(member, lead)
+    await userEvent.click(screen.getByText('History'))
+    expect(await screen.findByText('Nothing recorded yet.')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Make chapter deputy' }))
+    await confirmIn(
+      dialogNamed(`Make Has History a ${chapter.name} chapter deputy?`),
+      'Make chapter deputy',
+    )
+    await screen.findByText('Has History is now a deputy')
+    await clientAs(await createAdmin({ name: 'Global Person' })).admin.coordinators.appoint({
+      volunteerId: member.id,
+      remit: null,
+    })
+    await prisma.chapterAuditEvent.create({
+      data: { action: 'VOLUNTEER_REASSIGNED', targetVolunteerId: member.id },
+    })
+    cleanup()
+    queryClient.clear()
+    await openProfile(member, lead)
+    await userEvent.click(screen.getByText('History'))
+    const history = (await screen.findByText(/made them a deputy of/)).closest('ul') as HTMLElement
+    expect(history).toHaveTextContent(
+      `History Lead made them a deputy of the ${chapter.name} chapter`,
+    )
+    expect(history).toHaveTextContent('Global Person made them a coordinator')
+    expect(history).toHaveTextContent('Action Hub moved them to the holding pool')
+  })
+
+  it("says when a member's history cannot be loaded", async () => {
+    const chapter = await createChapter()
+    const member = await createMember(chapter, { name: 'Vanishing' })
+    await openProfile(member, await createChapterLead(chapter))
+    await prisma.volunteer.update({ where: { id: member.id }, data: { deletedAt: new Date() } })
+    await userEvent.click(screen.getByText('History'))
+    expect(screen.getByText('Loading…')).toBeInTheDocument()
+    expect(await screen.findByText('Their history could not be loaded.')).toBeInTheDocument()
   })
 
   it('shows a minimal profile, and a not-found state', async () => {

@@ -23,8 +23,8 @@ const EndorsementInputSchema = z.object({
 
 /** Throws unless the volunteer is in a chapter the caller runs. */
 async function assertRunsVolunteer(access: ChapterAccess, volunteerId: number) {
-  const target = await prisma.volunteer.findUnique({
-    where: { id: volunteerId },
+  const target = await prisma.volunteer.findFirst({
+    where: { id: volunteerId, deletedAt: null },
     select: { nationalChapterId: true },
   })
   if (!target || !canAdminChapter(access, target.nationalChapterId)) {
@@ -256,6 +256,32 @@ export const adminVolunteersRouter = {
         },
       })
       return { message: 'Skill endorsed' }
+    }),
+
+  /**
+   * What has been done to the member, newest first, from the chapter audit log: their roles,
+   * moves, and anything staff did to their account. For their chapter's staff or a global admin.
+   */
+  history: staffProcedure
+    .input(z.object({ volunteerId: z.number().int() }))
+    .handler(async ({ input, context }) => {
+      await assertRunsVolunteer(context.access, input.volunteerId)
+      const events = await prisma.chapterAuditEvent.findMany({
+        where: { targetVolunteerId: input.volunteerId },
+        include: {
+          actor: { select: { id: true, name: true } },
+          chapter: { select: { name: true } },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: MAX_DETAIL_ROWS,
+      })
+      return events.map((e) => ({
+        id: e.id,
+        action: e.action,
+        at: e.createdAt,
+        actor: e.actor,
+        chapterName: e.chapter?.name ?? null,
+      }))
     }),
 
   /** Pairs of accounts that look like one person; with `volunteerId`, that account's only. */

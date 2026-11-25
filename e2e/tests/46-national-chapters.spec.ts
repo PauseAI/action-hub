@@ -169,6 +169,12 @@ test.describe('National chapters', () => {
         timeout: 10_000,
       })
       await expect(page.getByRole('button', { name: 'Remove as chapter deputy' })).toBeVisible()
+      // The member's history, in the Manage panel, says who did it.
+      await page.getByText('History', { exact: true }).click()
+      await expect(page.getByText(/made them a deputy of the Germany chapter/)).toBeVisible({
+        timeout: 10_000,
+      })
+      await snap(page, 'member history')
 
       await page.goto(`${baseUrl}/admin`)
       await page.getByRole('link', { name: 'Germany chapter: deputies and members' }).click()

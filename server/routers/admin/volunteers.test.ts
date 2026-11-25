@@ -270,3 +270,35 @@ describe('admin.emailPreview', () => {
     })
   })
 })
+
+describe('admin.volunteers.history', () => {
+  it("lists what was done to a member, newest first, for their chapter's staff", async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter, { name: 'Hist Lead' })
+    const member = await createMember(chapter)
+    await clientAs(lead).admin.chapters.appointDeputy({
+      chapterId: chapter.id,
+      volunteerId: member.id,
+    })
+    await clientAs(lead).admin.chapters.removeDeputy({
+      chapterId: chapter.id,
+      volunteerId: member.id,
+    })
+    const events = await clientAs(await createChapterDeputy(chapter)).admin.volunteers.history({
+      volunteerId: member.id,
+    })
+    expect(events.map((e) => [e.action, e.actor?.name, e.chapterName])).toEqual([
+      ['DEPUTY_REMOVED', 'Hist Lead', chapter.name],
+      ['DEPUTY_APPOINTED', 'Hist Lead', chapter.name],
+    ])
+
+    await expect(
+      clientAs(await createChapterLead(await createChapter())).admin.volunteers.history({
+        volunteerId: member.id,
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    await expect(
+      clientAs(await createMember(chapter)).admin.volunteers.history({ volunteerId: member.id }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' })
+  })
+})
