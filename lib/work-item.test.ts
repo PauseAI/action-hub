@@ -282,6 +282,7 @@ describe('serializers', () => {
     const out = serializeTask({
       ...schedule,
       helpersWanted: null,
+      isOutline: false,
       id: 1,
       parentId: 2,
       title: 'T',

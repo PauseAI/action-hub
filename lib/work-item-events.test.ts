@@ -256,3 +256,22 @@ describe('describeEvent', () => {
     )
   })
 })
+
+describe('planning events', () => {
+  it('words an outline item planned into a task, a finished plan and new total hours', () => {
+    expect(say('edited', { isOutline: true }, { isOutline: false })).toBe(
+      'Sam planned this into a task',
+    )
+    expect(say('edited', { plannedAt: null }, { plannedAt: OCT_14 }, { itemType: 'PROJECT' })).toBe(
+      'Sam finished planning',
+    )
+    expect(
+      say(
+        'edited',
+        { estimatedTotalHours: null },
+        { estimatedTotalHours: 40 },
+        { itemType: 'PROJECT' },
+      ),
+    ).toBe('Sam changed the total hours')
+  })
+})

@@ -113,6 +113,7 @@ import {
   TERMINAL_STATUSES,
   UNAPPROVED_STATUSES,
   MAX_VOLUNTEER_DRAFTS,
+  projectStage,
   projectStatusLabel,
 } from '@/lib/project-status'
 import {
@@ -458,9 +459,19 @@ async function findProjectTask(projectId: number, taskId: number) {
 // helpers (lib/task-helpers.ts) through these, and none of the project-only steps (held tasks,
 // deputies, ownership) run.
 
+/** An outline item is a title waiting to be planned: nobody can take it, work on it or feature it. */
+function assertNotOutline(task: { isOutline: boolean }): void {
+  if (task.isOutline) {
+    throw new ORPCError('BAD_REQUEST', {
+      message: 'This is still an outline item. The owner needs to plan it into a task first',
+    })
+  }
+}
+
 /** Can't join, leave or change the helpers of a task that is handed in or done. */
-function assertTaskTakesHelpers(task: { status: string }): void {
+function assertTaskTakesHelpers(task: { status: string; isOutline: boolean }): void {
   assertTaskEditable(task)
+  assertNotOutline(task)
   if (task.status === TaskStatus.under_review) {
     throw new ORPCError('BAD_REQUEST', { message: 'This task has been handed in' })
   }
@@ -1361,6 +1372,7 @@ export const projectsRouter = {
           parentId: newProject.id,
           title: t.title,
           description: t.description ?? null,
+          isOutline: true,
           creatorId: volunteer.id,
         })),
       })
@@ -1446,9 +1458,15 @@ export const projectsRouter = {
         // lib/template-porting.ts).
         const newStatus =
           project.assigneeId === null ? ProjectStatus.ready : ProjectStatus.in_progress
+        // No review means no Planning stage either: the plan arrived whole.
+        const now = new Date()
+        await prisma.workItem.updateMany({
+          where: { parentId: project.id, type: WorkItemType.TASK, isOutline: true },
+          data: { isOutline: false, updatedAt: now },
+        })
         await updateWorkItem(
           project,
-          { status: newStatus, updatedAt: new Date() },
+          { status: newStatus, plannedAt: now, updatedAt: now },
           { actorId: volunteer.id, kind: 'status' },
         )
 
@@ -1888,6 +1906,50 @@ export const projectsRouter = {
       return { message: 'Project resubmitted for review' }
     }),
 
+  /**
+   * The owner (or staff) says the plan is ready: the project leaves Planning. It needs an owner
+   * and at least one real task; outline items may stay for later.
+   */
+  finishPlanning: approvedProcedure
+    .input(z.object({ id: z.number().int() }))
+    .use(projectEditable, (input) => input.id)
+    .use(asProjectAdmin, (input) => input.id)
+    .handler(async ({ input, context }) => {
+      const project = await prisma.workItem.findFirst({
+        where: { id: input.id, type: WorkItemType.PROJECT },
+      })
+      if (!project) throw new ORPCError('NOT_FOUND', { message: 'Project not found' })
+      assertCan(
+        viewerOf(context),
+        'project.manage',
+        await projectResource(project, context.volunteer.id),
+        'Only the project owner or an admin can finish planning',
+      )
+      if (projectStage(project) !== 'planning') {
+        throw new ORPCError('BAD_REQUEST', { message: 'This project is not being planned' })
+      }
+      if (project.assigneeId === null) {
+        throw new ORPCError('BAD_REQUEST', {
+          message: 'The project needs an owner before planning can finish',
+        })
+      }
+      const taskCount = await prisma.workItem.count({
+        where: { parentId: input.id, type: WorkItemType.TASK, isOutline: false },
+      })
+      if (taskCount === 0) {
+        throw new ORPCError('BAD_REQUEST', {
+          message: 'Plan at least one task before finishing planning',
+        })
+      }
+      const now = new Date()
+      await updateWorkItem(
+        project,
+        { plannedAt: now, updatedAt: now },
+        { actorId: context.volunteer.id },
+      )
+      return { message: 'Planning finished' }
+    }),
+
   update: approvedProcedure
     .input(z.object({ id: z.number().int() }).merge(UpdateProjectSchema))
     .use(asProjectAdmin, (input) => input.id)
@@ -1998,6 +2060,8 @@ export const projectsRouter = {
       }
       if (body.timeCommitmentHoursPerWeek !== undefined)
         data.timeCommitmentHoursPerWeek = body.timeCommitmentHoursPerWeek
+      if (body.estimatedTotalHours !== undefined)
+        data.estimatedTotalHours = body.estimatedTotalHours
       applyScheduleWrite(data, { startDate: body.startDate, durationDays: body.durationDays })
 
       // The project's deadline is a promise the owner makes, so a proposer who never owned the
@@ -2951,6 +3015,7 @@ export const projectsRouter = {
       const locked = isProjectLocked(project)
       const canClaim =
         !locked &&
+        !task.isOutline &&
         (can(viewer, 'task.assign', resource) ||
           !(await isBlockedFromClaiming(input.projectId, volunteer.id)))
 
@@ -3012,7 +3077,7 @@ export const projectsRouter = {
       })
       const isHelper = myHelperRow?.status === InterestStatus.accepted
       // Joining, leaving and removing helpers stop once the task is handed in (joinTaskAsHelper).
-      const takesHelpers = !locked && !handedIn(task.status)
+      const takesHelpers = !locked && !handedIn(task.status) && !task.isOutline
       const canJoinAsHelper =
         takesHelpers &&
         task.helpersWanted !== null &&
@@ -3157,6 +3222,12 @@ export const projectsRouter = {
         durationDays: input.durationDays ?? null,
         taskDeadline: input.deadline ?? null,
       })
+      // A volunteer's proposal is a skeleton: its tasks are outline items until it is planned.
+      // Org and template drafts skip review and Planning, so theirs are real from the start.
+      const isOutline =
+        projectStage(project) === 'proposal' &&
+        !project.isOrgProposed &&
+        project.templateOriginId === null
 
       const task = await prisma.$transaction(async (tx) => {
         const max = await tx.workItem.aggregate({
@@ -3171,11 +3242,12 @@ export const projectsRouter = {
             title: input.title,
             description: input.description ?? null,
             estimatedHours: input.estimatedHours ?? null,
-            featuredAsQuickTask: input.featuredAsQuickTask ?? false,
+            featuredAsQuickTask: !isOutline && (input.featuredAsQuickTask ?? false),
             submissionPrompt: input.submissionPrompt ?? null,
             submissionAsksLink: input.submissionAsksLink ?? false,
             helpersWanted: input.helpersWanted ?? null,
             timing: input.timing ?? TaskTiming.flexible,
+            isOutline,
             creatorId: volunteer.id,
             sortOrder: (max._max.sortOrder ?? 0) + 1,
             ...scheduleOnCreate,
@@ -3378,7 +3450,8 @@ export const projectsRouter = {
         input.data.isAnchor === undefined &&
         input.data.timing === undefined &&
         input.data.startDate === undefined &&
-        input.data.durationDays === undefined
+        input.data.durationDays === undefined &&
+        input.data.isOutline === undefined
       // Claiming sets the assignee only; the work starts when they press Start or post.
       const isSelfClaim =
         onlyTouchesStatusAndAssignee &&
@@ -3394,6 +3467,22 @@ export const projectsRouter = {
 
       if (input.data.isAnchor !== undefined) {
         assertCan(viewer, 'project.manage', resource, 'Only the project owner can set the key date')
+      }
+      // Planning an outline item into a task may set its details in the same save, but taking,
+      // starting or featuring it waits until it is a task.
+      if (
+        task.isOutline &&
+        input.data.isOutline !== false &&
+        ((newAssigneeId !== undefined && newAssigneeId !== null) ||
+          newStatus !== undefined ||
+          input.data.featuredAsQuickTask)
+      ) {
+        assertNotOutline(task)
+      }
+      if (input.data.isOutline === false && projectStage(project) === 'proposal') {
+        throw new ORPCError('BAD_REQUEST', {
+          message: 'Outline items are planned into tasks once the project is approved',
+        })
       }
 
       let fastTracked = false
@@ -3477,6 +3566,7 @@ export const projectsRouter = {
       if (input.data.submissionAsksLink !== undefined)
         data.submissionAsksLink = input.data.submissionAsksLink
       if (input.data.helpersWanted !== undefined) data.helpersWanted = input.data.helpersWanted
+      if (input.data.isOutline !== undefined) data.isOutline = input.data.isOutline
       if (input.data.isAnchor !== undefined) data.isAnchor = input.data.isAnchor
       if (input.data.timing !== undefined) data.timing = input.data.timing
       applyScheduleWrite(data, { ...input.data, taskDeadline: input.data.deadline })
@@ -3581,6 +3671,7 @@ export const projectsRouter = {
         await taskResource(project, task, context.volunteer.id),
         'Only the person doing this task can start it',
       )
+      assertNotOutline(task)
       if (task.status !== TaskStatus.not_started) {
         throw new ORPCError('BAD_REQUEST', { message: 'This task has already started' })
       }
@@ -3608,6 +3699,7 @@ export const projectsRouter = {
       const viewer = viewerOf(context)
       const resource = await taskResource(project, task, volunteer.id)
       assertCan(viewer, 'task.work', resource, 'Only the person doing this task can submit it')
+      assertNotOutline(task)
       if (task.status !== TaskStatus.in_progress && task.status !== TaskStatus.not_started) {
         throw new ORPCError('BAD_REQUEST', { message: 'This task has already been submitted' })
       }
@@ -3886,6 +3978,7 @@ export const projectsRouter = {
       )
       const isDeputy = resource.standing.deputy
       assertTaskEditable(task)
+      assertNotOutline(task)
 
       const assignee = await prisma.volunteer.findFirst({
         where: { id: input.assigneeId, deletedAt: null },

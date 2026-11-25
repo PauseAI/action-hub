@@ -435,3 +435,16 @@ export async function openProjectMore(page: Page): Promise<void> {
     .locator('summary', { hasText: 'More' })
     .click()
 }
+
+/** Plans every outline item of an approved proposal into a task, as its owner would in Planning. */
+export async function planOutlineViaApi(baseUrl: string, projectId: number): Promise<void> {
+  const adminApi = createApiClient(baseUrl, readAdminToken(baseUrl))
+  const project = await adminApi.projects.getById({ body: { id: projectId } })
+  const { tasks } = project.body as { tasks: { id: number; isOutline: boolean }[] }
+  for (const t of tasks.filter((t) => t.isOutline)) {
+    const planned = await adminApi.projects.updateTask({
+      body: { projectId, taskId: t.id, data: { isOutline: false } },
+    })
+    if (planned.status !== 200) throw new Error(`Planning failed: ${JSON.stringify(planned)}`)
+  }
+}

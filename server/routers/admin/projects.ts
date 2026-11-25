@@ -78,6 +78,7 @@ export const adminProjectsRouter = {
             : wantToOwn
               ? ProjectStatus.in_progress
               : ProjectStatus.ready,
+          plannedAt: saveAsDraft ? null : new Date(),
           assigneeId: wantToOwn ? admin.id : null,
           creatorId: admin.id,
           isOrgProposed: true,

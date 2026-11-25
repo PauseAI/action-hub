@@ -137,3 +137,22 @@ export function proposerDisplay(p: {
   const name = typeof p.proposedBy === 'string' ? p.proposedBy : p.proposedBy.name
   return { name, volunteerId: p.proposedById ?? null }
 }
+
+/**
+ * Where a project is in being planned, apart from its status. A Proposal is the skeleton sent
+ * for review: the idea, why and a rough outline. Planning is an approved project whose owner is
+ * still turning that outline into real tasks. Running is everything after Finish planning.
+ * Work may start during Planning, so the stage says nothing about progress.
+ */
+export type ProjectStage = 'proposal' | 'planning' | 'running'
+
+export function projectStage(p: { status: string; plannedAt: Date | string | null }): ProjectStage {
+  if (UNAPPROVED_STATUSES.includes(p.status)) return 'proposal'
+  return p.plannedAt === null ? 'planning' : 'running'
+}
+
+export const PROJECT_STAGE_LABELS: Record<ProjectStage, string> = {
+  proposal: 'Proposal',
+  planning: 'Planning',
+  running: 'Running',
+}

@@ -585,6 +585,11 @@ model WorkItem {
   urgency                    String?   @default("medium") // TODO: enum — low, medium, high
   estimatedDuration          String?   @map("estimated_duration")
   timeCommitmentHoursPerWeek Int?      @map("time_commitment_hours_per_week")
+  // The owner's estimate of the whole project's effort, for work that isn't spread evenly by week.
+  estimatedTotalHours        Int?      @map("estimated_total_hours")
+  // When the owner finished planning an approved project. Null on an approved project means it
+  // is still in Planning. See projectStage() in lib/project-status.ts.
+  plannedAt                  DateTime? @map("planned_at")
   collaborationLink          String?   @map("collaboration_link")
   isOrgProposed              Boolean?  @default(false) @map("is_org_proposed")
   // No `is_seeking_owner` column: it is derived from (status, assigneeId). See
@@ -610,6 +615,9 @@ model WorkItem {
   finalWarningSentAt  DateTime? @map("final_warning_sent_at")
   sortOrder           Int?      @default(0) @map("sort_order")
   featuredAsQuickTask Boolean?  @default(false) @map("featured_as_quick_task") // TASK only — also list on the Quick Tasks page
+  // TASK only: a rough outline item from the proposal, a title waiting to be planned into a
+  // real task. Nobody can join, take, start or feature it, and the schedule skips it.
+  isOutline           Boolean   @default(false) @map("is_outline")
 
   // Scheduling — applies to PROJECT and TASK alike, so it is not in either type-specific
   // block above. QUICK_TASK does not participate. See lib/schedule.ts.

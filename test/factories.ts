@@ -4,6 +4,7 @@ import { ApprovalStatus, WorkItemType, ProjectStatus } from '@/generated/prisma/
 import type { Prisma } from '@/generated/prisma/client'
 import { globalAdminEmail } from './admin-emails'
 import { requestsProjectFor } from '@/lib/requests'
+import { UNAPPROVED_STATUSES } from '@/lib/project-status'
 
 let seq = 0
 export const nextSeq = () => ++seq
@@ -45,12 +46,15 @@ export const createSuperAdmin = (overrides: Partial<Prisma.VolunteerUncheckedCre
 
 export async function createProject(overrides: Partial<Prisma.WorkItemUncheckedCreateInput> = {}) {
   const n = nextSeq()
+  const status = overrides.status ?? ProjectStatus.ready
   return prisma.workItem.create({
     data: {
       type: WorkItemType.PROJECT,
-      status: ProjectStatus.ready,
+      status,
       title: `Project ${n}`,
       description: 'A test project',
+      // An approved project is planned unless the test puts it in Planning (`plannedAt: null`).
+      plannedAt: UNAPPROVED_STATUSES.includes(status) ? null : new Date(),
       ...overrides,
     },
   })

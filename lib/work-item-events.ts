@@ -69,6 +69,9 @@ const TRACKED_FIELDS = [
   'outcomeNotes',
   'teamId',
   'timeCommitmentHoursPerWeek',
+  'estimatedTotalHours',
+  'isOutline',
+  'plannedAt',
   'isSeekingHelp',
   'autoAcceptTasks',
   'showTimeline',
@@ -244,6 +247,7 @@ const FIELD_NAMES: Record<string, string> = {
   outcomeNotes: 'outcome',
   teamId: 'team',
   timeCommitmentHoursPerWeek: 'time commitment',
+  estimatedTotalHours: 'total hours',
   isSeekingHelp: 'call for helpers',
   autoAcceptTasks: 'review setting',
   showTimeline: 'timeline setting',
@@ -276,6 +280,8 @@ function changePhrases(
     phrases.push(`moved this to ${statusLabel(itemType, after.status as string)}`)
   }
   if ('title' in after) phrases.push(`renamed this '${after.title as string}'`)
+  if (after.isOutline === false) phrases.push('planned this into a task')
+  if ('plannedAt' in after && after.plannedAt) phrases.push('finished planning')
   if ('isAnchor' in after) {
     phrases.push(after.isAnchor ? 'made this a key date' : 'took the key date off this')
   }
