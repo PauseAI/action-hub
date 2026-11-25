@@ -15,6 +15,16 @@ import { H1, H2 } from '@/components/Heading'
 import { P } from '@/components/Text'
 import FormLabel from '@/components/FormLabel'
 import Textarea from '@/components/ui/Textarea'
+import PersonName from '@/components/PersonName'
+
+/** Each step of an application's trail (`APPLICATION_STEPS`), as its History reads it. */
+const STEP_LABELS = {
+  APPLICATION_REVIEW_STARTED: 'Review started',
+  APPLICATION_INFO_REQUESTED: 'More information asked for',
+  APPLICATION_REJECTED: 'Rejected',
+  APPLICATION_REOPENED: 'Reopened',
+  APPLICATION_APPROVED: 'Approved',
+}
 
 export default function ApplicationReviewPage() {
   const { id } = useParams<{ id: string }>()
@@ -300,6 +310,30 @@ export default function ApplicationReviewPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {app.trail.length > 0 && (
+        <section
+          aria-labelledby="application-trail"
+          className="border-t border-brand-border pt-6 mt-6"
+        >
+          <H2 id="application-trail" className="text-base font-semibold mb-2">
+            History
+          </H2>
+          <ul className="list-none p-0 m-0 grid gap-1 text-sm">
+            {app.trail.map((step) => (
+              <li key={step.id}>
+                <span className="text-text-light">{formatDate(step.at)}</span>{' '}
+                {STEP_LABELS[step.action as keyof typeof STEP_LABELS]} by{' '}
+                {step.actor ? (
+                  <PersonName id={step.actor.id} name={step.actor.name} />
+                ) : (
+                  'a removed account'
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       <div className="border-t border-brand-border pt-6 mt-6">
