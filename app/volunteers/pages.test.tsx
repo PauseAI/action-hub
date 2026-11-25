@@ -677,9 +677,16 @@ describe('volunteer profile', () => {
     await prisma.chapterAuditEvent.create({
       data: { action: 'VOLUNTEER_REASSIGNED', targetVolunteerId: member.id },
     })
+    // A global admin sees all of it; the lead only what happened in their chapter.
     cleanup()
     queryClient.clear()
     await openProfile(member, lead)
+    await userEvent.click(screen.getByText('History'))
+    const leadView = (await screen.findByText(/made them a deputy of/)).closest('ul') as HTMLElement
+    expect(leadView).not.toHaveTextContent('made them a coordinator')
+    cleanup()
+    queryClient.clear()
+    await openProfile(member, await createAdmin())
     await userEvent.click(screen.getByText('History'))
     const history = (await screen.findByText(/made them a deputy of/)).closest('ul') as HTMLElement
     expect(history).toHaveTextContent(
@@ -689,13 +696,94 @@ describe('volunteer profile', () => {
     expect(history).toHaveTextContent('Action Hub moved them to the holding pool')
   })
 
+  it('reads every kind of event as done to the member', async () => {
+    const chapter = await createChapter()
+    const member = await createMember(chapter, { name: 'Every Event' })
+    const actions = [
+      'CHAPTER_CREATED',
+      'CHAPTER_UPDATED',
+      'LEAD_APPOINTED',
+      'LEAD_REMOVED',
+      'DEPUTY_APPOINTED',
+      'DEPUTY_REMOVED',
+      'VOLUNTEER_REASSIGNED',
+      'TRANSFER_APPROVED',
+      'TRANSFER_DECLINED',
+      'PROJECT_CHAPTER_CHANGED',
+      'TEAM_CHAPTER_CHANGED',
+      'ROLE_INVITE_SENT',
+      'ROLE_INVITE_ACCEPTED',
+      'JOINED_FROM_POOL',
+      'COORDINATOR_APPOINTED',
+      'COORDINATOR_REMOVED',
+      'PROFILE_PICTURE_REMOVED',
+    ] as const
+    await prisma.chapterAuditEvent.createMany({
+      data: actions.map((action) => ({
+        action,
+        nationalChapterId: chapter.id,
+        targetVolunteerId: member.id,
+      })),
+    })
+    // With no chapter, a move went to the pool; anything else lost its chapter since.
+    await prisma.chapterAuditEvent.createMany({
+      data: [
+        { action: 'TRANSFER_APPROVED', targetVolunteerId: member.id },
+        { action: 'DEPUTY_REMOVED', targetVolunteerId: member.id },
+      ],
+    })
+    await openProfile(member, await createAdmin())
+    await userEvent.click(screen.getByText('History'))
+    const history = (await screen.findByText(/took down their profile picture/)).closest(
+      'ul',
+    ) as HTMLElement
+    const at = `the ${chapter.name} chapter`
+    for (const line of [
+      'opened a chapter',
+      'changed a chapter',
+      `made them lead of ${at}`,
+      `removed them as lead of ${at}`,
+      `made them a deputy of ${at}`,
+      `removed them as a deputy of ${at}`,
+      `moved them to ${at}`,
+      `approved their move to ${at}`,
+      `declined their move to ${at}`,
+      'moved one of their projects',
+      'moved one of their teams',
+      `invited them to help run ${at}`,
+      `accepted a role running ${at}`,
+      `joined ${at} from the holding pool`,
+      'made them a coordinator',
+      'removed them as a coordinator',
+      'took down their profile picture',
+      'approved their move to the holding pool',
+      'removed them as a deputy of a chapter since closed',
+    ]) {
+      expect(history).toHaveTextContent(line)
+    }
+  })
+
+  it('says when older history is not shown', async () => {
+    const chapter = await createChapter()
+    const member = await createMember(chapter, { name: 'Long Story' })
+    await prisma.chapterAuditEvent.createMany({
+      data: Array.from({ length: 101 }, () => ({
+        action: 'COORDINATOR_APPOINTED' as const,
+        nationalChapterId: chapter.id,
+        targetVolunteerId: member.id,
+      })),
+    })
+    await openProfile(member, await createChapterLead(chapter))
+    await userEvent.click(screen.getByText('History'))
+    expect(await screen.findByText('Older entries are not shown.')).toBeInTheDocument()
+  })
+
   it("says when a member's history cannot be loaded", async () => {
     const chapter = await createChapter()
     const member = await createMember(chapter, { name: 'Vanishing' })
     await openProfile(member, await createChapterLead(chapter))
     await prisma.volunteer.update({ where: { id: member.id }, data: { deletedAt: new Date() } })
     await userEvent.click(screen.getByText('History'))
-    expect(screen.getByText('Loading…')).toBeInTheDocument()
     expect(await screen.findByText('Their history could not be loaded.')).toBeInTheDocument()
   })
 

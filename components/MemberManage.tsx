@@ -264,10 +264,16 @@ const DONE_TO_THEM: Record<ChapterAuditAction, (chapter: string) => string> = {
   PROFILE_PICTURE_REMOVED: () => 'took down their profile picture',
 }
 
+const INTO_POOL = new Set<ChapterAuditAction>([
+  'VOLUNTEER_REASSIGNED',
+  'TRANSFER_APPROVED',
+  'TRANSFER_DECLINED',
+])
+
 /** What has been done to the member, read only once opened. */
 function MemberHistory({ member }: { member: Member }) {
   const [open, setOpen] = useState(false)
-  const { data: events, isError } = useQuery({
+  const { data, isError } = useQuery({
     ...orpc.admin.volunteers.history.queryOptions({ input: { volunteerId: member.id } }),
     enabled: open,
   })
@@ -276,21 +282,27 @@ function MemberHistory({ member }: { member: Member }) {
       <summary className="cursor-pointer font-semibold">History</summary>
       {isError ? (
         <p className="text-sm m-0 mt-2">Their history could not be loaded.</p>
-      ) : !events ? (
+      ) : !data ? (
         <p className="text-sm m-0 mt-2 text-text-light">Loading…</p>
-      ) : events.length === 0 ? (
+      ) : data.events.length === 0 ? (
         <p className="text-sm m-0 mt-2 text-text-light">Nothing recorded yet.</p>
       ) : (
         <ul className="list-none p-0 m-0 mt-2 grid gap-1 text-sm">
-          {events.map((e) => (
+          {data.events.map((e) => (
             <li key={e.id}>
               <span className="text-text-light">{formatDate(e.at)}</span>{' '}
               {e.actor ? <PersonName id={e.actor.id} name={e.actor.name} /> : 'Action Hub'}{' '}
               {DONE_TO_THEM[e.action](
-                e.chapterName ? `the ${e.chapterName} chapter` : 'the holding pool',
+                e.chapterName
+                  ? `the ${e.chapterName} chapter`
+                  : // Only a move can be to the pool; anything else lost its chapter since.
+                    INTO_POOL.has(e.action)
+                    ? 'the holding pool'
+                    : 'a chapter since closed',
               )}
             </li>
           ))}
+          {data.more && <li className="text-text-light">Older entries are not shown.</li>}
         </ul>
       )}
     </details>

@@ -265,23 +265,33 @@ export const adminVolunteersRouter = {
   history: staffProcedure
     .input(z.object({ volunteerId: z.number().int() }))
     .handler(async ({ input, context }) => {
-      await assertRunsVolunteer(context.access, input.volunteerId)
+      const { access } = context
+      await assertRunsVolunteer(access, input.volunteerId)
       const events = await prisma.chapterAuditEvent.findMany({
-        where: { targetVolunteerId: input.volunteerId },
+        where: {
+          targetVolunteerId: input.volunteerId,
+          // Chapter staff see what happened in their own chapter, as its log shows them,
+          // including the move that brought the member in; a global admin sees all.
+          ...(access.globalAdmin ? {} : { nationalChapterId: access.chapterId }),
+        },
         include: {
-          actor: { select: { id: true, name: true } },
+          actor: { select: { id: true, name: true, deletedAt: true } },
           chapter: { select: { name: true } },
         },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        take: MAX_DETAIL_ROWS,
+        take: MAX_DETAIL_ROWS + 1,
       })
-      return events.map((e) => ({
-        id: e.id,
-        action: e.action,
-        at: e.createdAt,
-        actor: e.actor,
-        chapterName: e.chapter?.name ?? null,
-      }))
+      return {
+        events: events.slice(0, MAX_DETAIL_ROWS).map((e) => ({
+          id: e.id,
+          action: e.action,
+          at: e.createdAt,
+          // A deleted actor keeps their name on record but has no profile to link to.
+          actor: e.actor && { id: e.actor.deletedAt ? null : e.actor.id, name: e.actor.name },
+          chapterName: e.chapter?.name ?? null,
+        })),
+        more: events.length > MAX_DETAIL_ROWS,
+      }
     }),
 
   /** Pairs of accounts that look like one person; with `volunteerId`, that account's only. */

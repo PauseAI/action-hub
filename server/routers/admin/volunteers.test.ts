@@ -284,13 +284,27 @@ describe('admin.volunteers.history', () => {
       chapterId: chapter.id,
       volunteerId: member.id,
     })
-    const events = await clientAs(await createChapterDeputy(chapter)).admin.volunteers.history({
-      volunteerId: member.id,
+    // Something another chapter's staff did before the member moved here stays theirs.
+    await prisma.chapterAuditEvent.create({
+      data: {
+        action: 'PROFILE_PICTURE_REMOVED',
+        nationalChapterId: (await createChapter()).id,
+        targetVolunteerId: member.id,
+      },
     })
+    const { events, more } = await clientAs(
+      await createChapterDeputy(chapter),
+    ).admin.volunteers.history({ volunteerId: member.id })
     expect(events.map((e) => [e.action, e.actor?.name, e.chapterName])).toEqual([
       ['DEPUTY_REMOVED', 'Hist Lead', chapter.name],
       ['DEPUTY_APPOINTED', 'Hist Lead', chapter.name],
     ])
+    expect(more).toBe(false)
+    // A global admin sees all of it.
+    const all = await clientAs(await createAdmin()).admin.volunteers.history({
+      volunteerId: member.id,
+    })
+    expect(all.events.map((e) => e.action)).toContain('PROFILE_PICTURE_REMOVED')
 
     await expect(
       clientAs(await createChapterLead(await createChapter())).admin.volunteers.history({
@@ -300,5 +314,37 @@ describe('admin.volunteers.history', () => {
     await expect(
       clientAs(await createMember(chapter)).admin.volunteers.history({ volunteerId: member.id }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' })
+  })
+
+  it('says when older entries are cut, and does not link an actor whose account is gone', async () => {
+    const chapter = await createChapter()
+    const member = await createMember(chapter)
+    const gone = await createMember(chapter, { name: 'Former Lead', deletedAt: new Date() })
+    await prisma.chapterAuditEvent.createMany({
+      data: Array.from({ length: 101 }, () => ({
+        action: 'DEPUTY_APPOINTED' as const,
+        actorId: gone.id,
+        nationalChapterId: chapter.id,
+        targetVolunteerId: member.id,
+      })),
+    })
+    const { events, more } = await clientAs(await createAdmin()).admin.volunteers.history({
+      volunteerId: member.id,
+    })
+    expect(events).toHaveLength(100)
+    expect(more).toBe(true)
+    expect(events[0].actor).toEqual({ id: null, name: 'Former Lead' })
+  })
+
+  it("refuses a deleted member's endorsements as well as their history", async () => {
+    const chapter = await createChapter()
+    const gone = await createMember(chapter, { deletedAt: new Date() })
+    const lead = clientAs(await createChapterLead(chapter))
+    await expect(
+      lead.admin.volunteers.listEndorsements({ volunteerId: gone.id }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    await expect(lead.admin.volunteers.history({ volunteerId: gone.id })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    })
   })
 })
