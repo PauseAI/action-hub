@@ -108,6 +108,7 @@ import {
 } from '../procedures'
 import {
   OWNER_ALLOWED_STATUSES,
+  SEEKING_HELP_SQL,
   SEEKING_OWNER_SQL,
   SEEKING_OWNER_STATUSES,
   TERMINAL_STATUSES,
@@ -989,7 +990,7 @@ const TASK_ORDER: Record<string, number> = {
 const URGENCY_RANK_SQL = `CASE urgency WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END`
 // Projects looking for people first, then the most urgent, then the newest.
 const DEFAULT_PROJECT_ORDER_SQL = `ORDER BY
-  CASE WHEN is_seeking_help OR ${SEEKING_OWNER_SQL} THEN 0 ELSE 1 END,
+  CASE WHEN ${SEEKING_HELP_SQL} OR ${SEEKING_OWNER_SQL} THEN 0 ELSE 1 END,
   ${URGENCY_RANK_SQL},
   created_at DESC, id DESC`
 
@@ -1082,7 +1083,9 @@ export const projectsRouter = {
         conditions.push(Prisma.sql`is_org_proposed = ${input.isOrgProposed}`)
       }
       if (input.isSeekingHelp !== undefined) {
-        conditions.push(Prisma.sql`is_seeking_help = ${input.isSeekingHelp}`)
+        conditions.push(
+          Prisma.raw(input.isSeekingHelp ? SEEKING_HELP_SQL : `NOT ${SEEKING_HELP_SQL}`),
+        )
       }
       if (input.isSeekingOwner !== undefined) {
         conditions.push(
@@ -1090,10 +1093,10 @@ export const projectsRouter = {
         )
       }
       if (input.isSeekingAny) {
-        conditions.push(Prisma.raw(`(is_seeking_help OR ${SEEKING_OWNER_SQL})`))
+        conditions.push(Prisma.raw(`(${SEEKING_HELP_SQL} OR ${SEEKING_OWNER_SQL})`))
       }
       if (input.notSeeking) {
-        conditions.push(Prisma.raw(`NOT is_seeking_help AND NOT ${SEEKING_OWNER_SQL}`))
+        conditions.push(Prisma.raw(`NOT ${SEEKING_HELP_SQL} AND NOT ${SEEKING_OWNER_SQL}`))
       }
 
       conditions.push(projectScopeSql(volunteer))
@@ -1222,7 +1225,7 @@ export const projectsRouter = {
       }
       sharedConditions.push(projectScopeSql(volunteer))
 
-      const seekingSqlStr = `(is_seeking_help OR ${SEEKING_OWNER_SQL})`
+      const seekingSqlStr = `(${SEEKING_HELP_SQL} OR ${SEEKING_OWNER_SQL})`
       const orderClause = Prisma.raw(DEFAULT_PROJECT_ORDER_SQL)
 
       const bucketDefs: { key: string; extra: Prisma.Sql }[] = [
@@ -1955,6 +1958,11 @@ export const projectsRouter = {
       )
       // Skills are set while planning, so a planned project is when a match is news.
       notifyMatchingVolunteers(project.id).catch((e) => logger.error(e, '[MATCH NOTIFY]'))
+      if (project.teamId) {
+        notifyTeamOfProject(project.teamId, project.id, project.title).catch((e) =>
+          logger.error(e, '[TEAM NOTIFY]'),
+        )
+      }
       return { message: 'Planning finished' }
     }),
 

@@ -485,16 +485,21 @@ describe('direct links', () => {
 })
 
 describe('projects.finishPlanning', () => {
-  it('logs a failed skill-match alert, and still finishes planning', async () => {
+  it('logs failed skill-match and team alerts, and still finishes planning', async () => {
     const owner = await createVolunteer()
-    const project = await createProject({ assigneeId: owner.id, plannedAt: null })
+    const team = await createTeam()
+    const project = await createProject({ assigneeId: owner.id, plannedAt: null, teamId: team.id })
     await createTask(project.id)
     const error = vi.spyOn(logger, 'error').mockImplementation(() => logger)
     vi.mocked(notifyMatchingVolunteers).mockRejectedValueOnce(new Error('m'))
+    vi.spyOn(prisma.teamMembership, 'findMany').mockRejectedValueOnce(new Error('t') as never)
     await clientAs(owner).projects.finishPlanning({ id: project.id })
     expect(
       (await prisma.workItem.findUniqueOrThrow({ where: { id: project.id } })).plannedAt,
     ).not.toBeNull()
-    await vi.waitFor(() => expect(error).toHaveBeenCalledWith(expect.any(Error), '[MATCH NOTIFY]'))
+    await vi.waitFor(() => {
+      expect(error).toHaveBeenCalledWith(expect.any(Error), '[MATCH NOTIFY]')
+      expect(error).toHaveBeenCalledWith(expect.any(Error), '[TEAM NOTIFY]')
+    })
   })
 })

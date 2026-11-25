@@ -166,9 +166,9 @@ describe('admin.projects.review', () => {
     expect(
       await prisma.workItemComment.findFirst({ where: { workItemId: unowned.id } }),
     ).toMatchObject({ content: 'nice' })
-    // Into Planning: matching volunteers hear at Finish planning instead.
+    // Into Planning: matching volunteers and the team hear at Finish planning instead.
     expect(notifyMatchingVolunteers).not.toHaveBeenCalledWith(unowned.id)
-    expect(notifyTeamOfProject).toHaveBeenCalledWith(team.id, unowned.id, unowned.title)
+    expect(notifyTeamOfProject).not.toHaveBeenCalledWith(team.id, unowned.id, unowned.title)
     await vi.waitFor(async () =>
       expect(
         await prisma.notification.findMany({
@@ -176,7 +176,7 @@ describe('admin.projects.review', () => {
         }),
       ).toEqual([
         expect.objectContaining({
-          title: `Approved: '${unowned.title}' is now visible to volunteers`,
+          title: `Approved: '${unowned.title}' is ready to plan`,
           link: `/projects/${unowned.id}`,
         }),
       ]),
@@ -194,6 +194,7 @@ describe('admin.projects.review', () => {
     const owned = await createProject({
       status: 'pending_review',
       assigneeId: creator.id,
+      creatorId: creator.id,
       teamId: team.id,
       plannedAt: new Date(),
     })
@@ -202,6 +203,11 @@ describe('admin.projects.review', () => {
       expect(error).toHaveBeenCalledWith(expect.any(Error), '[MATCH NOTIFY]')
       expect(error).toHaveBeenCalledWith(expect.any(Error), '[TEAM NOTIFY]')
     })
+    expect(
+      await prisma.notification.findFirst({
+        where: { volunteerId: creator.id, type: 'project_approved', link: `/projects/${owned.id}` },
+      }),
+    ).toMatchObject({ title: `Approved: '${owned.title}' is now visible to volunteers` })
     expect((await prisma.workItem.findUniqueOrThrow({ where: { id: owned.id } })).status).toBe(
       'ready',
     )

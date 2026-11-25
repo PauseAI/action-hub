@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import { ADVERTISABLE_STATUSES } from '@/lib/project-status'
+import { ADVERTISABLE_STATUSES, SEEKING_HELP_WHERE } from '@/lib/project-status'
 import { WorkItemType } from '@/generated/prisma/enums'
 import { publicProcedure } from '../procedures'
 import { NOT_STANDING } from '@/lib/requests'
@@ -43,7 +43,7 @@ export const skillsRouter = {
           type: WorkItemType.PROJECT,
           ...NOT_STANDING,
           status: { in: ADVERTISABLE_STATUSES },
-          OR: [{ isSeekingHelp: true }, { assigneeId: null }],
+          OR: [SEEKING_HELP_WHERE, { assigneeId: null }],
         },
       },
       _count: { skillId: true },

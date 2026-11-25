@@ -360,3 +360,59 @@ describe('approval and skill matches', () => {
     await vi.waitFor(() => expect(emails.to(fan.email!)).toHaveLength(1))
   })
 })
+
+describe('a project in Planning is advertised only as wanting an owner', () => {
+  it('keeps its call for helpers out of lists, Home and the most-needed skills until planned', async () => {
+    const chapter = await createChapter()
+    const me = await createVolunteer({ nationalChapterId: chapter.id })
+    const owner = await createVolunteer({ nationalChapterId: chapter.id })
+    const skill = await createSkill()
+    const asking = {
+      nationalChapterId: chapter.id,
+      isSeekingHelp: true,
+      skills: { create: [{ skillId: skill.id, isRequired: true }] },
+    }
+    const planning = await createProject({ ...asking, assigneeId: owner.id, plannedAt: null })
+    const ownerless = await createProject({ ...asking, plannedAt: null })
+    const planned = await createProject({ ...asking, assigneeId: owner.id })
+    const c = clientAs(me)
+    const ids = (r: { projects: { id: number }[] }) => r.projects.map((p) => p.id)
+
+    const helping = ids(await c.projects.list({ isSeekingHelp: true }))
+    expect(helping).toContain(planned.id)
+    expect(helping).not.toContain(planning.id)
+    expect(ids(await c.projects.list({ isSeekingHelp: false }))).toContain(planning.id)
+    const seeking = ids(await c.projects.list({ isSeekingAny: true }))
+    expect(seeking).toEqual(expect.arrayContaining([planned.id, ownerless.id]))
+    expect(seeking).not.toContain(planning.id)
+    expect(ids(await c.projects.list({ notSeeking: true }))).toContain(planning.id)
+    const grouped = (await c.projects.listGrouped({})).groups
+    const seekingGroup = grouped.find((g) => g.key === 'seeking')
+    expect(seekingGroup?.projects.map((p) => p.id)).not.toContain(planning.id)
+
+    const near = (await c.dashboard.get()).find?.nearYou.items.map((i) => i.id) ?? []
+    expect(near).toEqual(expect.arrayContaining([planned.id, ownerless.id]))
+    expect(near).not.toContain(planning.id)
+
+    const needed = (await clientAs(null).skills.mostNeeded()).find((s) => s.id === skill.id)
+    expect(needed?.projects).toBe(2)
+  })
+
+  it('tells the team at Finish planning', async () => {
+    const { owner, projectId, print } = await inPlanning()
+    const member = await createVolunteer()
+    const team = await prisma.team.create({ data: { name: 'Leafleteers' } })
+    await prisma.teamMembership.create({ data: { teamId: team.id, volunteerId: member.id } })
+    await prisma.workItem.update({ where: { id: projectId }, data: { teamId: team.id } })
+    const o = clientAs(owner)
+    await o.projects.updateTask({ projectId, taskId: print.id, data: { isOutline: false } })
+    await o.projects.finishPlanning({ id: projectId })
+    await vi.waitFor(async () =>
+      expect(
+        await prisma.notification.findFirst({
+          where: { volunteerId: member.id, type: 'team_project_assigned' },
+        }),
+      ).toMatchObject({ link: `/projects/${projectId}` }),
+    )
+  })
+})
