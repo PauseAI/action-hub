@@ -18,6 +18,7 @@ import {
 import { peopleInfo, viewableVolunteers } from '@/lib/people'
 import { chapterFilter } from '@/lib/chapter-access-server'
 import { isActiveRecently } from '@/lib/activity'
+import { NOT_NOW_MESSAGE, dismissFastTrack, setFastTrack } from '@/lib/fast-track'
 import { approvedProcedure, authedProcedure } from '../procedures'
 import {
   ApprovalStatus,
@@ -85,7 +86,42 @@ async function manageControls(
   }
 }
 
+/** The volunteer, once the viewer is shown to be on their chapter's staff (or a global admin). */
+async function findForFastTrack(access: ChapterAccess, volunteerId: number) {
+  const target = await prisma.volunteer.findFirst({
+    where: { id: volunteerId, deletedAt: null },
+    select: { id: true, nationalChapterId: true },
+  })
+  if (!target || !canAdminChapter(access, target.nationalChapterId)) {
+    throw new ORPCError('FORBIDDEN', {
+      message: "Only their chapter's lead or deputies can change fast track",
+    })
+  }
+  return target
+}
+
 export const volunteersRouter = {
+  /** Their chapter's staff put a volunteer on fast track, or take them off (lib/fast-track.ts). */
+  setFastTrack: approvedProcedure
+    .input(z.object({ volunteerId: z.number().int(), on: z.boolean() }))
+    .handler(async ({ input, context }) => {
+      if (input.volunteerId === context.volunteer.id) {
+        throw new ORPCError('BAD_REQUEST', { message: 'Someone else decides your fast track' })
+      }
+      await findForFastTrack(context.access, input.volunteerId)
+      await setFastTrack(input.volunteerId, input.on, context.volunteer.id)
+      return { message: input.on ? 'On fast track' : 'Off fast track' }
+    }),
+
+  /** "Not now" on an ask to put someone on fast track (lib/fast-track.ts). */
+  dismissFastTrack: approvedProcedure
+    .input(z.object({ volunteerId: z.number().int() }))
+    .handler(async ({ input, context }) => {
+      await findForFastTrack(context.access, input.volunteerId)
+      await dismissFastTrack(input.volunteerId)
+      return { message: NOT_NOW_MESSAGE }
+    }),
+
   list: approvedProcedure
     .input(
       z.object({
@@ -360,6 +396,11 @@ export const volunteersRouter = {
         activeRecently: isActiveRecently(vol.lastActiveAt),
         chapter: vol.chapter,
         manage,
+        // lib/fast-track.ts says who sees it.
+        fastTrack:
+          vol.id === currentVolunteer.id || isAdmin
+            ? { on: vol.fastTrack, canSet: isAdmin && vol.id !== currentVolunteer.id }
+            : null,
         projects: projectHistory(projects, input.id),
         completedTasks: completedTasks.map((t) => ({
           title: t.title,

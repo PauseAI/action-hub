@@ -30,7 +30,13 @@ import { UNCLAIMED_LABEL } from '@/lib/status-labels'
 import { lateness } from '@/lib/lateness'
 import { LatenessBadge, WorkStatusBadge } from '@/components/StatusBadges'
 import { PROJECT_TASK_CLAIMED_MESSAGE, TASK_REQUESTED_MESSAGE } from '@/lib/action-messages'
-import { CLAIMING, UNASSIGN, claimLabel, joinAsHelperLabel } from '@/lib/action-labels'
+import {
+  CLAIMING,
+  UNASSIGN,
+  claimLabel,
+  joinAsHelperLabel,
+  takesStraightAway,
+} from '@/lib/action-labels'
 import { TASK_INACTIVITY_RULE } from '@/lib/staleness'
 import { awaitsOwnerReview } from '@/lib/task-review'
 import { handedIn } from '@/lib/overdue'
@@ -698,7 +704,7 @@ export default function TaskDetailPage({
         <ConfirmDialog
           id="confirm-claim-task"
           isOpen
-          title={`${task.claimViewer.onProject || task.claimViewer.invited ? 'Claim' : 'Ask to take'} '${task.title}'?`}
+          title={`${takesStraightAway(task.claimViewer) ? 'Claim' : 'Ask to take'} '${task.title}'?`}
           body={TASK_INACTIVITY_RULE}
           confirmLabel={claimLabel(task.claimViewer)}
           busyLabel={CLAIMING}

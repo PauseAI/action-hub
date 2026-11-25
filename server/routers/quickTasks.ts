@@ -152,7 +152,15 @@ export const quickTasksRouter = {
           },
         },
         include: {
-          parent: { select: { id: true, title: true, teamId: true, assigneeId: true } },
+          parent: {
+            select: {
+              id: true,
+              title: true,
+              teamId: true,
+              assigneeId: true,
+              alwaysAskToJoin: true,
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
       }),

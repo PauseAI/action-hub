@@ -42,6 +42,7 @@ import {
   CLAIMING,
   claimLabel,
   type ClaimViewer,
+  takesStraightAway,
 } from '@/lib/action-labels'
 import CommentThread from '@/components/CommentThread'
 import ChangesRequestedBanner from '@/components/ChangesRequestedBanner'
@@ -1422,7 +1423,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
   /** Taking a task someone is already on skips straight to it; asking opens for a message first. */
   function startClaimingTask(task: ProjectTask) {
-    if (project!.claimViewer.onProject || project!.claimViewer.invited) handleClaimTask(task.id)
+    if (takesStraightAway(project!.claimViewer)) handleClaimTask(task.id)
     else {
       setClaimTarget(task)
       setClaimMessage('')

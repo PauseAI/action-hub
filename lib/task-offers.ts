@@ -186,7 +186,8 @@ export async function endHelperOffers(
 }
 
 /**
- * Makes `volunteerId` a member of the project when a manager puts them on one of its tasks.
+ * Makes `volunteerId` a member of the project when a manager puts them on one of its tasks, or
+ * they take one on fast track.
  * A pending request is accepted as it stands, without the lead it may have offered; any other
  * past row, or none, is a fresh add. Someone already on it is left as they are.
  */
@@ -194,6 +195,8 @@ export async function addToProject(
   projectId: number,
   volunteerId: number,
   message: string | null,
+  // `applied` when they joined themselves, on fast track.
+  origin: InterestOrigin = InterestOrigin.added,
 ): Promise<void> {
   const existing = await prisma.workItemInterest.findFirst({
     where: { workItemId: projectId, volunteerId },
@@ -210,7 +213,7 @@ export async function addToProject(
         ...member,
         volunteerId,
         workItemId: projectId,
-        origin: InterestOrigin.added,
+        origin,
         message,
       },
     })
@@ -221,7 +224,7 @@ export async function addToProject(
     data:
       existing.status === InterestStatus.pending
         ? member
-        : { ...member, origin: InterestOrigin.added, responseMessage: null },
+        : { ...member, origin, responseMessage: null },
   })
   const answered: Record<string, string> = {
     [InterestStatus.invited]: 'project_invite',
