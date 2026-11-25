@@ -36,6 +36,7 @@ export default function NewTaskForm({
   datesNote,
   autoFocus,
   allowQuickTask = true,
+  outline = false,
   initial,
   className = '',
 }: {
@@ -50,6 +51,8 @@ export default function NewTaskForm({
   autoFocus?: boolean
   /** Offers featuring it on the Tasks page; off where the project is not yet approved. */
   allowQuickTask?: boolean
+  /** An outline item for a proposal: a title only, planned into a task after approval. */
+  outline?: boolean
   /** An outline item being planned into a task: its title and note, with the details open. */
   initial?: { title: string; description: string | null }
   className?: string
@@ -89,7 +92,7 @@ export default function NewTaskForm({
       className={`bg-brand-bg rounded-lg p-3 border border-brand-border ${className}`}
     >
       <FormLabel htmlFor="new-task-title" className="text-sm" required>
-        Task title
+        {outline ? 'Outline item' : 'Task title'}
       </FormLabel>
       <div className="flex flex-wrap gap-2">
         <Input
@@ -98,7 +101,7 @@ export default function NewTaskForm({
           className="flex-1 min-w-48"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="e.g. Draft copy for homepage"
+          placeholder={outline ? 'e.g. Find a venue' : 'e.g. Draft copy for homepage'}
           autoFocus={autoFocus}
         />
         <Button type="submit" variant="secondary" disabled={pending || !title.trim()}>
@@ -112,7 +115,7 @@ export default function NewTaskForm({
       </div>
       {/* Once open the details stay open until the task is added, so nothing entered is sent
           unseen and the dates' own validity check stays on the form. */}
-      {showDetails ? (
+      {outline ? null : showDetails ? (
         <div className="mt-3">
           <div className="mb-3">
             <FormLabel htmlFor="new-task-description">Details (optional)</FormLabel>

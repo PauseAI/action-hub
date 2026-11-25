@@ -147,7 +147,7 @@ test.describe('Volunteer project drafts', () => {
     await expect(taskDescInput).toHaveValue('Updated task details')
   })
 
-  test('A task added while proposing a project keeps its helpers wanted', async ({
+  test('A step added while proposing a project is an outline item, a title only', async ({
     volunteer,
     baseUrl,
     snap,
@@ -157,25 +157,28 @@ test.describe('Volunteer project drafts', () => {
     await page.goto(`${baseUrl}/suggest`)
     await openNewProjectForm(page)
     await page.getByLabel('Project title').fill(title)
-    await page.locator('#new-task-title').fill('Flyer the high street')
-    await page.getByRole('button', { name: 'More details' }).click()
-    await page.getByLabel('Helpers wanted (optional)').fill('3')
-    await snap(page, 'new task details open')
-    await page.getByRole('button', { name: 'Add task' }).click()
+    // Effort, dates and skills wait for Planning.
+    await expect(page.getByLabel('Hours per week')).toHaveCount(0)
+    await expect(page.getByText('Skills needed')).toHaveCount(0)
+    await page.getByLabel('Outline item').fill('Flyer the high street')
+    await expect(page.getByRole('button', { name: 'More details' })).toHaveCount(0)
+    await snap(page, 'proposal with an outline item typed')
+    await page.getByRole('button', { name: 'Add to outline' }).click()
     await page.waitForURL(/\/projects\/\d+\/edit/, { timeout: 15_000 })
     await expect(
       page.locator('input[id^="task-title-"][value="Flyer the high street"]'),
     ).toBeVisible({ timeout: 10_000 })
     await expect(page.locator('#new-task-title')).toHaveValue('')
 
-    // A draft has no task list of its own to read this from; it shows once the project runs.
+    // A draft has no task list of its own to read this from.
     const projectId = Number(new URL(page.url()).pathname.split('/')[2])
     const token = await page.evaluate(() => localStorage.getItem('authToken'))
     const project = await createApiClient(baseUrl, token!).projects.getById({
       body: { id: projectId },
     })
     expect(project.body).toMatchObject({
-      tasks: [expect.objectContaining({ title: 'Flyer the high street', helpersWanted: 3 })],
+      stage: 'proposal',
+      tasks: [expect.objectContaining({ title: 'Flyer the high street', isOutline: true })],
     })
   })
 
