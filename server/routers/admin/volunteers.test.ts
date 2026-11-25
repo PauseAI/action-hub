@@ -292,6 +292,15 @@ describe('admin.volunteers.projectsToOffer', () => {
     await interest(applied.id, 'pending')
     await interest(invited.id, 'invited')
     await interest(on.id, 'accepted')
+    const toOwn = await createProject({ ...at, title: 'I asked to own' })
+    await prisma.workItemInterest.create({
+      data: {
+        workItemId: toOwn.id,
+        volunteerId: member.id,
+        status: 'pending',
+        interestType: 'want_to_own',
+      },
+    })
 
     expect(
       await clientAs(lead).admin.volunteers.projectsToOffer({ volunteerId: member.id }),
@@ -324,5 +333,17 @@ describe('admin.volunteers.projectsToOffer', () => {
         volunteerId: member.id,
       }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' })
+    // Nor for a deleted account, nor may skills be endorsed on one.
+    const gone = await createMember(chapter, { deletedAt: new Date() })
+    const lead = clientAs(await createChapterLead(chapter))
+    await expect(
+      lead.admin.volunteers.projectsToOffer({ volunteerId: gone.id }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    await expect(
+      lead.admin.volunteers.addEndorsement({
+        volunteerId: gone.id,
+        skillId: (await createSkill()).id,
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
   })
 })

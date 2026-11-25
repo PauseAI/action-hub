@@ -23,8 +23,8 @@ const EndorsementInputSchema = z.object({
 
 /** Throws unless the volunteer is in a chapter the caller runs. */
 async function assertRunsVolunteer(access: ChapterAccess, volunteerId: number) {
-  const target = await prisma.volunteer.findUnique({
-    where: { id: volunteerId },
+  const target = await prisma.volunteer.findFirst({
+    where: { id: volunteerId, deletedAt: null },
     select: { nationalChapterId: true },
   })
   if (!target || !canAdminChapter(access, target.nationalChapterId)) {
@@ -260,7 +260,8 @@ export const adminVolunteersRouter = {
 
   /**
    * The live projects of the member's chapter (the pool's, for someone in it) that the caller,
-   * as its staff, may invite them to or add them to: not ones they own or are already on. Each
+   * as its staff, may invite them to or add them to: not ones they own, are already on, or have
+   * asked to own. Each
    * says whether they asked to join (an invite then accepts them) or were invited already.
    */
   projectsToOffer: staffProcedure
@@ -283,14 +284,17 @@ export const adminVolunteersRouter = {
           title: true,
           interests: {
             where: { volunteerId: input.volunteerId },
-            select: { status: true },
+            select: { status: true, interestType: true },
           },
         },
         orderBy: { title: 'asc' },
       })
       return projects.flatMap((p) => {
-        const status = p.interests[0]?.status
+        const [interest] = p.interests
+        const status = interest?.status
+        // An application to own the project is answered on the project, not by an invite.
         if (status === InterestStatus.accepted) return []
+        if (status === InterestStatus.pending && interest.interestType === 'want_to_own') return []
         const standing =
           status === InterestStatus.pending
             ? ('applied' as const)

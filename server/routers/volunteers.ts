@@ -84,8 +84,11 @@ async function manageControls(
         ? { isCoordinator: Boolean(coordinator), remit: coordinator?.remit ?? null }
         : null,
     moveChapter: access.globalAdmin ? { chapterId } : null,
-    /** Invite or add them to a project; only an approved account can be put on one. */
-    offerProjects: !duplicate && vol.approvalStatus === ApprovalStatus.approved,
+    /**
+     * The Work group: verify skills, fast track, invite or add to a project. Only for an
+     * approved account that is not a duplicate, so the work lands on the record in use.
+     */
+    work: !duplicate && vol.approvalStatus === ApprovalStatus.approved,
     /** Whether they are on fast track, for the control that puts them on or takes them off. */
     fastTrack: { on: vol.fastTrack },
   }

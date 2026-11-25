@@ -363,7 +363,11 @@ function OfferProject({ member }: { member: Member }) {
     setHow('invite')
     setNote('')
   })
-  const { data: projects } = useQuery({
+  const {
+    data: projects,
+    isPending,
+    isError,
+  } = useQuery({
     ...orpc.admin.volunteers.projectsToOffer.queryOptions({ input: { volunteerId: member.id } }),
     enabled: dialog.open,
   })
@@ -381,9 +385,15 @@ function OfferProject({ member }: { member: Member }) {
         isOpen={dialog.open}
         title={`Invite ${member.name} to a project`}
         body={
-          projects?.length === 0 ? (
+          isPending ? (
+            <p className="m-0">Loading projects…</p>
+          ) : isError ? (
+            <p className="m-0">Their projects could not be loaded. Close this and try again.</p>
+          ) : projects.length === 0 ? (
             <p className="m-0">
-              There is no live project in their chapter that they are not already on.
+              There is no live project in{' '}
+              {member.chapterName ? `the ${member.chapterName} chapter` : 'the holding pool'} that
+              they are not already on.
             </p>
           ) : (
             <div className="grid gap-3">
@@ -395,7 +405,7 @@ function OfferProject({ member }: { member: Member }) {
                   onChange={(e) => setProjectId(e.target.value)}
                 >
                   <option value="">Choose a project…</option>
-                  {projects?.map((p) => (
+                  {projects.map((p) => (
                     <option key={p.id} value={String(p.id)}>
                       {p.title}
                       {p.standing === 'applied' && ' (asked to join)'}
@@ -583,14 +593,16 @@ export default function MemberManage({
           </div>
         </div>
       )}
-      <div role="group" aria-labelledby="manage-work" className="mb-4">
-        <H3 id="manage-work">Work</H3>
-        <div className="flex flex-wrap gap-2">
-          <FastTrackToggle member={member} on={manage.fastTrack.on} />
-          <VerifySkill member={member} />
-          {manage.offerProjects && <OfferProject member={member} />}
+      {manage.work && (
+        <div role="group" aria-labelledby="manage-work" className="mb-4">
+          <H3 id="manage-work">Work</H3>
+          <div className="flex flex-wrap gap-2">
+            <FastTrackToggle member={member} on={manage.fastTrack.on} />
+            <VerifySkill member={member} />
+            <OfferProject member={member} />
+          </div>
         </div>
-      </div>
+      )}
       <div role="group" aria-labelledby="manage-account">
         <H3 id="manage-account">Account</H3>
         <div className="flex flex-wrap gap-2">

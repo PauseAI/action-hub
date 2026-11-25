@@ -37,6 +37,9 @@ function FastTrackNote({ name, isMe }: { name: string; isMe: boolean }) {
   )
 }
 
+/** How strongly a skill is endorsed, weakest first; the strongest is shown. */
+const RATING_RANK: Record<string, number> = { developing: 0, verified: 1, strong: 2 }
+
 export default function VolunteerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const { user, loading } = useRequireAuth()
@@ -95,7 +98,14 @@ export default function VolunteerDetailPage({ params }: { params: Promise<{ id: 
   }
 
   const skills = volunteer.skills ?? []
-  const endorsements = volunteer.endorsements ?? []
+  // One chip per skill, at the strongest rating anyone gave it.
+  const endorsements = [
+    ...new Map(
+      [...(volunteer.endorsements ?? [])]
+        .sort((a, b) => (RATING_RANK[a.rating ?? ''] ?? 0) - (RATING_RANK[b.rating ?? ''] ?? 0))
+        .map((e) => [e.skillId, e]),
+    ).values(),
+  ]
   const endorsedSkillIds = new Set(endorsements.map((e) => e.skillId))
   const isMe = volunteer.id === user.id
   const incoming = volunteer.incomingContactRequest
@@ -297,7 +307,7 @@ export default function VolunteerDetailPage({ params }: { params: Promise<{ id: 
             >
               <H2>Verified skills</H2>
               <P className="text-text-light mb-3">
-                Skills verified through completed work on the platform.
+                Skills someone has seen them deliver, on the platform or alongside them.
               </P>
               <div id="endorsementsList" className="flex flex-wrap gap-1.5">
                 {endorsements.map((e) => (

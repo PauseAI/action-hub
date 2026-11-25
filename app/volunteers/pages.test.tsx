@@ -694,9 +694,11 @@ describe('volunteer profile', () => {
   it('offers only the other skills when a member lists none', async () => {
     const chapter = await createChapter()
     const member = await createMember(chapter, { name: 'No Listed' })
+    const offered = await createSkill({ name: 'Offered Anyway' })
     await openProfile(member, await createChapterLead(chapter))
     await userEvent.click(screen.getByRole('button', { name: 'Verify a skill' }))
     const select = within(dialogNamed("Verify one of No Listed's skills")).getByLabelText('Skill')
+    expect(await within(select).findByRole('option', { name: offered.name })).toBeInTheDocument()
     expect(within(select).queryByRole('group', { name: 'Skills they list' })).toBeNull()
   })
 
@@ -720,7 +722,7 @@ describe('volunteer profile', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Invite to a project' }))
     let dialog = dialogNamed('Invite Invitable to a project')
     const pick = async (title: string | RegExp) => {
-      const select = within(dialog).getByLabelText('Project')
+      const select = await within(dialog).findByLabelText('Project')
       const option = await within(select).findByRole('option', { name: title })
       await userEvent.selectOptions(select, option)
     }
@@ -768,7 +770,7 @@ describe('volunteer profile', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Invite to a project' }))
     expect(
       await within(dialogNamed('Invite Nothing Open to a project')).findByText(
-        /no live project in their chapter/,
+        `There is no live project in the ${chapter.name} chapter that they are not already on.`,
       ),
     ).toBeInTheDocument()
     cleanup()
@@ -777,7 +779,51 @@ describe('volunteer profile', () => {
       approvalStatus: 'pending',
     })
     await openProfile(applicant, lead)
-    expect(screen.queryByRole('button', { name: 'Invite to a project' })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Work' })).toBeNull()
+
+    // Nor any work on a duplicate account, which goes on the account in use.
+    cleanup()
+    const duplicate = await createMember(chapter, {
+      name: 'Second Account',
+      duplicateOfId: member.id,
+    })
+    await openProfile(duplicate, lead)
+    expect(screen.queryByRole('button', { name: 'Verify a skill' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /fast track/i })).toBeNull()
+  })
+
+  it('says while projects load, and when they cannot be', async () => {
+    const chapter = await createChapter()
+    const member = await createMember(chapter, { name: 'Soon Gone' })
+    await openProfile(member, await createChapterLead(chapter))
+    await prisma.volunteer.update({ where: { id: member.id }, data: { deletedAt: new Date() } })
+    await userEvent.click(screen.getByRole('button', { name: 'Invite to a project' }))
+    const dialog = dialogNamed('Invite Soon Gone to a project')
+    expect(dialog).toHaveTextContent('Loading projects…')
+    expect(
+      await within(dialog).findByText(
+        'Their projects could not be loaded. Close this and try again.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('shows a skill verified by several people once, at its strongest', async () => {
+    const chapter = await createChapter()
+    const skill = await createSkill({ name: 'Twice Verified' })
+    const member = await createMember(chapter, { name: 'Well Verified' })
+    for (const [rating, by] of [
+      ['strong', await createChapterLead(chapter)],
+      ['verified', await createChapterDeputy(chapter)],
+      ['developing', await createChapterDeputy(chapter)],
+    ] as const) {
+      await prisma.skillEndorsement.create({
+        data: { volunteerId: member.id, skillId: skill.id, endorsedById: by.id, rating },
+      })
+    }
+    await openProfile(member, await createMember(chapter))
+    const list = document.getElementById('endorsementsList') as HTMLElement
+    expect(within(list).getAllByText(/Twice Verified/)).toHaveLength(1)
+    expect(list).toHaveTextContent('Twice Verified strong')
   })
 
   it('shows a minimal profile, and a not-found state', async () => {
