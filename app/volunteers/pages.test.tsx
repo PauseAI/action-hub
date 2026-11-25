@@ -380,6 +380,11 @@ describe('volunteer profile', () => {
       as: lead,
     })
     await userEvent.click(await screen.findByRole('button', { name: 'Make chapter deputy' }))
+    await userEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }),
+    )
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Make chapter deputy' }))
     const appoint = screen.getByRole('dialog', {
       name: `Make Dee Puty a ${chapter.name} chapter deputy?`,
     })

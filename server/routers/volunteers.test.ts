@@ -453,8 +453,9 @@ describe('volunteers.getById deputy', () => {
       chapterId: chapter.id,
       isDeputy: false,
     })
-    // Nobody gets it for themselves, nor does a deputy or a fellow member.
+    // Nobody gets it for themselves or for the lead, nor does a deputy or a fellow member.
     expect(await control(lead, lead.id)).toBeNull()
+    expect(await control(await createAdmin(), lead.id)).toBeNull()
     const admin = await createAdmin({ nationalChapterId: chapter.id, country: chapter.country })
     expect(await control(admin, admin.id)).toBeNull()
     expect(await control(deputy, member.id)).toBeNull()
