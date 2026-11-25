@@ -18,11 +18,11 @@ async function expectNoSidewaysScroll(page: Page, url: string): Promise<void> {
   expect(scrollWidth, url).toBeLessThanOrEqual(innerWidth)
 }
 
-// iOS zooms the page in when it focuses a field whose text is smaller than 16px.
+// The 16px floor in globals.css.
 async function expectNoZoomingFields(page: Page, url: string): Promise<void> {
   if (page.url() !== url) await page.goto(url)
   await page.waitForLoadState('networkidle')
-  const small = await page.evaluate(() =>
+  const fields = await page.evaluate(() =>
     [...document.querySelectorAll<HTMLElement>('input, textarea, select')]
       .filter(
         (el) => !['checkbox', 'radio', 'file', 'hidden'].includes((el as HTMLInputElement).type),
@@ -31,10 +31,13 @@ async function expectNoZoomingFields(page: Page, url: string): Promise<void> {
       .map((el) => ({
         field: el.id || el.outerHTML.slice(0, 80),
         px: parseFloat(getComputedStyle(el).fontSize),
-      }))
-      .filter((f) => f.px < 16),
+      })),
   )
-  expect(small, url).toEqual([])
+  expect(fields.length, `${url} has a field to check`).toBeGreaterThan(0)
+  expect(
+    fields.filter((f) => f.px < 16),
+    url,
+  ).toEqual([])
 }
 
 test.describe('Phone layout', () => {
