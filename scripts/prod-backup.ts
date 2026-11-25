@@ -6,8 +6,13 @@
  * or, in the preview environment, a preview-only identity held in a variable.
  */
 
-import { readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Decrypter } from 'age-encryption'
+import type { Client } from 'pg'
+import { logger } from '../lib/logger'
 
 export const DEFAULT_BUCKET = 'pauseai-actionhub-backups'
 
@@ -183,4 +188,80 @@ export async function decryptDump(
     // age's own messages name the failure (no matching identity, a damaged file), never the key.
     throw new Error(`Could not decrypt the dump: ${err instanceof Error ? err.message : err}`)
   }
+}
+
+/**
+ * Downloads the newest dump with the bucket's read-only key from `env`, warning when it is stale.
+ * `fetchFn` is the network seam, as for `B2Reader`.
+ */
+export async function downloadNewestDump(
+  env: Record<string, string | undefined> = process.env,
+  fetchFn: typeof fetch = fetch,
+): Promise<Uint8Array> {
+  const keyId = env.BACKUP_B2_READ_KEY_ID
+  const secret = env.BACKUP_B2_READ_SECRET
+  if (!keyId || !secret) {
+    throw new Error(
+      'BACKUP_B2_READ_KEY_ID and BACKUP_B2_READ_SECRET must hold the bucket\'s read-only key (Psono: "actionhub-backup-read"), or pass --file with a dump you downloaded.',
+    )
+  }
+  const b2 = new B2Reader(keyId, secret, env.BACKUP_B2_BUCKET || DEFAULT_BUCKET, fetchFn)
+
+  logger.info(`Listing backups in ${b2.bucket}...`)
+  const latest = newestDump(await b2.listDumps())
+  if (!latest) throw new Error(`No backups/actionhub-*.dump.age files in ${b2.bucket}.`)
+  logger.info(`Latest backup: ${latest.fileName} (${(latest.contentLength / 1024).toFixed(0)} KB)`)
+  const age = Date.now() - dumpTakenAt(latest.fileName).getTime()
+  if (age > STALE_AFTER_MS) {
+    logger.warn(
+      `This dump is ${Math.floor(age / 86_400_000)} days old: recent nightly backups may have failed.`,
+    )
+  }
+
+  logger.info('Downloading...')
+  return b2.download(latest)
+}
+
+/** Drops and recreates the public schema: what `restoreIntoEmptySchema` expects to find. */
+export async function emptyPublicSchema(db: Pick<Client, 'query'>): Promise<void> {
+  await db.query('DROP SCHEMA IF EXISTS public CASCADE')
+  await db.query('CREATE SCHEMA public')
+}
+
+/**
+ * Restores the dump into the database at `dbUrl` (a libpq URL), whose public schema the caller
+ * has just emptied (`emptyPublicSchema`), feeding pg_restore from memory so the plaintext never touches disk. The
+ * dump's own `CREATE SCHEMA public` entry is filtered out of the restore list, since the schema
+ * already exists; `pg_restore -l`/`-L` is the documented way to skip entries. A dump piped out of
+ * pg_dump has no data offsets, so pg_restore reads it in order, which the filtered list keeps.
+ */
+export function restoreIntoEmptySchema(dump: Uint8Array, dbUrl: string): void {
+  const filtered = pgRestore(['-l'], dump)
+    .split('\n')
+    .filter((line) => !/ SCHEMA - public /.test(line))
+    .join('\n')
+  const dir = mkdtempSync(join(tmpdir(), 'restore-dump-'))
+  try {
+    const listPath = join(dir, 'restore.list')
+    writeFileSync(listPath, filtered)
+    pgRestore(['--no-owner', '--no-privileges', '--use-list', listPath, '--dbname', dbUrl], dump)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+/**
+ * Runs pg_restore with the dump on stdin and returns its output. `-l` exits once it has read the
+ * table of contents, so a broken pipe is expected; the exit status decides success.
+ */
+function pgRestore(args: string[], dump: Uint8Array): string {
+  const r = spawnSync('pg_restore', args, {
+    input: dump,
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+    stdio: ['pipe', 'pipe', 'inherit'],
+  })
+  if (r.error && (r.error as NodeJS.ErrnoException).code !== 'EPIPE') throw r.error
+  if (r.status !== 0) throw new Error(`pg_restore exited with ${r.status ?? r.signal}`)
+  return r.stdout
 }

@@ -8,6 +8,7 @@ import {
   B2Reader,
   DEFAULT_BUCKET,
   decryptDump,
+  downloadNewestDump,
   dumpTakenAt,
   newestDump,
   readAgeIdentity,
@@ -112,6 +113,36 @@ describe('B2Reader', () => {
     await expect(
       reader().download(file('backups/actionhub-2026-01-01_000000.dump.age')),
     ).rejects.toThrow('B2 download failed: 404 not_found')
+  })
+})
+
+describe('downloadNewestDump', () => {
+  it('downloads the newest dump with the read key from the environment', async () => {
+    const b2 = new FakeB2(DEFAULT_BUCKET)
+    b2.put('backups/actionhub-2026-11-17_030012.dump.age', 'older')
+    b2.put(`backups/actionhub-${new Date().toISOString().slice(0, 10)}_030000.dump.age`, 'newest')
+    const env = { BACKUP_B2_READ_KEY_ID: b2.keyId, BACKUP_B2_READ_SECRET: b2.secret }
+    expect(new TextDecoder().decode(await downloadNewestDump(env, b2.fetch))).toBe('newest')
+  })
+
+  it('still downloads a stale dump, and names the bucket when it holds none', async () => {
+    const b2 = new FakeB2('other-bucket')
+    const env = {
+      BACKUP_B2_READ_KEY_ID: b2.keyId,
+      BACKUP_B2_READ_SECRET: b2.secret,
+      BACKUP_B2_BUCKET: 'other-bucket',
+    }
+    await expect(downloadNewestDump(env, b2.fetch)).rejects.toThrow(
+      'No backups/actionhub-*.dump.age files in other-bucket.',
+    )
+    b2.put('backups/actionhub-2026-01-01_030000.dump.age', 'stale')
+    expect(new TextDecoder().decode(await downloadNewestDump(env, b2.fetch))).toBe('stale')
+  })
+
+  it('asks for the read-only key when it is missing', async () => {
+    await expect(downloadNewestDump({ BACKUP_B2_READ_KEY_ID: 'id' })).rejects.toThrow(
+      /BACKUP_B2_READ_KEY_ID and BACKUP_B2_READ_SECRET must hold the bucket's read-only key/,
+    )
   })
 })
 

@@ -74,6 +74,15 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # The restore tests run pg_dump and pg_restore against the Postgres 18 service, which
+      # refuses older clients; Ubuntu's own postgresql-client lags behind.
+      - name: Install Postgres 18 client tools
+        run: |
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y --no-install-recommends postgresql-client-18
+          # The runner's own Postgres 16 would otherwise win in pg_wrapper.
+          echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
+          /usr/lib/postgresql/18/bin/pg_restore --version
       - run: npm run test:unit
       # Coverage must stay at 100% lines/statements (vitest.config.mts enforces it). The job
       # summary lists the uncovered lines even on failure, so a miss can be read from the run page.

@@ -22,6 +22,7 @@
     "new-migration": "tsx scripts/new-migration.ts",
     "migrate": "tsx scripts/migrate.ts",
     "fetch-prod-db": "tsx scripts/fetch-prod-db.ts",
+    "restore-standby": "tsx scripts/restore-standby.ts",
     "anonymise-db": "tsx scripts/anonymise-db.ts",
     "mark-disposable": "tsx scripts/mark-disposable.ts",
     "install:browsers": "playwright install chromium --with-deps",

@@ -16,11 +16,10 @@
  *   npx tsx scripts/fetch-prod-db.ts --file actionhub-<time>.dump.age   # a dump already downloaded
  */
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { readFileSync, rmSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { Client } from 'pg'
 import { libpqUrl, loadEnvFile, resolveDbUrl } from '../lib/db-url'
 import { logger } from '../lib/logger'
@@ -28,13 +27,11 @@ import { anonymise } from './anonymise-db'
 import { seedDevAccounts } from './seed-dev-accounts'
 import { claimDisposable } from './disposable-db'
 import {
-  B2Reader,
-  DEFAULT_BUCKET,
-  STALE_AFTER_MS,
   decryptDump,
-  dumpTakenAt,
-  newestDump,
+  downloadNewestDump,
+  emptyPublicSchema,
   readAgeIdentity,
+  restoreIntoEmptySchema,
 } from './prod-backup'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -57,8 +54,7 @@ async function emptyDatabase(dbUrl: string): Promise<void> {
   await client.connect()
   try {
     await claimDisposable(client, 'restore over it')
-    await client.query('DROP SCHEMA IF EXISTS public CASCADE')
-    await client.query('CREATE SCHEMA public')
+    await emptyPublicSchema(client)
   } finally {
     await client.end()
   }
@@ -75,74 +71,10 @@ async function anonymiseDatabase(dbUrl: string): Promise<void> {
   }
 }
 
-/**
- * Empties the public schema and restores the dump into it, feeding pg_restore from memory so the
- * plaintext never touches disk. The dump's own `CREATE SCHEMA public` entry is filtered out of
- * the restore list, since the schema is recreated here first; `pg_restore -l`/`-L` is the
- * documented way to skip entries. A dump piped out of pg_dump has no data offsets, so
- * pg_restore reads it in order, which the filtered list keeps.
- */
+/** Empties the public schema and restores the dump into it. */
 export async function restoreDump(dump: Uint8Array, dbUrl: string): Promise<void> {
   await emptyDatabase(dbUrl)
-  const filtered = pgRestore(['-l'], dump)
-    .split('\n')
-    .filter((line) => !/ SCHEMA - public /.test(line))
-    .join('\n')
-  const dir = mkdtempSync(join(tmpdir(), 'fetch-prod-db-'))
-  try {
-    const listPath = join(dir, 'restore.list')
-    writeFileSync(listPath, filtered)
-    pgRestore(['--no-owner', '--no-privileges', '--use-list', listPath, '--dbname', dbUrl], dump)
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
-}
-
-/**
- * Runs pg_restore with the dump on stdin and returns its output. `-l` exits once it has read the
- * table of contents, so a broken pipe is expected; the exit status decides success.
- */
-function pgRestore(args: string[], dump: Uint8Array): string {
-  const r = spawnSync('pg_restore', args, {
-    input: dump,
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-    stdio: ['pipe', 'pipe', 'inherit'],
-  })
-  if (r.error && (r.error as NodeJS.ErrnoException).code !== 'EPIPE') throw r.error
-  if (r.status !== 0) throw new Error(`pg_restore exited with ${r.status ?? r.signal}`)
-  return r.stdout
-}
-
-// ── Download ──────────────────────────────────────────────────────────────────
-
-async function downloadNewest(): Promise<Uint8Array> {
-  const keyId = process.env.BACKUP_B2_READ_KEY_ID
-  const secret = process.env.BACKUP_B2_READ_SECRET
-  if (!keyId || !secret) {
-    logger.error(
-      `BACKUP_B2_READ_KEY_ID and BACKUP_B2_READ_SECRET must hold the bucket's read-only key (Psono: "actionhub-backup-read"). Add them to '${envFile}' or export them, or pass --file with a dump you downloaded.`,
-    )
-    process.exit(1)
-  }
-  const b2 = new B2Reader(keyId, secret, process.env.BACKUP_B2_BUCKET || DEFAULT_BUCKET)
-
-  logger.info(`Listing backups in ${b2.bucket}...`)
-  const latest = newestDump(await b2.listDumps())
-  if (!latest) {
-    logger.error(`No backups/actionhub-*.dump.age files in ${b2.bucket}.`)
-    process.exit(1)
-  }
-  logger.info(`Latest backup: ${latest.fileName} (${(latest.contentLength / 1024).toFixed(0)} KB)`)
-  const age = Date.now() - dumpTakenAt(latest.fileName).getTime()
-  if (age > STALE_AFTER_MS) {
-    logger.warn(
-      `This dump is ${Math.floor(age / 86_400_000)} days old: recent nightly backups may have failed.`,
-    )
-  }
-
-  logger.info('Downloading...')
-  return b2.download(latest)
+  restoreIntoEmptySchema(dump, dbUrl)
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -174,7 +106,7 @@ async function main(): Promise<void> {
   // Never leave raw prod data in the checkout: a plaintext dump found here is deleted.
   for (const f of ['db/prod.dump', 'db/prod.dump.list']) rmSync(resolve(ROOT, f), { force: true })
 
-  const encrypted = localDump ? readFileSync(localDump) : await downloadNewest()
+  const encrypted = localDump ? readFileSync(localDump) : await downloadNewestDump()
 
   const dbUrl = libpqUrl(resolveDbUrl())
   logger.info('Decrypting...')

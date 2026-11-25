@@ -97,6 +97,29 @@ export async function withClient<T>(fn: (client: Client) => Promise<T>): Promise
   }
 }
 
+/**
+ * Timeout for a test using `withScratchDb`: creating a database can outlast the default while the
+ * rest of the suite keeps the same server busy.
+ */
+export const SCRATCH_TEST_TIMEOUT_MS = 60_000
+
+/**
+ * Runs `fn` against a new, empty, unmarked database on the test server, given a client and its
+ * URL. Its prefix leaves dropping it to the run's global teardown (`dropStale`), once the server
+ * is idle.
+ */
+export async function withScratchDb<T>(fn: (db: Client, url: string) => Promise<T>): Promise<T> {
+  const name = `${DB_PREFIX}scratch_${Math.random().toString(36).slice(2)}`
+  await withClient((client) => client.query(`CREATE DATABASE "${name}"`))
+  const url = urlForDatabase(name).toString()
+  const db = await connect(url)
+  try {
+    return await fn(db, url)
+  } finally {
+    await db.end()
+  }
+}
+
 async function createSchema(schema: string): Promise<void> {
   await withClient(async (client) => {
     await client.query(`CREATE SCHEMA "${schema}"`)
