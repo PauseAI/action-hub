@@ -845,88 +845,90 @@ export default function ProjectEditor(props: ProjectEditorProps) {
 
         {/* Timeline fields, offered for every project type — unlike the free-text estimate
             above, which is only asked for sprints and containers. */}
-        <div className="mb-5 flex flex-wrap gap-3">
-          {!isSkeleton && (
-            <>
-              <div>
-                <FormLabel htmlFor="project-start-date">Start date</FormLabel>
-                <Input
-                  id="project-start-date"
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  onBlur={() => {
-                    if (toDateInputValue(projectData?.startDate) === startDate) return
-                    commitField({ startDate: fromDateInputValue(startDate) })
-                  }}
-                  disabled={!canEdit}
-                />
-              </div>
-              <div>
-                <FormLabel htmlFor="project-duration-days">Duration (days)</FormLabel>
-                <Input
-                  id="project-duration-days"
-                  type="number"
-                  min="1"
-                  step="1"
-                  placeholder="from tasks"
-                  value={durationDays}
-                  onChange={(e) => setDurationDays(e.target.value)}
-                  onBlur={() => {
-                    const next = durationDays ? parseInt(durationDays, 10) : null
-                    if (next === (projectData?.durationDays ?? null)) return
-                    commitField({ durationDays: next })
-                  }}
-                  disabled={!canEdit}
-                  className="w-30"
-                />
-              </div>
-            </>
-          )}
-          {/* The deadline is the owner's promise, so it waits until the project exists and is
+        {(!isSkeleton || projectId !== undefined) && (
+          <div className="mb-5 flex flex-wrap gap-3">
+            {!isSkeleton && (
+              <>
+                <div>
+                  <FormLabel htmlFor="project-start-date">Start date</FormLabel>
+                  <Input
+                    id="project-start-date"
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    onBlur={() => {
+                      if (toDateInputValue(projectData?.startDate) === startDate) return
+                      commitField({ startDate: fromDateInputValue(startDate) })
+                    }}
+                    disabled={!canEdit}
+                  />
+                </div>
+                <div>
+                  <FormLabel htmlFor="project-duration-days">Duration (days)</FormLabel>
+                  <Input
+                    id="project-duration-days"
+                    type="number"
+                    min="1"
+                    step="1"
+                    placeholder="from tasks"
+                    value={durationDays}
+                    onChange={(e) => setDurationDays(e.target.value)}
+                    onBlur={() => {
+                      const next = durationDays ? parseInt(durationDays, 10) : null
+                      if (next === (projectData?.durationDays ?? null)) return
+                      commitField({ durationDays: next })
+                    }}
+                    disabled={!canEdit}
+                    className="w-30"
+                  />
+                </div>
+              </>
+            )}
+            {/* The deadline is the owner's promise, so it waits until the project exists and is
               set by its owner or an admin; the server holds the same line. */}
-          {projectId !== undefined && (
-            <div>
-              <FormLabel htmlFor="project-deadline">Deadline (optional)</FormLabel>
-              <Input
-                id="project-deadline"
-                type="date"
-                value={projectDeadline}
-                onChange={(e) => setProjectDeadline(e.target.value)}
-                onBlur={() => {
-                  if (toDateInputValue(projectData?.deadline) === projectDeadline) return
-                  commitField({ deadline: fromDateInputValue(projectDeadline) })
-                }}
-                disabled={!canEditOwnerFields}
-              />
-            </div>
-          )}
-          {!isSkeleton && (
-            <P className="text-text-light basis-full text-sm">
-              Used by the timeline view. Leave the duration empty to have the project span its own
-              tasks. The deadline is the date the whole project should be done by; the timeline
-              shows how far the plan lands from it.
-            </P>
-          )}
-          {!isSkeleton && projectId !== undefined && (
-            <div className="basis-full">
-              <Checkbox
-                checked={showTimeline}
-                onChange={(e) => {
-                  setShowTimeline(e.target.checked)
-                  commitField({ showTimeline: e.target.checked })
-                }}
-                disabled={!canEditOwnerFields}
-              >
-                Show timeline
-              </Checkbox>
-              <P className="text-sm text-text-light mt-1 mb-0">
-                Adds a Timeline tab to the project page, where anyone who can see the project can
-                follow the plan.
+            {projectId !== undefined && (
+              <div>
+                <FormLabel htmlFor="project-deadline">Deadline (optional)</FormLabel>
+                <Input
+                  id="project-deadline"
+                  type="date"
+                  value={projectDeadline}
+                  onChange={(e) => setProjectDeadline(e.target.value)}
+                  onBlur={() => {
+                    if (toDateInputValue(projectData?.deadline) === projectDeadline) return
+                    commitField({ deadline: fromDateInputValue(projectDeadline) })
+                  }}
+                  disabled={!canEditOwnerFields}
+                />
+              </div>
+            )}
+            {!isSkeleton && (
+              <P className="text-text-light basis-full text-sm">
+                Used by the timeline view. Leave the duration empty to have the project span its own
+                tasks. The deadline is the date the whole project should be done by; the timeline
+                shows how far the plan lands from it.
               </P>
-            </div>
-          )}
-        </div>
+            )}
+            {!isSkeleton && projectId !== undefined && (
+              <div className="basis-full">
+                <Checkbox
+                  checked={showTimeline}
+                  onChange={(e) => {
+                    setShowTimeline(e.target.checked)
+                    commitField({ showTimeline: e.target.checked })
+                  }}
+                  disabled={!canEditOwnerFields}
+                >
+                  Show timeline
+                </Checkbox>
+                <P className="text-sm text-text-light mt-1 mb-0">
+                  Adds a Timeline tab to the project page, where anyone who can see the project can
+                  follow the plan.
+                </P>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="mb-5">
           <FormLabel htmlFor="collaboration-link">Collaboration doc / link (optional)</FormLabel>
