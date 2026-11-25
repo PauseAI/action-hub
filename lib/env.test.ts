@@ -86,7 +86,7 @@ describe('validateEnv', () => {
 })
 
 describe('email provider settings', () => {
-  it('defaults to Resend with a 500-an-hour cap, and reads SES settings', () => {
+  it('defaults to Resend with a 1000-an-hour cap, and reads SES settings', () => {
     const { env } = loadEnv({
       EMAIL_PROVIDER: undefined,
       EMAIL_HOURLY_CAP: undefined,
@@ -96,7 +96,7 @@ describe('email provider settings', () => {
       AWS_REGION: undefined,
     })
     expect(env.EMAIL_PROVIDER).toBe('resend')
-    expect(env.EMAIL_HOURLY_CAP).toBe(500)
+    expect(env.EMAIL_HOURLY_CAP).toBe(1000)
     expect(env.EMAIL_ESSENTIAL_HOURLY_CAP).toBe(200)
     expect(env.SES_FEEDBACK_TOPIC_ARN).toBeUndefined()
     expect(env.SES_CONFIGURATION_SET).toBeUndefined()
@@ -118,7 +118,7 @@ describe('email provider settings', () => {
 
   it('treats a cap that is not a whole number of emails as the default', () => {
     for (const value of ['lots', '-1', '2.5', '']) {
-      expect(loadEnv({ EMAIL_HOURLY_CAP: value }).env.EMAIL_HOURLY_CAP, value).toBe(500)
+      expect(loadEnv({ EMAIL_HOURLY_CAP: value }).env.EMAIL_HOURLY_CAP, value).toBe(1000)
     }
     expect(loadEnv({ EMAIL_HOURLY_CAP: '0' }).env.EMAIL_HOURLY_CAP).toBe(0)
   })

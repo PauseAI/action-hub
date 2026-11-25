@@ -3,7 +3,7 @@ type EnvError = { var: string; reason: string }
 const flag = (value: string | undefined): boolean =>
   ['1', 'true', 'yes'].includes((value ?? '').toLowerCase())
 
-const DEFAULT_EMAIL_HOURLY_CAP = 500
+const DEFAULT_EMAIL_HOURLY_CAP = 1000
 const DEFAULT_EMAIL_ESSENTIAL_HOURLY_CAP = 200
 
 const wholeNumber = (value: string | undefined, fallback: number): number =>
