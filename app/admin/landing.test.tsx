@@ -69,10 +69,9 @@ describe('admin landing', () => {
     await renderApp(<AdminLandingPage />, { as: deputy })
     await screen.findByRole('heading', { name: `${chapter.name} chapter admin` })
     expect(screen.getByRole('link', { name: /Manage applications/ })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: `${chapter.name} chapter` })).toHaveAttribute(
-      'href',
-      `/admin/chapters/${chapter.id}`,
-    )
+    expect(
+      screen.getByRole('link', { name: `${chapter.name} chapter: deputies and members` }),
+    ).toHaveAttribute('href', `/admin/chapters/${chapter.id}`)
     // The global admins' pages are not offered.
     expect(screen.queryByText('Platform')).toBeNull()
     expect(screen.queryByRole('link', { name: /Bug reports/ })).toBeNull()

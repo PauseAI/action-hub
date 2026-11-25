@@ -146,6 +146,40 @@ test.describe('National chapters', () => {
     }
   })
 
+  test("A chapter lead makes a member a deputy from the member's profile", async ({
+    browser,
+    baseUrl,
+    snap,
+  }) => {
+    const chapterId = await ensureChapter(baseUrl, COUNTRY)
+    const lead = await createApprovedVolunteer(baseUrl, { country: COUNTRY })
+    await makeChapterStaff(baseUrl, lead.id, chapterId, 'LEAD')
+    const member = await createApprovedVolunteer(baseUrl, { country: COUNTRY })
+
+    const page = await signedInPage(browser, lead.token)
+    try {
+      await page.goto(`${baseUrl}/volunteers/${member.id}`)
+      await page.getByRole('button', { name: 'Make chapter deputy' }).click({ timeout: 10_000 })
+      const dialog = page.getByRole('dialog', {
+        name: `Make ${member.name} a Germany chapter deputy?`,
+      })
+      await snap(page, 'make chapter deputy dialog')
+      await dialog.getByRole('button', { name: 'Make chapter deputy' }).click()
+      await expect(getAlert(page)).toContainText(`${member.name} is now a deputy`, {
+        timeout: 10_000,
+      })
+      await expect(page.getByRole('button', { name: 'Remove as chapter deputy' })).toBeVisible()
+
+      await page.goto(`${baseUrl}/admin`)
+      await page.getByRole('link', { name: 'Germany chapter: deputies and members' }).click()
+      await expect(
+        page.getByRole('button', { name: `Remove ${member.name} as deputy` }),
+      ).toBeVisible({ timeout: 10_000 })
+    } finally {
+      await page.context().close()
+    }
+  })
+
   test("A chapter lead is turned away from another chapter's page", async ({
     browser,
     baseUrl,

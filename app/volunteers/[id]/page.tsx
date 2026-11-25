@@ -62,6 +62,73 @@ function RemovePicture({ volunteerId, name }: { volunteerId: number; name: strin
   )
 }
 
+/** A chapter lead makes one of their members a deputy, or stands a deputy down. */
+function DeputyControl({
+  volunteerId,
+  name,
+  chapterName,
+  deputy,
+}: {
+  volunteerId: number
+  name: string
+  chapterName: string
+  deputy: { chapterId: number; isDeputy: boolean }
+}) {
+  const [open, setOpen] = useState(false)
+  const showToast = useToast()
+  const queryClient = useQueryClient()
+  // Refetched either way: a refusal usually means someone else changed it first.
+  const refresh = () => {
+    setOpen(false)
+    void queryClient.invalidateQueries({ queryKey: orpc.volunteers.getById.key() })
+    void queryClient.invalidateQueries({ queryKey: orpc.admin.chapters.key() })
+    void queryClient.invalidateQueries({ queryKey: ['person'] })
+  }
+  const options = {
+    onSuccess: ({ message }: { message: string }) => {
+      refresh()
+      showToast(message, 'success')
+    },
+    onError: (err: unknown) => {
+      refresh()
+      showToast(err instanceof Error ? err.message : 'Failed to save', 'error')
+    },
+  }
+  const appoint = useMutation({
+    ...orpc.admin.chapters.appointDeputy.mutationOptions(),
+    ...options,
+  })
+  const remove = useMutation({ ...orpc.admin.chapters.removeDeputy.mutationOptions(), ...options })
+  const input = { chapterId: deputy.chapterId, volunteerId }
+  const label = deputy.isDeputy ? 'Remove as chapter deputy' : 'Make chapter deputy'
+  return (
+    <>
+      <Button variant="secondary" size="sm" className="mt-2" onClick={() => setOpen(true)}>
+        {label}
+      </Button>
+      <ConfirmDialog
+        id="deputy-dialog"
+        isOpen={open}
+        title={
+          deputy.isDeputy
+            ? `Remove ${name} as a ${chapterName} chapter deputy?`
+            : `Make ${name} a ${chapterName} chapter deputy?`
+        }
+        body={
+          deputy.isDeputy
+            ? `${name} stays a member of the ${chapterName} chapter, without a deputy's admin access.`
+            : `Deputies help run the ${chapterName} chapter, with admin access to its members and projects. You can remove them at any time.`
+        }
+        confirmLabel={label}
+        busy={appoint.isPending || remove.isPending}
+        busyLabel="Saving…"
+        onConfirm={() => (deputy.isDeputy ? remove : appoint).mutate(input)}
+        onClose={() => setOpen(false)}
+      />
+    </>
+  )
+}
+
 export default function VolunteerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const { user, loading } = useRequireAuth()
@@ -178,6 +245,14 @@ export default function VolunteerDetailPage({ params }: { params: Promise<{ id: 
                 </div>
                 {volunteer.canRemovePicture && person?.picture && (
                   <RemovePicture volunteerId={volunteer.id} name={volunteer.name} />
+                )}
+                {volunteer.deputy && volunteer.chapter && (
+                  <DeputyControl
+                    volunteerId={volunteer.id}
+                    name={volunteer.name}
+                    chapterName={volunteer.chapter.name}
+                    deputy={volunteer.deputy}
+                  />
                 )}
               </div>
               {isMe && (
