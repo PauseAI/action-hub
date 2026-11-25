@@ -9,7 +9,6 @@ import Link from 'next/link'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Button from '@/components/Button'
 import Checkbox from '@/components/Checkbox'
-import DatesBlock from '@/components/DatesBlock'
 import FormLabel from '@/components/FormLabel'
 import { H2, H3, H4 } from '@/components/Heading'
 import { P } from '@/components/Text'
@@ -17,13 +16,7 @@ import { plural } from '@/lib/plural'
 import { handedIn } from '@/lib/overdue'
 import { interestOutline } from '@/lib/status-emphasis'
 import { KEY_DATE_SIDE_LABELS } from '@/lib/key-date'
-import {
-  EMPTY_DATES,
-  datesPayload,
-  datesValueFrom,
-  taskIsDated,
-  type DatesValue,
-} from '@/lib/task-dates'
+import { datesValueFrom, taskIsDated } from '@/lib/task-dates'
 import { Badge, StatusFlag } from '@/components/Badge'
 import { PersonAvatar } from '@/components/WorkRow'
 import {
@@ -56,10 +49,6 @@ import StatusSplitButton from '@/components/StatusSplitButton'
 import MessageDialog from '@/components/MessageDialog'
 import Linkify from '@/components/Linkify'
 import SubmitWorkButton from '@/components/SubmitWorkButton'
-import SubmissionAskFields, {
-  NEW_SUBMISSION_ASK,
-  submissionAskPayload,
-} from '@/components/SubmissionAskFields'
 import { lateness } from '@/lib/lateness'
 import type { Permission } from '@/lib/permissions'
 import { awaitsOwnerReview } from '@/lib/task-review'
@@ -114,7 +103,7 @@ import { arrayMove } from '@dnd-kit/sortable'
 import { TaskList, isTaskOpenToClaim, type ProjectTask } from '@/components/ProjectTaskList'
 import PageLoading from '@/components/PageLoading'
 import WorkItemCard from '@/components/WorkItemCard'
-import HelpersWantedField, { helpersWantedPayload } from '@/components/HelpersWantedField'
+import NewTaskForm, { type NewTask } from '@/components/NewTaskForm'
 import { helperSummary } from '@/lib/helper-summary'
 import { BLEED, SECTION_CARD } from '@/lib/ui-classes'
 import { TASK_FILTERS, type TaskFilter } from '@/lib/task-list-order'
@@ -700,13 +689,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
   // Task section
   const [showTaskForm, setShowTaskForm] = useState(false)
-  const [newTaskTitle, setNewTaskTitle] = useState('')
-  const [newTaskDescription, setNewTaskDescription] = useState('')
-  const [newTaskDates, setNewTaskDates] = useState<DatesValue>(EMPTY_DATES)
   const [highlightCritical, setHighlightCritical] = useState(false)
-  const [newTaskFeatured, setNewTaskFeatured] = useState(false)
-  const [newTaskAsk, setNewTaskAsk] = useState(NEW_SUBMISSION_ASK)
-  const [newTaskHelpers, setNewTaskHelpers] = useState('')
   const [orderedTasks, setOrderedTasks] = useState<ProjectTask[]>([])
   const [yourOrder, setYourOrder] = useState(false)
   const [tab, setTab] = useState<ProjectTab>('overview')
@@ -957,12 +940,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const createTaskMutation = useMutation({
     ...orpc.projects.createTask.mutationOptions(),
     onSuccess: () => {
-      setNewTaskTitle('')
-      setNewTaskDescription('')
-      setNewTaskDates(EMPTY_DATES)
-      setNewTaskFeatured(false)
-      setNewTaskAsk(NEW_SUBMISSION_ASK)
-      setNewTaskHelpers('')
       setShowTaskForm(false)
       showToast('Task added!', 'success')
       void invalidateProject()
@@ -1382,18 +1359,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
   // ── Task handlers ────────────────────────────────────────────────────────
 
-  function handleAddTask(e: React.FormEvent) {
-    e.preventDefault()
-    if (!newTaskTitle.trim()) return
-    createTaskMutation.mutate({
-      projectId: parseInt(idParam, 10),
-      title: newTaskTitle.trim(),
-      description: newTaskDescription.trim() || undefined,
-      ...datesPayload(newTaskDates),
-      featuredAsQuickTask: newTaskFeatured,
-      ...submissionAskPayload(newTaskAsk),
-      ...helpersWantedPayload(newTaskHelpers),
-    })
+  async function handleAddTask(task: NewTask): Promise<boolean> {
+    try {
+      await createTaskMutation.mutateAsync({ projectId: parseInt(idParam, 10), ...task })
+      return true
+    } catch {
+      // createTaskMutation's onError already toasted.
+      return false
+    }
   }
 
   function handleAssignTask(taskId: number) {
@@ -2444,78 +2417,20 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               </div>
 
               {showTaskForm && canCreateTasks && (
-                <div
-                  className={`bg-brand-bg rounded-lg p-3 mb-4 border border-brand-border ${wide ? 'max-w-3xl' : ''}`}
-                >
-                  <form onSubmit={handleAddTask}>
-                    <div className="mb-3">
-                      <FormLabel htmlFor="new-task-title">Task title</FormLabel>
-                      <Input
-                        id="new-task-title"
-                        type="text"
-                        aria-label="Task title"
-                        value={newTaskTitle}
-                        onChange={(e) => setNewTaskTitle(e.target.value)}
-                        placeholder="Describe the task…"
-                        autoFocus
-                      />
-                    </div>
-                    <div className="mb-3">
-                      <FormLabel htmlFor="new-task-description">Description</FormLabel>
-                      <Textarea
-                        id="new-task-description"
-                        aria-label="Description"
-                        rows={3}
-                        value={newTaskDescription}
-                        onChange={(e) => setNewTaskDescription(e.target.value)}
-                        placeholder="Add any context, examples, or guidelines…"
-                      />
-                    </div>
-                    <div className="mb-1">
-                      <DatesBlock
-                        id="new-task"
-                        value={newTaskDates}
-                        onChange={setNewTaskDates}
-                        note={
-                          canManageTasks
-                            ? undefined
-                            : 'Only the project owner can change these dates once the task exists.'
-                        }
-                      />
-                    </div>
-                    <SubmissionAskFields
-                      id="new-task"
-                      value={newTaskAsk}
-                      onChange={setNewTaskAsk}
-                    />
-                    <HelpersWantedField
-                      id="new-task"
-                      value={newTaskHelpers}
-                      onChange={setNewTaskHelpers}
-                    />
-                    <div className="mb-3">
-                      <Checkbox
-                        checked={newTaskFeatured}
-                        onChange={(e) => setNewTaskFeatured(e.target.checked)}
-                      >
-                        Add this task to the quick tasks page so volunteers can find and claim it
-                        without first clicking into this project
-                      </Checkbox>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button type="submit" disabled={createTaskMutation.isPending}>
-                        {createTaskMutation.isPending ? 'Creating…' : 'Create task'}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={() => setShowTaskForm(false)}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  </form>
-                </div>
+                <NewTaskForm
+                  className={`mb-4 ${wide ? 'max-w-3xl' : ''}`}
+                  onCreate={handleAddTask}
+                  pending={createTaskMutation.isPending}
+                  submitLabel="Create task"
+                  pendingLabel="Creating…"
+                  onCancel={() => setShowTaskForm(false)}
+                  datesNote={
+                    canManageTasks
+                      ? undefined
+                      : 'Only the project owner can change these dates once the task exists.'
+                  }
+                  autoFocus
+                />
               )}
 
               {tab === 'timeline' && (

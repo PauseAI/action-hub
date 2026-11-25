@@ -416,7 +416,8 @@ describe('project page — owner', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     await userEvent.click(screen.getByRole('button', { name: 'Add task' }))
     await userEvent.type(screen.getByLabelText('Task title'), 'Third task')
-    await userEvent.type(screen.getByLabelText('Description'), 'details')
+    await userEvent.click(screen.getByRole('button', { name: 'More details' }))
+    await userEvent.type(screen.getByLabelText('Details (optional)'), 'details')
     await userEvent.type(screen.getByLabelText('Effort: about'), '2')
     fireEvent.change(screen.getByLabelText('Deadline'), { target: { value: '2030-01-01' } })
     fireEvent.change(screen.getByLabelText('Start (optional)'), {
