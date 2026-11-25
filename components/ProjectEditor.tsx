@@ -179,7 +179,13 @@ export default function ProjectEditor(props: ProjectEditorProps) {
       : projectData?.isOrgProposed === true || (projectData?.templateOriginId ?? null) !== null
   // A volunteer's proposal is a skeleton: the idea, why, and a rough outline. Effort, dates and
   // skills wait for Planning, once it is approved. Org and template drafts skip Planning.
-  const isSkeleton = !isOrgDraft && (projectId === undefined || projectData?.stage === 'proposal')
+  // Until a lazily created draft has loaded, the variant that opened the screen decides. A
+  // planned project sent back for changes keeps its plan, as the server does (addsOutlineTasks).
+  const isSkeleton =
+    !isOrgDraft &&
+    (projectData
+      ? projectData.stage === 'proposal' && projectData.plannedAt === null
+      : initialVariant !== 'admin')
 
   useEffect(() => {
     if (!projectData || initialized) return
@@ -843,8 +849,8 @@ export default function ProjectEditor(props: ProjectEditorProps) {
           </P>
         </div>
 
-        {/* Timeline fields, offered for every project type — unlike the free-text estimate
-            above, which is only asked for sprints and containers. */}
+        {/* Timeline fields, for every project type once it is past being a proposal; a proposal
+            is asked only for its deadline. */}
         {(!isSkeleton || projectId !== undefined) && (
           <div className="mb-5 flex flex-wrap gap-3">
             {!isSkeleton && (
@@ -1310,10 +1316,10 @@ export default function ProjectEditor(props: ProjectEditorProps) {
       {deleteTaskTarget && (
         <ConfirmDialog
           id="confirm-delete-editor-task"
-          title="Delete this task?"
+          title={isSkeleton ? 'Remove this outline item?' : 'Delete this task?'}
           isOpen
           body="The task and anything posted on it are removed. This cannot be undone."
-          confirmLabel="Delete task"
+          confirmLabel={isSkeleton ? 'Remove' : 'Delete task'}
           busyLabel="Deleting…"
           danger
           busy={deleteTaskMutation.isPending}

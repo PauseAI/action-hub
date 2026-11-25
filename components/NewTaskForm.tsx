@@ -68,13 +68,14 @@ export default function NewTaskForm({
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (pending || !title.trim()) return
+    // An outline item is its title alone: details typed before the form became one are not sent.
     const created = await onCreate({
       title: title.trim(),
-      description: description.trim() || undefined,
-      ...datesPayload(dates),
-      featuredAsQuickTask: allowQuickTask && featured,
-      ...submissionAskPayload(ask),
-      ...helpersWantedPayload(helpers),
+      description: (!outline && description.trim()) || undefined,
+      ...datesPayload(outline ? EMPTY_DATES : dates),
+      featuredAsQuickTask: !outline && allowQuickTask && featured,
+      ...submissionAskPayload(outline ? NEW_SUBMISSION_ASK : ask),
+      ...helpersWantedPayload(outline ? '' : helpers),
     })
     if (!created) return
     setTitle('')

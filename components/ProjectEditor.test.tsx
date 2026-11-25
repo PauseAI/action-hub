@@ -59,6 +59,8 @@ describe('ProjectEditor — new volunteer proposal', () => {
     await waitFor(() => expect(window.location.pathname).toMatch(/^\/projects\/\d+\/edit$/), {
       timeout: 20_000,
     })
+    // Still a skeleton while the new draft loads: the Planning fields never flash in.
+    expect(screen.queryByLabelText('Hours per week')).toBeNull()
     await sawSpinner
     expect(await prisma.workItem.count({ where: { creatorId: me.id } })).toBe(1)
     const draft = await prisma.workItem.findFirstOrThrow({ where: { creatorId: me.id } })
@@ -609,7 +611,7 @@ describe('ProjectEditor — editing an existing project', () => {
     expect(await screen.findByText('Project or task not found')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }))
     await userEvent.click(
-      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete task' }),
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Remove' }),
     )
     expect(await screen.findByText('Project not found')).toBeInTheDocument()
     await userEvent.type(
@@ -743,5 +745,23 @@ describe('ProjectEditor — an approved project in Planning', () => {
     fireEvent.change(total, { target: { value: '40' } })
     blur(total)
     await waitFor(async () => expect((await row(project.id)).estimatedTotalHours).toBe(40))
+  })
+})
+
+describe('ProjectEditor — a planned project sent back for changes', () => {
+  it('keeps the whole form, and its tasks are tasks', async () => {
+    const me = await createVolunteer()
+    const project = await createProject({
+      assigneeId: me.id,
+      creatorId: me.id,
+      status: 'draft',
+      plannedAt: new Date(),
+      title: 'Planned before',
+    })
+    await createTask(project.id, { title: 'Real task' })
+    await mount({ projectId: project.id }, me)
+    await screen.findByDisplayValue('Planned before')
+    expect(screen.getByLabelText('Start date')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Delete task' })).toBeInTheDocument()
   })
 })
