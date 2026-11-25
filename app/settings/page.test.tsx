@@ -328,14 +328,16 @@ describe('settings — notifications and privacy tabs', () => {
     expect(screen.getByLabelText(/Allow Google Analytics/)).toBeChecked()
     expect(screen.getByText('Current status:')).toHaveTextContent('on')
     await userEvent.click(screen.getByLabelText(/Allow Google Analytics/))
-    // The toast lands while the first save is still refetching, its button still "Saving…".
+    // The button reads "Saving…" while the first save is still refetching, so wait for it.
     await userEvent.click(await screen.findByRole('button', { name: 'Save changes' }))
-    await waitFor(() => expect(screen.getAllByText('Profile updated!')).toHaveLength(2))
-    expect(await me(vol.id)).toMatchObject({
-      consentMakeProfileVisibleInDirectory: false,
-      cookieConsentAnalytics: false,
-    })
-    expect(screen.getByText('Current status:')).toHaveTextContent('off')
+    // The first save's toast may close before this one opens; wait for what this save changes.
+    await vi.waitFor(async () =>
+      expect(await me(vol.id)).toMatchObject({
+        consentMakeProfileVisibleInDirectory: false,
+        cookieConsentAnalytics: false,
+      }),
+    )
+    await waitFor(() => expect(screen.getByText('Current status:')).toHaveTextContent('off'))
     await userEvent.click(screen.getByRole('button', { name: 'Download my data' }))
     await screen.findByText('Data exported successfully!')
     expect(click).toHaveBeenCalled()
