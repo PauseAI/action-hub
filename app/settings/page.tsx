@@ -788,7 +788,7 @@ function SettingsPageContent() {
                   signed out everywhere, then you can sign in with Google or your password.
                 </P>
                 {passwordLinkMutation.isSuccess && (
-                  <P className="mb-5" role="status">
+                  <P className="text-sm mb-5" role="status">
                     Link sent to <strong>{user.email}</strong>. If it hasn&apos;t arrived in a few
                     minutes, check your spam folder or send another.
                   </P>
