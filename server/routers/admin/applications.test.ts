@@ -226,6 +226,41 @@ describe('admin.applications trail', () => {
     ).toBe(1)
   })
 
+  it('refuses a step when the application changed after it was read', async () => {
+    const chapter = await createChapter()
+    const deputy = await createChapterDeputy(chapter)
+    const applicant = await createMember(chapter, { approvalStatus: 'pending' })
+    // Someone else approves between this reviewer's read and their write.
+    const read = prisma.volunteer.findFirst.bind(prisma.volunteer)
+    const spy = vi.spyOn(prisma.volunteer, 'findFirst').mockImplementationOnce((async (
+      args: Parameters<typeof read>[0],
+    ) => {
+      const seen = await read(args)
+      await prisma.volunteer.update({
+        where: { id: applicant.id },
+        data: { approvalStatus: 'approved' },
+      })
+      return seen
+    }) as never)
+    try {
+      await expect(
+        clientAs(deputy).admin.applications.action({ id: applicant.id, action: 'reject' }),
+      ).rejects.toMatchObject({
+        code: 'CONFLICT',
+        message: 'Someone else changed this application just now. Reload to see it.',
+      })
+    } finally {
+      spy.mockRestore()
+    }
+    expect(await prisma.volunteer.findUnique({ where: { id: applicant.id } })).toMatchObject({
+      approvalStatus: 'approved',
+      rejectedAt: null,
+    })
+    expect(
+      await prisma.chapterAuditEvent.count({ where: { targetVolunteerId: applicant.id } }),
+    ).toBe(0)
+  })
+
   it('logs a pool application under no chapter, and nothing for a refused step', async () => {
     const admin = await createSuperAdmin()
     const pooled = await createVolunteer({ approvalStatus: 'approved' })
