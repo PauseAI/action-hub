@@ -71,6 +71,10 @@ export const PERMISSIONS = {
     summary: 'Make a member a deputy, or stop them being one',
   },
   'task.create': { scope: 'project', summary: 'Add a task' },
+  'task.answerRequests': {
+    scope: 'project',
+    summary: 'Answer someone not on it who asks to take or help on a task, which brings them on',
+  },
   'task.manage': {
     scope: 'project',
     summary:
@@ -109,6 +113,7 @@ const PROJECT_ADMIN: readonly Permission[] = [
   'project.addMember',
   'project.appointDeputies',
   'task.create',
+  'task.answerRequests',
   'task.manage',
   'task.assign',
   'task.delete',
@@ -154,6 +159,7 @@ export const ROLES = {
       'project.recruit',
       'project.appointDeputies',
       'task.create',
+      'task.answerRequests',
       'task.manage',
       'task.assign',
       'task.delete',
@@ -186,7 +192,14 @@ export const ROLES = {
     scope: 'project',
     name: 'Project deputy',
     heldBy: 'A member the owner has made a deputy',
-    grants: ['task.create', 'task.manage', 'task.assign', 'task.delete', 'task.removeHelper'],
+    grants: [
+      'task.create',
+      'task.answerRequests',
+      'task.manage',
+      'task.assign',
+      'task.delete',
+      'task.removeHelper',
+    ],
   },
   projectMember: {
     scope: 'project',

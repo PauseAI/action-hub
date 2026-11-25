@@ -1100,7 +1100,7 @@ describe('claiming before joining', () => {
     const interest = await prisma.workItemInterest.findFirstOrThrow({
       where: { workItemId: project.id, volunteerId: me.id },
     })
-    expect(interest).toMatchObject({ status: 'pending', message: "Asked to take 'Poster'" })
+    expect(interest).toMatchObject({ status: 'pending', message: null })
     await vi.waitFor(async () =>
       expect(
         await prisma.notification.findFirst({
@@ -1142,7 +1142,7 @@ describe('claiming before joining', () => {
       await prisma.workItemInterest.findFirstOrThrow({ where: { id: interest.id } }),
     ).toMatchObject({
       status: 'pending',
-      message: "Asked to take 'Flyer': I design for a living",
+      message: 'I design for a living',
     })
 
     await clientAs(owner).projects.respondToInterest({

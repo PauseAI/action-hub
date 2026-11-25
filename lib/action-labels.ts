@@ -27,6 +27,14 @@ export const UNASSIGN = 'Unassign'
 /** A project member joining a task that seeks helpers, beside its lead. */
 export const JOIN_AS_HELPER = 'Join as helper'
 
+/** Someone not yet on the project asking for a helper place, which also asks to join it. */
+export const OFFER_TO_HELP = 'Offer to help'
+
+/** Joining as a helper, worded for where the viewer stands on the project. */
+export function joinAsHelperLabel(viewer: ClaimViewer): string {
+  return viewer.onProject || viewer.invited ? JOIN_AS_HELPER : OFFER_TO_HELP
+}
+
 /** A helper leaving the task, from their own chip. Matches the project-level "Withdraw". */
 export const LEAVE_HELPING = 'Withdraw'
 

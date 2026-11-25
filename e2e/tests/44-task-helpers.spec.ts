@@ -1,6 +1,7 @@
 import {
   test,
   expect,
+  getAlert,
   createApprovedVolunteerNamed,
   dismissCookieConsentScript,
   readAdminToken,
@@ -114,5 +115,50 @@ test.describe('Task helpers', () => {
 
     await helperAContext.close()
     await helperBContext.close()
+  })
+
+  test('someone not on the project offers to help, and accepting puts them on the task and the project', async ({
+    volunteer,
+    adminPage,
+    baseUrl,
+    snap,
+  }) => {
+    const adminApi = createApiClient(baseUrl, readAdminToken(baseUrl))
+    const projectId = await adminCreateProjectViaApi(
+      baseUrl,
+      fake.projectTitle(),
+      'Offer to help e2e project',
+    )
+    const created = await adminApi.projects.createTask({
+      body: { projectId, title: 'Practise the briefing' },
+    })
+    const taskId = (created.body as { id: number }).id
+    await adminApi.projects.updateTask({ body: { projectId, taskId, data: { helpersWanted: 1 } } })
+    const taskUrl = `${baseUrl}/projects/${projectId}/tasks/${taskId}`
+
+    const page = volunteer.page
+    await page.goto(taskUrl)
+    await page.getByRole('button', { name: 'Offer to help' }).click()
+    await expect(getAlert(page)).toContainText('Offer sent', { timeout: 10_000 })
+    await expect(page.getByText("You've offered to help.")).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Withdraw request' })).toBeVisible()
+    await snap(page, 'offer waiting')
+
+    // One request, saying what it is for.
+    await adminPage.goto(`${baseUrl}/projects/${projectId}#people`)
+    const request = adminPage.locator('.interest-card').filter({ hasText: volunteer.name })
+    await expect(
+      request.getByRole('list', { name: `What ${volunteer.name} asks for` }),
+    ).toContainText('Offers to help on Practise the briefing', { timeout: 10_000 })
+    await snap(adminPage, 'request with its task')
+    await request.getByRole('button', { name: 'Accept' }).click()
+    await expect(getAlert(adminPage)).toContainText('Accepted. They', { timeout: 10_000 })
+
+    await page.reload()
+    await expect(
+      page.getByRole('region', { name: 'Helpers' }).getByText('1 helper', { exact: true }),
+    ).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole('button', { name: 'Withdraw from helping' })).toBeVisible()
+    await expect(page.getByText("You've offered to help.")).toHaveCount(0)
   })
 })

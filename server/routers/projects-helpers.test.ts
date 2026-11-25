@@ -1,6 +1,13 @@
 import { describe, it, expect, vi } from 'vitest'
 import { prisma } from '@/lib/prisma'
-import { createAdmin, createProject, createTask, createVolunteer } from '@/test/factories'
+import {
+  createAdmin,
+  createChapter,
+  createMember,
+  createProject,
+  createTask,
+  createVolunteer,
+} from '@/test/factories'
 import { clientAs } from '@/test/rpc'
 import { REOPEN_PROJECT_TO_CHANGE, REOPEN_TASK_TO_CHANGE } from '@/lib/work-item-lock'
 
@@ -54,6 +61,7 @@ describe('task helpers: joining', () => {
 
     expect(await join(ann, project.id, task.id)).toEqual({
       message: "You're helping on this task",
+      requested: false,
     })
     expect(await row(ann.id, task.id)).toMatchObject({
       status: 'accepted',
@@ -110,13 +118,26 @@ describe('task helpers: joining', () => {
     await expect(join(lead, project.id, task.id)).rejects.toMatchObject({
       message: 'You already lead this task',
     })
-    await expect(join(stranger, project.id, task.id)).rejects.toMatchObject({
+    // Someone not on the project offers instead (task-offers tests).
+    const taken = await createVolunteer()
+    await prisma.workItemInterest.create({
+      data: {
+        workItemId: project.id,
+        volunteerId: taken.id,
+        interestType: 'want_to_contribute',
+        status: 'removed',
+      },
+    })
+    await expect(join(taken, project.id, task.id)).rejects.toMatchObject({
       code: 'FORBIDDEN',
-      message: 'Join the project to help on its tasks',
+      message: 'You are no longer contributing to this project, so you cannot help on its tasks',
     })
     expect(
-      await clientAs(stranger).projects.getTask({ projectId: project.id, taskId: task.id }),
+      await clientAs(taken).projects.getTask({ projectId: project.id, taskId: task.id }),
     ).toMatchObject({ canJoinAsHelper: false })
+    expect(
+      await clientAs(stranger).projects.getTask({ projectId: project.id, taskId: task.id }),
+    ).toMatchObject({ canJoinAsHelper: true, hasOffered: false })
 
     const solo = await createTask(project.id, { helpersWanted: null })
     await expect(join(member, project.id, solo.id)).rejects.toMatchObject({
@@ -220,7 +241,6 @@ describe('task helpers: adding directly', () => {
   it('refuses whoever cannot manage the task, and invalid targets', async () => {
     const lead = await createVolunteer({ name: 'Lee' })
     const ann = await createVolunteer({ name: 'Ann' })
-    const stranger = await createVolunteer()
     const { owner, project } = await projectWith([lead, ann])
     const task = await createTask(project.id, { assigneeId: lead.id, helpersWanted: 1 })
 
@@ -236,8 +256,12 @@ describe('task helpers: adding directly', () => {
     await expect(add(owner, project.id, task.id, lead.id)).rejects.toMatchObject({
       message: 'They already lead this task',
     })
-    await expect(add(owner, project.id, task.id, stranger.id)).rejects.toMatchObject({
-      message: 'They need to join the project first',
+    const elsewhere = await createMember(await createChapter())
+    await expect(add(owner, project.id, task.id, elsewhere.id)).rejects.toMatchObject({
+      message: 'They are in another national chapter',
+    })
+    await expect(add(owner, project.id, task.id, 999_999)).rejects.toMatchObject({
+      message: 'Volunteer not found',
     })
 
     const solo = await createTask(project.id, { helpersWanted: null })

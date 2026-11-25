@@ -2046,7 +2046,7 @@ describe('project page — remaining edges', () => {
     expect(screen.queryByRole('button', { name: 'Join and claim a task' })).toBeNull()
     expect(
       (await prisma.workItemInterest.findFirstOrThrow({ where: { volunteerId: me.id } })).message,
-    ).toBe("Asked to take 'Wanted task': Keen to help")
+    ).toBe('Keen to help')
     await userEvent.click(await screen.findByRole('button', { name: 'Withdraw request' }))
     await userEvent.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancel' }),

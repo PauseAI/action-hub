@@ -63,7 +63,18 @@ async function actionsFor(
       where: {
         id: { in: ids('new_interest') },
         status: InterestStatus.pending,
-        ...(viewer.isAdmin ? {} : { workItem: { assigneeId: viewer.id } }),
+        // A project's deputies answer the requests that come with a task.
+        ...(viewer.isAdmin
+          ? {}
+          : {
+              OR: [
+                { workItem: { assigneeId: viewer.id } },
+                {
+                  interestType: 'want_to_contribute',
+                  workItem: { deputies: { some: { volunteerId: viewer.id } } },
+                },
+              ],
+            }),
       },
       select: { id: true, workItemId: true },
     }),

@@ -1334,6 +1334,24 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           </Button>
         </div>
       ) : null}
+      {interest.asks.length > 0 && (
+        <ul
+          aria-label={`What ${interest.volunteerName} asks for`}
+          className="list-none p-0 m-0 w-full text-sm"
+        >
+          {interest.asks.map((a) => (
+            <li key={a.taskId}>
+              {a.asHelper ? 'Offers to help on ' : 'Asks to take '}
+              <Link
+                className="text-primary-text underline"
+                href={`/projects/${project.id}/tasks/${a.taskId}`}
+              >
+                {a.title}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
       {interest.message && interest.status !== InterestStatus.accepted && (
         <P className="text-sm text-text-light w-full m-0">{interest.message}</P>
       )}
@@ -1518,7 +1536,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const helperCount = (project.helpers ?? []).length
   // Requests the viewer can answer; an invite waits on the person invited.
   const waitingCount =
-    may('project.recruit') && !locked
+    (may('project.recruit') || may('task.answerRequests')) && !locked
       ? volunteerInterests.filter((i) => i.status === InterestStatus.pending).length
       : 0
   // Requests count too for the viewer who answers them, so the tab's number matches its bubble.
@@ -1557,6 +1575,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           <EmptyPersonChip label="No owner yet" />
         )}
       </P>
+      {/* A deputy answers the requests that come with a task, and sees only those. */}
+      {!isOwnerOrAdmin && peopleGroups[0].rows.length > 0 && (
+        <section aria-label="Requests" className="mb-3">
+          <H3 className="text-sm mb-2">Requests ({peopleGroups[0].rows.length})</H3>
+          <ul className="list-none p-0 m-0">{peopleGroups[0].rows.map(renderPerson)}</ul>
+        </section>
+      )}
       {!isOwnerOrAdmin && Array.isArray(project.helpers) && (
         <div>
           <H3 className="text-sm mb-2">Volunteers</H3>
