@@ -231,3 +231,27 @@ describe('quick tasks', () => {
     expect(offered).not.toContain(outline.id)
   })
 })
+
+describe('stage edge cases', () => {
+  it('counts a project finished mid-plan as past planning, and keeps a planned project planned', async () => {
+    const admin = await createAdmin()
+    const c = clientAs(admin)
+    const done = await createProject({ status: 'completed', plannedAt: null })
+    expect((await c.projects.getById({ id: done.id })).stage).toBe('running')
+
+    // Sent back for changes after it was planned: new tasks are real, not outline items.
+    const planned = await createProject({ status: 'needs_discussion', assigneeId: admin.id })
+    await prisma.workItem.update({ where: { id: planned.id }, data: { plannedAt: new Date() } })
+    const { id } = await c.projects.createTask({ projectId: planned.id, title: 'More' })
+    expect((await task(id)).isOutline).toBe(false)
+  })
+
+  it('will not move a project with only outline items to In progress', async () => {
+    const { owner, projectId } = await inPlanning()
+    await expect(
+      clientAs(owner).projects.update({ id: projectId, status: 'in_progress' }),
+    ).rejects.toMatchObject({
+      message: 'A project cannot be moved to In Progress without at least one open task',
+    })
+  })
+})

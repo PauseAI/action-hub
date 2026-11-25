@@ -113,6 +113,7 @@ import {
   TERMINAL_STATUSES,
   UNAPPROVED_STATUSES,
   MAX_VOLUNTEER_DRAFTS,
+  addsOutlineTasks,
   projectStage,
   projectStatusLabel,
 } from '@/lib/project-status'
@@ -2008,6 +2009,7 @@ export const projectsRouter = {
             parentId: input.id,
             type: WorkItemType.TASK,
             status: { not: TaskStatus.completed },
+            isOutline: false,
           },
         })
         if (openTaskCount === 0) {
@@ -3222,12 +3224,7 @@ export const projectsRouter = {
         durationDays: input.durationDays ?? null,
         taskDeadline: input.deadline ?? null,
       })
-      // A volunteer's proposal is a skeleton: its tasks are outline items until it is planned.
-      // Org and template drafts skip review and Planning, so theirs are real from the start.
-      const isOutline =
-        projectStage(project) === 'proposal' &&
-        !project.isOrgProposed &&
-        project.templateOriginId === null
+      const isOutline = addsOutlineTasks(project)
 
       const task = await prisma.$transaction(async (tx) => {
         const max = await tx.workItem.aggregate({

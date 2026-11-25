@@ -148,7 +148,28 @@ export type ProjectStage = 'proposal' | 'planning' | 'running'
 
 export function projectStage(p: { status: string; plannedAt: Date | string | null }): ProjectStage {
   if (UNAPPROVED_STATUSES.includes(p.status)) return 'proposal'
-  return p.plannedAt === null ? 'planning' : 'running'
+  // A project finished or archived mid-plan is past planning: it can no longer be planned.
+  if (p.plannedAt === null && !TERMINAL_STATUSES.includes(p.status)) return 'planning'
+  return 'running'
+}
+
+/**
+ * Whether a task added now is an outline item: only on a volunteer's proposal that has never
+ * been planned. Org and template drafts skip review and Planning, and a planned project sent
+ * back for changes keeps its plan.
+ */
+export function addsOutlineTasks(p: {
+  status: string
+  plannedAt: Date | null
+  isOrgProposed: boolean | null
+  templateOriginId: number | null
+}): boolean {
+  return (
+    projectStage(p) === 'proposal' &&
+    p.plannedAt === null &&
+    !p.isOrgProposed &&
+    p.templateOriginId === null
+  )
 }
 
 export const PROJECT_STAGE_LABELS: Record<ProjectStage, string> = {

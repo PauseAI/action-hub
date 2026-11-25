@@ -405,3 +405,44 @@ describe('what an import may and may not say', () => {
     expect(diff.errors.length).toBeGreaterThan(0)
   })
 })
+
+describe('projects.applyImport and outline items', () => {
+  it('refuses a proposal, and plans an outline item a file gives a person or a status', async () => {
+    const owner = await createVolunteer()
+    const proposal = await createProject({ status: 'pending_review', assigneeId: owner.id })
+    const c = clientAs(owner)
+    const draftFile = await c.projects.exportPlan({ projectId: proposal.id })
+    await expect(
+      c.projects.applyImport({
+        projectId: proposal.id,
+        file: JSON.stringify(draftFile),
+        expectedHash: draftFile._meta.baseHash,
+      }),
+    ).rejects.toMatchObject({ message: 'Import a plan once the project is approved' })
+
+    const project = await createProject({ assigneeId: owner.id, plannedAt: null })
+    const taken = await createTask(project.id, { title: 'Taken', sortOrder: 1, isOutline: true })
+    const renamed = await createTask(project.id, { title: 'Rough', sortOrder: 2, isOutline: true })
+    const file = await c.projects.exportPlan({ projectId: project.id })
+    const edited = {
+      ...file,
+      tasks: [
+        { ...file.tasks[0], assigneeEmail: owner.email },
+        { ...file.tasks[1], title: 'Still rough' },
+      ],
+    }
+    await c.projects.applyImport({
+      projectId: project.id,
+      file: JSON.stringify(edited),
+      expectedHash: file._meta.baseHash,
+    })
+    expect(await prisma.workItem.findUniqueOrThrow({ where: { id: taken.id } })).toMatchObject({
+      isOutline: false,
+      assigneeId: owner.id,
+    })
+    expect(await prisma.workItem.findUniqueOrThrow({ where: { id: renamed.id } })).toMatchObject({
+      isOutline: true,
+      title: 'Still rough',
+    })
+  })
+})

@@ -616,7 +616,7 @@ model WorkItem {
   sortOrder           Int?      @default(0) @map("sort_order")
   featuredAsQuickTask Boolean?  @default(false) @map("featured_as_quick_task") // TASK only — also list on the Quick Tasks page
   // TASK only: a rough outline item from the proposal, a title waiting to be planned into a
-  // real task. Nobody can join, take, start or feature it, and the schedule skips it.
+  // real task. Nobody can join, take, start or feature it.
   isOutline           Boolean   @default(false) @map("is_outline")
 
   // Scheduling — applies to PROJECT and TASK alike, so it is not in either type-specific

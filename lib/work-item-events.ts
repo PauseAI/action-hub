@@ -281,7 +281,8 @@ function changePhrases(
   }
   if ('title' in after) phrases.push(`renamed this '${after.title as string}'`)
   if (after.isOutline === false) phrases.push('planned this into a task')
-  if ('plannedAt' in after && after.plannedAt) phrases.push('finished planning')
+  // Publishing an org project plans it too, but as part of going live, not as a step of its own.
+  if (after.plannedAt && !('status' in after)) phrases.push('finished planning')
   if ('isAnchor' in after) {
     phrases.push(after.isAnchor ? 'made this a key date' : 'took the key date off this')
   }

@@ -6,6 +6,7 @@ import { applyScheduleWrite } from '@/lib/work-item'
 import type { ChapterAccess } from '@/lib/chapter-access'
 import { assertCanOnProject } from '@/lib/permissions-server'
 import { assertProjectEditable } from '@/lib/work-item-lock'
+import { addsOutlineTasks } from '@/lib/project-status'
 import { findDependencyCycle } from '@/lib/schedule'
 import { loadTaskEdges } from '@/lib/project-schedule'
 import {
@@ -32,6 +33,9 @@ type ProjectRow = {
   teamId: number | null
   nationalChapterId: number | null
   standingRequests: boolean
+  plannedAt: Date | null
+  isOrgProposed: boolean | null
+  templateOriginId: number | null
 }
 
 async function loadState(
@@ -88,6 +92,9 @@ async function loadState(
       teamId: project.teamId,
       nationalChapterId: project.nationalChapterId,
       standingRequests: project.standingRequests,
+      plannedAt: project.plannedAt,
+      isOrgProposed: project.isOrgProposed,
+      templateOriginId: project.templateOriginId,
     },
     state,
   }
@@ -155,6 +162,12 @@ export const projectPortingRouter = {
       if (!loaded) throw new ORPCError('NOT_FOUND', { message: 'Project not found' })
       await assertCanManage(loaded.project, context)
       assertProjectEditable(loaded.project)
+      // A file is a whole plan, with dates, people and statuses; a proposal is only an outline.
+      if (addsOutlineTasks(loaded.project)) {
+        throw new ORPCError('BAD_REQUEST', {
+          message: 'Import a plan once the project is approved',
+        })
+      }
 
       if (hashState(loaded.state) !== input.expectedHash) {
         throw new ORPCError('CONFLICT', {
@@ -214,6 +227,15 @@ export const projectPortingRouter = {
 
       const now = new Date()
 
+      const outlineIds = new Set(
+        (
+          await prisma.workItem.findMany({
+            where: { parentId: input.projectId, type: WorkItemType.TASK, isOutline: true },
+            select: { id: true },
+          })
+        ).map((t) => t.id),
+      )
+
       const result = await prisma.$transaction(async (tx) => {
         if (Object.keys(plan.project).length > 0) {
           await tx.workItem.update({ where: { id: input.projectId }, data: plan.project })
@@ -242,6 +264,13 @@ export const projectPortingRouter = {
           if (f.submissionAsksLink !== undefined) data.submissionAsksLink = f.submissionAsksLink
           if (f.helpersWanted !== undefined) data.helpersWanted = f.helpersWanted
           if (f.status !== undefined) data.status = f.status
+          // A file that gives an outline item a person, a status or a listing plans it.
+          if (
+            outlineIds.has(upd.id) &&
+            (f.status !== undefined || f.assigneeEmail || f.featuredAsQuickTask)
+          ) {
+            data.isOutline = false
+          }
           if (f.assigneeEmail !== undefined) {
             data.assigneeId = f.assigneeEmail === null ? null : idForEmail(f.assigneeEmail)
             data.claimedAt = f.assigneeEmail === null ? null : now
