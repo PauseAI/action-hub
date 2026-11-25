@@ -12,7 +12,9 @@ import {
 import { APPLICATION_ANONYMISATION_MS } from '@/lib/applications'
 import { ApplicationActionSchema } from '@/lib/schemas'
 import { staffProcedure } from '../../procedures'
-import { ApprovalStatus } from '@/generated/prisma/enums'
+import { ApprovalStatus, ChapterAuditAction } from '@/generated/prisma/enums'
+import type { Prisma } from '@/generated/prisma/client'
+import { audit } from '@/lib/chapter-roles'
 import { clearNotifications, createNotification } from '@/lib/notify'
 import { logger } from '@/lib/logger'
 import { hashEmail } from '@/lib/auth'
@@ -26,6 +28,46 @@ async function applicantRunBy<T extends { nationalChapterId: number | null }>(
     throw new ORPCError('NOT_FOUND', { message: 'Volunteer not found' })
   }
   return applicant
+}
+
+/** Every audit action for a step in an application, in the order a trail reads. */
+export const APPLICATION_STEPS: readonly ChapterAuditAction[] = [
+  ChapterAuditAction.APPLICATION_REVIEW_STARTED,
+  ChapterAuditAction.APPLICATION_INFO_REQUESTED,
+  ChapterAuditAction.APPLICATION_REJECTED,
+  ChapterAuditAction.APPLICATION_REOPENED,
+  ChapterAuditAction.APPLICATION_APPROVED,
+]
+
+/**
+ * Saves a step in an application with the chapter audit event that records who took it, so the
+ * trail survives the next reviewer overwriting `reviewerId`. The change applies only while the
+ * application still holds the status it was read with: of two reviewers acting at once, the
+ * second is refused rather than both recorded from the same status.
+ */
+async function decide(
+  applicant: { id: number; nationalChapterId: number | null; approvalStatus: ApprovalStatus },
+  actorId: number,
+  action: ChapterAuditAction,
+  data: Prisma.VolunteerUncheckedUpdateManyInput,
+) {
+  await prisma.$transaction(async (tx) => {
+    const { count } = await tx.volunteer.updateMany({
+      where: { id: applicant.id, approvalStatus: applicant.approvalStatus },
+      data: { ...data, reviewerId: actorId },
+    })
+    if (!count) {
+      throw new ORPCError('CONFLICT', {
+        message: 'Someone else changed this application just now. Reload to see it.',
+      })
+    }
+    await audit(tx, action, {
+      actorId,
+      chapterId: applicant.nationalChapterId,
+      targetVolunteerId: applicant.id,
+      details: { from: applicant.approvalStatus },
+    })
+  })
 }
 
 /** Applications are decided by the applicant's chapter, or the global admins for the pool. */
@@ -173,6 +215,11 @@ export const adminApplicationsRouter = {
       const v = await applicantRunBy(context.access, found)
 
       const emailHash = v.email ? hashEmail(v.email) : null
+      const steps = await prisma.chapterAuditEvent.findMany({
+        where: { targetVolunteerId: v.id, action: { in: [...APPLICATION_STEPS] } },
+        include: { actor: { select: { id: true, name: true } } },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      })
 
       const previousRejections = emailHash
         ? await prisma.rejectedApplication.findMany({
@@ -197,6 +244,8 @@ export const adminApplicationsRouter = {
         adminNotes: v.applicationAdminNotes,
         applicantNotes: v.applicationApplicantNotes,
         reviewer: v.reviewer ? { id: v.reviewer.id, name: v.reviewer.name } : null,
+        /** Who took each step, oldest first; an actor whose account is gone is null. */
+        trail: steps.map((e) => ({ id: e.id, action: e.action, at: e.createdAt, actor: e.actor })),
         previousRejections: previousRejections.map((r) => ({
           rejectedAt: r.rejectedAt,
           adminNotes: r.adminNotes,
@@ -270,14 +319,10 @@ export const adminApplicationsRouter = {
             message: `Cannot start review on a ${volunteer.approvalStatus} application`,
           })
         }
-        await prisma.volunteer.update({
-          where: { id: input.id },
-          data: {
-            approvalStatus: ApprovalStatus.under_review,
-            reviewerId: admin.id,
-            ...(adminNotes !== undefined && { applicationAdminNotes: adminNotes }),
-            ...(applicantNotes !== undefined && { applicationApplicantNotes: applicantNotes }),
-          },
+        await decide(volunteer, admin.id, ChapterAuditAction.APPLICATION_REVIEW_STARTED, {
+          approvalStatus: ApprovalStatus.under_review,
+          ...(adminNotes !== undefined && { applicationAdminNotes: adminNotes }),
+          ...(applicantNotes !== undefined && { applicationApplicantNotes: applicantNotes }),
         })
         return { message: 'Review started' }
       }
@@ -291,14 +336,10 @@ export const adminApplicationsRouter = {
             message: `Cannot request info on a ${volunteer.approvalStatus} application`,
           })
         }
-        await prisma.volunteer.update({
-          where: { id: input.id },
-          data: {
-            approvalStatus: ApprovalStatus.needs_info,
-            reviewerId: admin.id,
-            ...(adminNotes !== undefined && { applicationAdminNotes: adminNotes }),
-            ...(applicantNotes !== undefined && { applicationApplicantNotes: applicantNotes }),
-          },
+        await decide(volunteer, admin.id, ChapterAuditAction.APPLICATION_INFO_REQUESTED, {
+          approvalStatus: ApprovalStatus.needs_info,
+          ...(adminNotes !== undefined && { applicationAdminNotes: adminNotes }),
+          ...(applicantNotes !== undefined && { applicationApplicantNotes: applicantNotes }),
         })
         if (volunteer.email) {
           const resolvedApplicantNotes =
@@ -318,15 +359,11 @@ export const adminApplicationsRouter = {
             message: `Cannot reopen a ${volunteer.approvalStatus} application`,
           })
         }
-        await prisma.volunteer.update({
-          where: { id: input.id },
-          data: {
-            approvalStatus: ApprovalStatus.needs_info,
-            rejectedAt: null,
-            reviewerId: admin.id,
-            ...(adminNotes !== undefined && { applicationAdminNotes: adminNotes }),
-            ...(applicantNotes !== undefined && { applicationApplicantNotes: applicantNotes }),
-          },
+        await decide(volunteer, admin.id, ChapterAuditAction.APPLICATION_REOPENED, {
+          approvalStatus: ApprovalStatus.needs_info,
+          rejectedAt: null,
+          ...(adminNotes !== undefined && { applicationAdminNotes: adminNotes }),
+          ...(applicantNotes !== undefined && { applicationApplicantNotes: applicantNotes }),
         })
         if (volunteer.email) {
           const resolvedApplicantNotes =
@@ -352,16 +389,19 @@ export const adminApplicationsRouter = {
 
       const newStatus = action === 'approve' ? ApprovalStatus.approved : ApprovalStatus.rejected
 
-      await prisma.volunteer.update({
-        where: { id: input.id },
-        data: {
+      await decide(
+        volunteer,
+        admin.id,
+        action === 'approve'
+          ? ChapterAuditAction.APPLICATION_APPROVED
+          : ChapterAuditAction.APPLICATION_REJECTED,
+        {
           approvalStatus: newStatus,
-          reviewerId: admin.id,
           ...(adminNotes !== undefined && { applicationAdminNotes: adminNotes }),
           ...(applicantNotes !== undefined && { applicationApplicantNotes: applicantNotes }),
           ...(action === 'reject' && { rejectedAt: new Date() }),
         },
-      })
+      )
 
       if (volunteer.email) {
         const resolvedApplicantNotes =
