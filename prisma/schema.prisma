@@ -713,6 +713,8 @@ model WorkItemComment {
   editedAt    DateTime?         @map("edited_at")
   /// Soft delete: the row stays so its replies keep their place; the content is never served.
   deletedAt   DateTime?         @map("deleted_at")
+  /// A video call this comment announces (lib/video-call.ts); such a comment cannot be edited.
+  callUrl     String?           @map("call_url")
   author      Volunteer?        @relation("WorkItemCommentAuthor", fields: [authorId], references: [id], onUpdate: NoAction)
   workItem    WorkItem          @relation(fields: [workItemId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   parent      WorkItemComment?  @relation("WorkItemCommentReplies", fields: [parentId], references: [id], onDelete: Cascade, onUpdate: NoAction)

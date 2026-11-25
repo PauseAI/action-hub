@@ -698,7 +698,7 @@ export default function TaskDetailPage({
           </Link>
           .
         </P>
-        <CommentThread workItemId={task.id} />
+        <CommentThread workItemId={task.id} calls />
       </div>
       {confirmingClaim && (
         <ConfirmDialog

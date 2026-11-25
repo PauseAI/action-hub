@@ -1,6 +1,13 @@
 import type { ComponentProps, ReactElement } from 'react'
 import { describe, it, expect, vi } from 'vitest'
-import { render as plainRender, screen, waitFor, fireEvent, within } from '@testing-library/react'
+import {
+  cleanup,
+  render as plainRender,
+  screen,
+  waitFor,
+  fireEvent,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { prisma } from '@/lib/prisma'
 import { createVolunteer, createProject, createTask } from '@/test/factories'
@@ -668,6 +675,66 @@ describe('CommentThread / BugReportCommentThread', () => {
     await userEvent.type(box, 'Newest')
     await userEvent.click(screen.getByRole('button', { name: 'Post comment' }))
     await waitFor(() => expect(texts()[0]).toBe('Newest'))
+  })
+
+  it('starts a call in a new tab and posts its link, for whoever may post', async () => {
+    const owner = await createVolunteer()
+    const project = await createProject({ title: 'Rally', assigneeId: owner.id })
+    const tab = { opener: {} as unknown, location: { href: '' }, close: vi.fn() }
+    const open = vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window)
+    await renderApp(<CommentThread workItemId={project.id} calls />, { as: owner })
+    const start = await screen.findByRole('button', { name: 'Start a call' })
+    expect(start).toHaveAccessibleDescription(
+      /asked to sign in there \(Google, GitHub or Facebook\)/,
+    )
+    await userEvent.hover(start)
+    expect(screen.getByRole('tooltip')).toHaveTextContent(/everyone else joins without an account/)
+
+    await userEvent.click(start)
+    const join = await screen.findByRole('link', { name: 'Join' })
+    expect(open).toHaveBeenCalledWith('', '_blank')
+    await waitFor(() => expect(tab.location.href).toBe(join.getAttribute('href')))
+    expect(tab.opener).toBeNull()
+    expect(join).toHaveAttribute('target', '_blank')
+    expect(join.getAttribute('href')).toMatch(/^https:\/\/meet\.jit\.si\/PauseAI-Rally-/)
+    expect(join.closest('p')).toHaveTextContent('Started a call · Join')
+
+    // A refused start closes the tab it opened.
+    localStorage.setItem('authToken', 'stale')
+    await userEvent.click(screen.getByRole('button', { name: 'Start a call' }))
+    await screen.findByText('Unauthorized')
+    expect(tab.close).toHaveBeenCalled()
+    open.mockRestore()
+  })
+
+  it('offers no call where it is not asked for, or to someone who cannot post', async () => {
+    const owner = await createVolunteer()
+    const project = await createProject({ assigneeId: owner.id })
+    await renderApp(<CommentThread workItemId={project.id} />, { as: owner })
+    await screen.findByLabelText('Add a comment')
+    expect(screen.queryByRole('button', { name: 'Start a call' })).toBeNull()
+    cleanup()
+    const theirs = await createProject({ assigneeId: owner.id })
+    await renderApp(<CommentThread workItemId={theirs.id} calls />, {
+      as: await createVolunteer(),
+    })
+    await screen.findByText('No comments yet.')
+    expect(screen.queryByRole('button', { name: 'Start a call' })).toBeNull()
+  })
+
+  it('posts the link once, even when the browser blocks the new tab', async () => {
+    const owner = await createVolunteer()
+    const project = await createProject({ assigneeId: owner.id })
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    await renderApp(<CommentThread workItemId={project.id} calls />, { as: owner })
+    // A double click starts one call.
+    const start = await screen.findByRole('button', { name: 'Start a call' })
+    fireEvent.click(start)
+    fireEvent.click(start)
+    expect(await screen.findByRole('link', { name: 'Join' })).toBeInTheDocument()
+    expect(open).toHaveBeenCalledTimes(1)
+    expect(await prisma.workItemComment.count({ where: { workItemId: project.id } })).toBe(1)
+    open.mockRestore()
   })
 
   it('shows recorded changes as plain lines among the comments, in time order', async () => {

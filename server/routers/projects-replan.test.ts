@@ -78,6 +78,20 @@ describe('a task past its plan', () => {
     expect(mine.find((w) => w.key === `task-${late.id}`)?.pastPlanDays).toBe(3)
   })
 
+  it('does not count a call the assignee started as an update', async () => {
+    const { owner, sam, late } = await setup()
+    await prisma.workItem.update({ where: { id: late.id }, data: { nudgeSentAt: new Date() } })
+    const before = await prisma.workItem.findUniqueOrThrow({ where: { id: late.id } })
+    await clientAs(sam).workItemComments.startCall({ workItemId: late.id })
+    const after = await prisma.workItem.findUniqueOrThrow({ where: { id: late.id } })
+    expect(after).toMatchObject({ nudgeSentAt: before.nudgeSentAt, updatedAt: before.updatedAt })
+    const home = await clientAs(owner).dashboard.get()
+    expect(home.attention[0]).toMatchObject({
+      kind: 'past_plan',
+      detail: 'Assignee: Sam, no update yet. Replan, reassign or unassign.',
+    })
+  })
+
   it('lets the owner or a deputy replan it, telling the people whose work moves', async () => {
     const { owner, sam, pat, deputy, project, late, next } = await setup()
     await prisma.notification.create({
