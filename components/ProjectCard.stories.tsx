@@ -56,7 +56,9 @@ export const SeekingOwner: Story = {
 }
 
 export const SeekingHelpAndLate: Story = {
-  args: { project: { ...PROJECT, isSeekingHelp: true, daysLate: 3, viewerLeads: true } },
+  args: {
+    project: { ...PROJECT, isSeekingHelp: true, stage: 'running', daysLate: 3, viewerLeads: true },
+  },
 }
 
 export const Grid: Story = {

@@ -2,7 +2,7 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { staffProcedure } from '../../procedures'
 import { chapterFilter } from '@/lib/chapter-access-server'
-import { ADVERTISABLE_STATUSES } from '@/lib/project-status'
+import { ADVERTISABLE_STATUSES, SEEKING_HELP_WHERE } from '@/lib/project-status'
 import {
   ApprovalStatus,
   InterestStatus,
@@ -66,7 +66,7 @@ export const adminStatsRouter = {
             // Approved and unfinished only — this used to count pending-review proposals
             // and completed projects carrying stale flags.
             status: { in: ADVERTISABLE_STATUSES },
-            OR: [{ isSeekingHelp: true }, { assigneeId: null }],
+            OR: [SEEKING_HELP_WHERE, { assigneeId: null }],
           },
         }),
         prisma.workItem.count({

@@ -1242,7 +1242,8 @@ export const projectsRouter = {
         {
           key: 'other',
           extra: Prisma.raw(
-            `NOT ${seekingSqlStr} AND status NOT IN ('${ProjectStatus.ready}', '${ProjectStatus.in_progress}', '${ProjectStatus.on_hold}', '${ProjectStatus.completed}')`,
+            // An owned project still in Planning is `ready` but not yet asking for helpers.
+            `NOT ${seekingSqlStr} AND status NOT IN ('${ProjectStatus.in_progress}', '${ProjectStatus.on_hold}', '${ProjectStatus.completed}')`,
           ),
         },
         // Cross-cuts the other buckets rather than partitioning them — a project can be both
@@ -2183,12 +2184,12 @@ export const projectsRouter = {
         })
       }
 
-      // Tagging a team onto a project that's already visible alerts that team right away;
-      // tagging one still in review waits until it goes live (see admin/projects.ts).
+      // Tagging a team onto a planned project alerts that team right away; tagging one still in
+      // review or Planning waits for Finish planning (see finishPlanning).
       if (
         typeof data.teamId === 'number' &&
         data.teamId !== project.teamId &&
-        !UNAPPROVED_STATUSES.includes(project.status)
+        projectStage(project) === 'running'
       ) {
         notifyTeamOfProject(data.teamId, project.id, project.title).catch((e) =>
           logger.error(e, '[TEAM NOTIFY]'),

@@ -229,14 +229,21 @@ describe('Finish planning', () => {
 })
 
 describe('the tasks feed', () => {
-  it('never offers a place helping on an outline item', async () => {
+  it('offers no place helping on an outline item or a project in Planning', async () => {
     const me = await createVolunteer()
     const project = await createProject({ nationalChapterId: me.nationalChapterId })
     const roughHelp = await createTask(project.id, { helpersWanted: 2, isOutline: true })
     const help = await createTask(project.id, { helpersWanted: 2 })
+    // A project in Planning offers no helper places yet, even on a planned task.
+    const planning = await createProject({
+      nationalChapterId: me.nationalChapterId,
+      plannedAt: null,
+    })
+    const early = await createTask(planning.id, { helpersWanted: 2 })
     const offered = (await clientAs(me).requests.feed()).map((t) => t.id)
     expect(offered).toContain(help.id)
     expect(offered).not.toContain(roughHelp.id)
+    expect(offered).not.toContain(early.id)
   })
 })
 
@@ -387,8 +394,11 @@ describe('a project in Planning is advertised only as wanting an owner', () => {
     expect(seeking).not.toContain(planning.id)
     expect(ids(await c.projects.list({ notSeeking: true }))).toContain(planning.id)
     const grouped = (await c.projects.listGrouped({})).groups
-    const seekingGroup = grouped.find((g) => g.key === 'seeking')
-    expect(seekingGroup?.projects.map((p) => p.id)).not.toContain(planning.id)
+    const inGroup = (key: string) =>
+      grouped.find((g) => g.key === key)?.projects.map((p) => p.id) ?? []
+    expect(inGroup('seeking')).not.toContain(planning.id)
+    // Still listed, among the other active projects.
+    expect(inGroup('other')).toContain(planning.id)
 
     const near = (await c.dashboard.get()).find?.nearYou.items.map((i) => i.id) ?? []
     expect(near).toEqual(expect.arrayContaining([planned.id, ownerless.id]))
@@ -398,13 +408,19 @@ describe('a project in Planning is advertised only as wanting an owner', () => {
     expect(needed?.projects).toBe(2)
   })
 
-  it('tells the team at Finish planning', async () => {
+  it('tells a team tagged while planning once, at Finish planning', async () => {
     const { owner, projectId, print } = await inPlanning()
     const member = await createVolunteer()
     const team = await prisma.team.create({ data: { name: 'Leafleteers' } })
     await prisma.teamMembership.create({ data: { teamId: team.id, volunteerId: member.id } })
-    await prisma.workItem.update({ where: { id: projectId }, data: { teamId: team.id } })
     const o = clientAs(owner)
+    const told = () =>
+      prisma.notification.count({
+        where: { volunteerId: member.id, type: 'team_project_assigned' },
+      })
+    await o.projects.update({ id: projectId, teamId: team.id })
+    await new Promise((r) => setTimeout(r, 200))
+    expect(await told()).toBe(0)
     await o.projects.updateTask({ projectId, taskId: print.id, data: { isOutline: false } })
     await o.projects.finishPlanning({ id: projectId })
     await vi.waitFor(async () =>
@@ -414,5 +430,6 @@ describe('a project in Planning is advertised only as wanting an owner', () => {
         }),
       ).toMatchObject({ link: `/projects/${projectId}` }),
     )
+    expect(await told()).toBe(1)
   })
 })

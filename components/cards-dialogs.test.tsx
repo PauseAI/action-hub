@@ -24,10 +24,13 @@ const base: Project = {
 }
 
 describe('ProjectCard', () => {
-  it('holds back a call for helpers while the project is being planned', () => {
+  it('shows a call for helpers only once the project is planned', () => {
     render(
       <>
         <ProjectCard project={{ ...base, isSeekingHelp: true, stage: 'planning' }} />
+        <ProjectCard
+          project={{ ...base, id: 3, title: 'Proposed', isSeekingHelp: true, stage: 'proposal' }}
+        />
         <ProjectCard
           project={{ ...base, id: 2, title: 'Planned', isSeekingHelp: true, stage: 'running' }}
         />
@@ -54,6 +57,7 @@ describe('ProjectCard', () => {
         project={{
           ...base,
           isSeekingHelp: true,
+          stage: 'running',
           needsTasks: true,
           daysLate: 2,
           reach: 'LOCAL',
