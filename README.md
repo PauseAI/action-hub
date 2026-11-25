@@ -118,8 +118,11 @@ Key variables:
 
 With `SENTRY_DSN` set, errors go to Sentry (`@sentry/nextjs`) from the server, the edge runtime
 and the browser: anything Next reports through `onRequestError` (`instrumentation.ts`), every
-`logger.error` and `logger.fatal` (`lib/logger.ts`), and both error boundaries (`app/error.tsx`,
-`app/global-error.tsx`). Each event is tagged with the deploy's commit as its release
+`logger.error` and `logger.fatal` in the Next server (`lib/logger.ts`; at most five of the same
+error a minute), and both error boundaries for errors thrown in the browser (`app/error.tsx`,
+`app/global-error.tsx`; a server error reaching them was reported by the server). The
+start-up scripts (`migrate`, `seed-preview`, the pre-deploy backup) and the cron and backup
+services don't initialise Sentry, so their errors are in the logs only. Each event is tagged with the deploy's commit as its release
 (`RAILWAY_GIT_COMMIT_SHA`, else `RENDER_GIT_COMMIT`). The browser's settings are inlined at build
 time by `next.config.ts`, which also adds the DSN's host to the CSP's `connect-src`, so the DSN
 must be set for the build as well as at runtime.
@@ -129,8 +132,10 @@ to collect no user info, cookies, bodies or query strings (SDK 11's replacement 
 `sendDefaultPii`, whose defaults collect everything), and scrubs every event and breadcrumb
 before it is sent. The user, request bodies, cookies, query strings, stack-frame variables and
 every header but `User-Agent` are removed. Sentry is told not to record the sender's IP address
-(`infer_ip: never`). Email and IP addresses, bearer and session tokens, and values under keys
-such as `name`, `email`, `password` or `token` are replaced. Console breadcrumbs are dropped.
+(`infer_ip: never`). Email and IP addresses, phone numbers, bearer and session tokens, Prisma's
+dump of a failed call's arguments, and values under keys naming personal data (any key
+containing `name`, `email`, `number`, `notes`, `message`, `password`, `token` and the like) are
+replaced. Console breadcrumbs are dropped.
 There is no tracing, session replay or browser session tracking.
 
 ### Running

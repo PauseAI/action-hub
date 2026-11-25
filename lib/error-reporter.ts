@@ -1,14 +1,13 @@
 /**
  * Where errors are reported beyond the logs. Nothing is reported until a runtime that has
- * initialised Sentry (instrumentation.ts, instrumentation-client.ts) installs it with
- * `setErrorReporter`, so without a DSN every call here does nothing.
+ * initialised Sentry installs a reporter with `setErrorReporter` (see `sentryOptions`).
  */
+type Level = 'error' | 'fatal'
+type Hint = { level?: Level; extra?: Record<string, unknown> }
+
 export type ErrorReporter = {
-  captureException(error: unknown, hint?: { extra?: Record<string, unknown> }): unknown
-  captureMessage(
-    message: string,
-    hint?: { level?: 'error'; extra?: Record<string, unknown> },
-  ): unknown
+  captureException(error: unknown, hint?: Hint): unknown
+  captureMessage(message: string, hint?: Hint): unknown
 }
 
 // On globalThis because Next bundles instrumentation.ts apart from the routes, and each bundle
@@ -25,18 +24,45 @@ function reporter(): ErrorReporter | undefined {
 }
 
 /** Reports an error caught by an error boundary or handler. */
-export function reportError(error: unknown, extra?: Record<string, unknown>): void {
-  reporter()?.captureException(error, extra ? { extra } : undefined)
+export function reportError(error: unknown): void {
+  reporter()?.captureException(error)
+}
+
+// One outage can log the same error once per recipient of a digest; a few of each per minute
+// say as much as thousands, and leave the quota for everything else.
+const THROTTLE_WINDOW_MS = 60_000
+const THROTTLE_MAX = 5
+const MAX_THROTTLE_KEYS = 1000
+const throttle = new Map<string, { start: number; count: number }>()
+
+function throttled(key: string): boolean {
+  const now = Date.now()
+  const seen = throttle.get(key)
+  if (!seen || now - seen.start >= THROTTLE_WINDOW_MS) {
+    if (throttle.size >= MAX_THROTTLE_KEYS) throttle.clear()
+    throttle.set(key, { start: now, count: 1 })
+    return false
+  }
+  seen.count += 1
+  return seen.count > THROTTLE_MAX
+}
+
+/** Forgets which logged errors were reported, so each test starts with none throttled. */
+export function resetReportThrottle(): void {
+  throttle.clear()
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null
 
+const FATAL_LEVEL = 60
+
 /**
- * Reports one `logger.error` call, given pino's arguments: `(err, msg?)`, `({ err, ...fields },
- * msg?)`, `(fields, msg?)` or `(msg)`. The error goes as an exception, with the message and
- * any other fields as extra data; a call with no error goes as a message.
+ * Reports one `logger.error` or `logger.fatal` call, given pino's arguments and level: `(err,
+ * msg?)`, `({ err, ...fields }, msg?)`, `(fields, msg?)` or `(msg)`. The error goes as an
+ * exception, with the message and any other fields as extra data; a call with no error goes as
+ * a message. More than a few of the same error a minute are dropped.
  */
-export function reportLoggedError(args: unknown[]): void {
+export function reportLoggedError(args: unknown[], pinoLevel = 50): void {
   const [first, ...rest] = args
   const message = typeof first === 'string' ? first : rest.find((a) => typeof a === 'string')
   let error: unknown
@@ -50,14 +76,21 @@ export function reportLoggedError(args: unknown[]): void {
   } else if (first !== undefined && typeof first !== 'string') {
     error = first
   }
+  const level: Level = pinoLevel >= FATAL_LEVEL ? 'fatal' : 'error'
+  const errorText = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+  if (throttled(`${message ?? ''}\n${error === undefined ? '' : errorText}`)) return
+
+  const hasFields = Object.keys(fields).length > 0
   if (error === undefined) {
-    const hasFields = Object.keys(fields).length > 0
     reporter()?.captureMessage(message ?? 'logger.error', {
-      level: 'error',
+      level,
       ...(hasFields ? { extra: fields } : {}),
     })
     return
   }
   const extra = { ...fields, ...(message ? { log: message } : {}) }
-  reporter()?.captureException(error, Object.keys(extra).length > 0 ? { extra } : undefined)
+  reporter()?.captureException(error, {
+    level,
+    ...(Object.keys(extra).length > 0 ? { extra } : {}),
+  })
 }

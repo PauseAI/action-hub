@@ -6,7 +6,7 @@ import { navigation } from '@/test/next-navigation'
 import { createVolunteer, createAdmin, createProject } from '@/test/factories'
 import ErrorPage from './error'
 import GlobalError from './global-error'
-import { MemoryErrorReporter } from '@/test/fakes/error-reporter'
+import { errorReports } from '@/test/fakes/error-reporter'
 import NotFound from './not-found'
 import Landing from './page'
 import ProfileRedirect from './profile/page'
@@ -31,37 +31,32 @@ describe('static pages', () => {
     expect(screen.getByRole('link', { name: 'Go home' })).toHaveAttribute('href', '/')
   })
 
-  it('error page reports the error with its digest', () => {
+  it('error page reports a client error, and leaves a server one to the server', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    const reporter = new MemoryErrorReporter().install()
-    try {
-      const error = Object.assign(new Error('boom'), { digest: 'd1' })
-      render(<ErrorPage error={error} reset={() => {}} />)
-      expect(reporter.reports).toEqual([{ kind: 'exception', error, extra: { digest: 'd1' } }])
-    } finally {
-      reporter.uninstall()
-    }
+    const error = new Error('boom')
+    const { rerender } = render(<ErrorPage error={error} reset={() => {}} />)
+    rerender(
+      <ErrorPage error={Object.assign(new Error('rsc'), { digest: 'd1' })} reset={() => {}} />,
+    )
+    expect(errorReports.reports).toEqual([{ kind: 'exception', error }])
   })
 
-  it('global error page reports the error and offers a retry', async () => {
+  it('global error page reports a client error and offers a retry', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    const reporter = new MemoryErrorReporter().install()
     const retry = vi.fn()
-    try {
-      const withDigest = Object.assign(new Error('layout failed'), { digest: 'd2' })
-      // It renders its own <html>, which React only warns about inside the test's container.
-      const { rerender } = render(<GlobalError error={withDigest} retry={retry} />)
-      await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
-      expect(retry).toHaveBeenCalled()
-      expect(screen.getByRole('link', { name: 'Go home' })).toHaveAttribute('href', '/')
-      rerender(<GlobalError error="thrown string" retry={retry} />)
-      expect(reporter.reports).toEqual([
-        { kind: 'exception', error: withDigest, extra: { digest: 'd2' } },
-        { kind: 'exception', error: 'thrown string' },
-      ])
-    } finally {
-      reporter.uninstall()
-    }
+    // It renders its own <html>, which React only warns about inside the test's container.
+    const { rerender } = render(<GlobalError error="thrown string" retry={retry} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(retry).toHaveBeenCalled()
+    expect(screen.getByRole('link', { name: 'Go home' })).toHaveAttribute('href', '/')
+    rerender(
+      <GlobalError error={Object.assign(new Error('rsc'), { digest: 'd2' })} retry={retry} />,
+    )
+    rerender(<GlobalError error={null} retry={retry} />)
+    expect(errorReports.reports).toEqual([
+      { kind: 'exception', error: 'thrown string' },
+      { kind: 'exception', error: null },
+    ])
   })
 
   it('not-found and landing pages render', async () => {

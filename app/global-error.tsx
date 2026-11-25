@@ -10,8 +10,8 @@ import { reportError } from '@/lib/error-reporter'
 export default function GlobalError({ error, retry }: { error: unknown; retry: () => void }) {
   useEffect(() => {
     console.error(error)
-    const digest = (error as { digest?: unknown } | null)?.digest
-    reportError(error, typeof digest === 'string' ? { digest } : undefined)
+    // An error with a digest was thrown on the server, which has already reported it.
+    if (!(error as { digest?: unknown } | null)?.digest) reportError(error)
   }, [error])
 
   return (

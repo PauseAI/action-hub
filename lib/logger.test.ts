@@ -1,6 +1,6 @@
 import pino from 'pino'
-import { afterEach, describe, expect, it } from 'vitest'
-import { MemoryErrorReporter } from '@/test/fakes/error-reporter'
+import { describe, expect, it } from 'vitest'
+import { errorReports } from '@/test/fakes/error-reporter'
 import { logger, loggerDestination, loggerOptions } from './logger'
 
 describe('loggerOptions', () => {
@@ -18,42 +18,37 @@ describe('loggerOptions', () => {
 })
 
 describe('error reporting', () => {
-  const reporter = new MemoryErrorReporter()
-  afterEach(() => reporter.uninstall())
-
   function productionLogger() {
     const lines: string[] = []
     const log = pino(loggerOptions('production'), { write: (line: string) => lines.push(line) })
     return { log, lines }
   }
 
-  it('reports every error and fatal log, and still writes it', () => {
-    reporter.install()
+  it('reports every error and fatal log, at its level, and still writes it', () => {
     const { log, lines } = productionLogger()
     const error = new Error('boom')
     log.error(error, '[EMAIL ERROR]')
     log.fatal('[MIGRATE] gave up')
-    expect(reporter.reports).toEqual([
-      { kind: 'exception', error, extra: { log: '[EMAIL ERROR]' } },
-      { kind: 'message', message: '[MIGRATE] gave up', level: 'error' },
+    expect(errorReports.reports).toEqual([
+      { kind: 'exception', error, level: 'error', extra: { log: '[EMAIL ERROR]' } },
+      { kind: 'message', message: '[MIGRATE] gave up', level: 'fatal' },
     ])
     expect(lines).toHaveLength(2)
     expect(JSON.parse(lines[0])).toMatchObject({ level: 50, msg: '[EMAIL ERROR]' })
   })
 
   it('reports nothing below error level', () => {
-    reporter.install()
     const { log, lines } = productionLogger()
     log.warn('[EMAIL] slow')
     log.info('started')
-    expect(reporter.reports).toEqual([])
+    expect(errorReports.reports).toEqual([])
     expect(lines).toHaveLength(2)
   })
 
-  it('reports nothing in development without a reporter installed', () => {
+  it('reports from development too', () => {
     const log = pino(loggerOptions('development'), { write: () => {} })
-    expect(() => log.error(new Error('boom'))).not.toThrow()
-    expect(reporter.reports).toEqual([])
+    log.error('[DEV] failed')
+    expect(errorReports.last).toMatchObject({ kind: 'message', message: '[DEV] failed' })
   })
 })
 

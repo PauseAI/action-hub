@@ -10,9 +10,18 @@ import type { Breadcrumb, ErrorEvent, StackFrame, init } from '@sentry/nextjs'
 
 const FILTERED = '[Filtered]'
 
-// Keys whose values are personal data or credentials wherever they appear.
-const SENSITIVE_KEY =
-  /^(?:.*e-?mail.*|(?:first|last|full|display|given|family|user|real|preferred)[_-]?name|name|surname|phone.*|mobile|address.*|postcode|zip|bio|.*password.*|.*passwd.*|.*secret.*|.*token.*|.*api[_-]?key.*|authorization|auth|cookies?|set-cookie|session.*|credentials?|ip(?:[_-]?address)?|body|data|query|query[_-]?string|http\.query|http\.fragment)$/i
+// Words that mark a key as holding personal data or credentials wherever they appear in it
+// (`signalNumber`, `passwordHash`, `contactNotes`), covering the schema's personal and free-text
+// fields.
+const PERSONAL_WORDS =
+  'name|e-?mail|phone|mobile|number|handle|signal|whatsapp|discord|location|address|postcode|' +
+  'bio|note|message|content|body|subject|title|description|skill|interest|organi[sz]ation|' +
+  'website|reason|summary|detail|password|passwd|hash|token|secret|cookie|session|auth|' +
+  'credential|api[_-]?key'
+const SENSITIVE_KEY = new RegExp(
+  `${PERSONAL_WORDS}|^(?:ip|ip[_-]?address|zip|data|query|query[_-]?string|http\\.query|http\\.fragment)$`,
+  'i',
+)
 
 const EMAIL = /[A-Z0-9._%+-]+@[A-Z0-9-]+(?:\.[A-Z0-9-]+)*\.[A-Z]{2,}/gi
 const IPV4 = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g
@@ -22,21 +31,41 @@ const IPV6 =
 const BEARER = /\b(Bearer|Basic|Token)\s+[A-Za-z0-9._~+/=-]+/gi
 // A query string after a URL or path: `?a=b&c=d`.
 const QUERY = /\?[^\s"'<>#?]*=[^\s"'<>#]*/g
-// `name: "Ada"`, `"email":"a@b.c"`, `firstName='Ada'`: Prisma's invocation dumps and JSON.
-const SENSITIVE_PAIR =
-  /\b((?:first|last|full|display|given|family|user)?[Nn]ame|email|phone|password|token|bio)(["']?\s*[:=]\s*)(["'`])(?:(?!\3)[^\\]|\\.)*\3/gi
+// `name: "Ada"`, `"signalNumber":"+44…"`, `firstName='Ada'`: quoted values under such keys.
+const SENSITIVE_PAIR = new RegExp(
+  `\\b(\\w*(?:${PERSONAL_WORDS})\\w*)(["']?\\s*[:=]\\s*)(["'\`])(?:(?!\\3)[^\\\\]|\\\\.)*\\3`,
+  'gi',
+)
+// Postgres's constraint detail: `Key (email)=(ada@example.com) already exists.`
+const PG_KEY = /(\bKey \([^)]*\)=\().*?(\) (?:already exists|is not present|is still referenced))/g
+const PG_KEY_REST = /(\bKey \([^)]*\)=\()(?!\[Filtered\]\))[^\n]*/g
+const PHONE = /\+\d[\d ().-]{6,}\d/g
+// Prisma prints a failed call's arguments, values and all, between this line and its reason.
+const PRISMA_CALL = /Invalid `[^`\n]*` invocation/
 // Long opaque strings with letters and digits: session and verification tokens are 32 random
 // bytes in base64url or hex.
 const OPAQUE = /\b(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{32,}\b/g
 
+/** Keeps a Prisma error's first line and its closing reason, dropping the arguments between. */
+function cutPrismaArguments(text: string): string {
+  const call = PRISMA_CALL.exec(text)
+  if (!call) return text
+  const paragraphs = text.slice(call.index).split(/\n\s*\n/)
+  const reason = paragraphs.length > 1 ? `\n\n${paragraphs[paragraphs.length - 1]}` : ''
+  return `${text.slice(0, call.index)}${call[0]}: [arguments filtered]${reason}`
+}
+
 /** Removes personal data and credentials from free text. */
 export function scrubText(text: string): string {
-  return text
+  return cutPrismaArguments(text)
     .replace(EMAIL, '[email]')
     .replace(IPV6, '[ip]')
     .replace(IPV4, '[ip]')
     .replace(BEARER, `$1 ${FILTERED}`)
     .replace(SENSITIVE_PAIR, `$1$2$3${FILTERED}$3`)
+    .replace(PG_KEY, `$1${FILTERED}$2`)
+    .replace(PG_KEY_REST, `$1${FILTERED})`)
+    .replace(PHONE, '[phone]')
     .replace(QUERY, `?${FILTERED}`)
     .replace(OPAQUE, FILTERED)
 }

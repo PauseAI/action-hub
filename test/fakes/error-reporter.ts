@@ -1,18 +1,20 @@
-import { setErrorReporter, type ErrorReporter } from '@/lib/error-reporter'
+import type { ErrorReporter } from '@/lib/error-reporter'
 
-type Report =
-  | { kind: 'exception'; error: unknown; extra?: Record<string, unknown> }
-  | { kind: 'message'; message: string; level?: string; extra?: Record<string, unknown> }
+type Hint = { level?: string; extra?: Record<string, unknown> }
+type Report = ({ kind: 'exception'; error: unknown } | { kind: 'message'; message: string }) & Hint
 
-/** Holds what would have gone to Sentry. `install()` makes it the reporter; `uninstall()` clears it. */
+/**
+ * Holds what would have gone to Sentry. `test/setup-db.ts` installs one per test file as
+ * `errorReports` and empties it before each test.
+ */
 export class MemoryErrorReporter implements ErrorReporter {
   reports: Report[] = []
 
-  captureException(error: unknown, hint?: { extra?: Record<string, unknown> }) {
+  captureException(error: unknown, hint?: Hint) {
     this.reports.push({ kind: 'exception', error, ...hint })
   }
 
-  captureMessage(message: string, hint?: { level?: 'error'; extra?: Record<string, unknown> }) {
+  captureMessage(message: string, hint?: Hint) {
     this.reports.push({ kind: 'message', message, ...hint })
   }
 
@@ -20,13 +22,9 @@ export class MemoryErrorReporter implements ErrorReporter {
     return this.reports.at(-1)
   }
 
-  install(): this {
+  reset(): void {
     this.reports = []
-    setErrorReporter(this)
-    return this
-  }
-
-  uninstall(): void {
-    setErrorReporter(undefined)
   }
 }
+
+export const errorReports = new MemoryErrorReporter()

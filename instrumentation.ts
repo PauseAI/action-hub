@@ -12,7 +12,6 @@ export async function register() {
     const { validateEnv } = await import('./lib/env')
     validateEnv()
   }
-  // Without SENTRY_DSN nothing is initialised and nothing is reported (lib/sentry.ts).
   const options = sentryOptions(serverSentrySettings())
   if (options) {
     Sentry.init(options)

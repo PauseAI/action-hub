@@ -15,7 +15,8 @@ export default function Error({
 }) {
   useEffect(() => {
     console.error(error)
-    reportError(error, error.digest ? { digest: error.digest } : undefined)
+    // An error with a digest was thrown on the server, which has already reported it.
+    if (!error.digest) reportError(error)
   }, [error])
 
   return (

@@ -42,14 +42,50 @@ describe('scrubText', () => {
     )
   })
 
-  it('replaces values of name, email and token pairs in Prisma dumps and JSON', () => {
-    const prisma = `Invalid \`prisma.volunteer.create()\` invocation: { data: { name: "Ada Lovelace", firstName: 'Ada', bio: "Hi" } }`
-    expect(scrubText(prisma)).toBe(
-      `Invalid \`prisma.volunteer.create()\` invocation: { data: { name: "[Filtered]", firstName: '[Filtered]', bio: "[Filtered]" } }`,
+  it('replaces quoted values of name, email and token pairs in dumps and JSON', () => {
+    expect(scrubText(`{ data: { name: "Ada Lovelace", firstName: 'Ada', bio: "Hi" } }`)).toBe(
+      `{ data: { name: "[Filtered]", firstName: '[Filtered]', bio: "[Filtered]" } }`,
     )
     expect(scrubText('{"displayName":"Grace \\"G\\" Hopper","id":3}')).toBe(
       '{"displayName":"[Filtered]","id":3}',
     )
+  })
+
+  it('cuts the arguments out of a Prisma error, keeping its call and reason', () => {
+    const prisma = [
+      'Invalid `prisma.volunteer.update()` invocation in',
+      '/app/server/routers/profile.ts:42:3',
+      '',
+      '  41 const v = await prisma.volunteer.update({',
+      '→ 42   data: { signalNumber: "+44 7700 900123", passwordHash: "$2b$12$abc" }',
+      '  43 })',
+      '',
+      'Unknown argument `signalNumbr`. Did you mean `signalNumber`?',
+    ].join('\n')
+    expect(scrubText(prisma)).toBe(
+      'Invalid `prisma.volunteer.update()` invocation: [arguments filtered]\n\n' +
+        'Unknown argument `signalNumbr`. Did you mean `signalNumber`?',
+    )
+    expect(scrubText('Invalid `prisma.x.create()` invocation: { name: "Ada" }')).toBe(
+      'Invalid `prisma.x.create()` invocation: [arguments filtered]',
+    )
+  })
+
+  it("replaces values under any key naming personal data, and Postgres's key detail", () => {
+    expect(
+      scrubText(
+        '{ signalNumber: "+447700900123", whatsappNumber: \'07700\', discordHandle: "ada#1", contactNotes: "x", location: "Leeds" }',
+      ),
+    ).toBe(
+      '{ signalNumber: "[Filtered]", whatsappNumber: \'[Filtered]\', discordHandle: "[Filtered]", contactNotes: "[Filtered]", location: "[Filtered]" }',
+    )
+    expect(scrubText('Key (name)=(Ada (Al) Lovelace) already exists.')).toBe(
+      'Key (name)=([Filtered]) already exists.',
+    )
+    expect(scrubText('Key (email, chapter)=(ada@x.io, 3)')).toBe(
+      'Key (email, chapter)=([Filtered])',
+    )
+    expect(scrubText('call me on +44 7700 900123 today')).toBe('call me on [phone] today')
   })
 
   it('replaces long opaque tokens but keeps words and ids', () => {
@@ -77,16 +113,20 @@ describe('scrubValue', () => {
       scrubValue({
         id: 7,
         email: 'a@b.co',
-        profile: { lastName: 'Turing', note: 'mail c@d.org', tags: ['x@y.io'] },
+        profile: { lastName: 'Turing', team: 'mail c@d.org', tags: ['x@y.io'] },
         password_hash: 'x',
         sessionToken: TOKEN,
+        signalNumber: '+447700900123',
+        applicationAdminNotes: 'kind',
       }),
     ).toEqual({
       id: 7,
       email: '[Filtered]',
-      profile: { lastName: '[Filtered]', note: 'mail [email]', tags: ['[email]'] },
+      profile: { lastName: '[Filtered]', team: 'mail [email]', tags: ['[email]'] },
       password_hash: '[Filtered]',
       sessionToken: '[Filtered]',
+      signalNumber: '[Filtered]',
+      applicationAdminNotes: '[Filtered]',
     })
   })
 
