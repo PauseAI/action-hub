@@ -321,7 +321,10 @@ describe('ProjectEditor — new volunteer proposal', () => {
     await userEvent.type(screen.getByLabelText('What to submit (optional)'), 'A link')
     // Not yet live, so its tasks can't go on the quick tasks page.
     expect(screen.queryByRole('checkbox', { name: /quick task/i })).toBeNull()
-    await userEvent.click(screen.getByRole('button', { name: 'Add task' }))
+    // The button reads "Adding…" while the title's autosave creates the draft.
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Add task' }, { timeout: 20_000 }),
+    )
     // Publish counts the saved tasks, so it waits for the saved task's row.
     await screen.findByRole('button', { name: 'Delete task' })
     expect(screen.queryByRole('alert')).toBeNull()
