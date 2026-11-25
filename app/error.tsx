@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 import Button from '@/components/Button'
 import { H1 } from '@/components/Heading'
 import { P } from '@/components/Text'
-import { reportError } from '@/lib/error-reporter'
+import { reportClientError } from '@/lib/error-reporter'
 
 export default function Error({
   error,
@@ -15,8 +15,7 @@ export default function Error({
 }) {
   useEffect(() => {
     console.error(error)
-    // An error with a digest was thrown on the server, which has already reported it.
-    if (!error.digest) reportError(error)
+    reportClientError(error)
   }, [error])
 
   return (

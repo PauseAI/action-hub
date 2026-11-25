@@ -2,6 +2,7 @@ import type { Breadcrumb, ErrorEvent } from '@sentry/nextjs'
 import { describe, expect, it } from 'vitest'
 import {
   browserSentryEnv,
+  isSensitiveKey,
   scrubBreadcrumb,
   scrubEvent,
   scrubText,
@@ -33,7 +34,8 @@ describe('scrubText', () => {
   })
 
   it('replaces bearer tokens', () => {
-    expect(scrubText(`Authorization: Bearer ${TOKEN}`)).toBe('Authorization: Bearer [Filtered]')
+    expect(scrubText(`sent Bearer ${TOKEN} upstream`)).toBe('sent Bearer [Filtered] upstream')
+    expect(scrubText(`Authorization: Bearer ${TOKEN}`)).not.toContain(TOKEN)
   })
 
   it('replaces query strings', () => {
@@ -98,6 +100,56 @@ describe('scrubText', () => {
   })
 })
 
+describe('scrubText, unquoted and national-format values', () => {
+  it('replaces unquoted values after a sensitive key, up to the next delimiter or key', () => {
+    expect(scrubText('signalNumber=07700 900123, retry')).toBe('signalNumber=[Filtered], retry')
+    expect(scrubText('phone: 07700900123 failed')).toBe('phone: [Filtered]')
+    expect(scrubText('name=Ada+Lovelace&whatsapp=07700900123&page=2')).toBe(
+      'name=[Filtered]&whatsapp=[Filtered]&page=2',
+    )
+    expect(scrubText("where: { email: 'a', id: 3 }")).toBe("where: { email: '[Filtered]', id: 3 }")
+  })
+
+  it('replaces national-format phone numbers, not other numbers', () => {
+    expect(scrubText('call 07700 900123 or 020-7946-0958')).toBe('call [phone] or [phone]')
+    expect(scrubText('volunteer 1234567 at 1795629730875 ms, v24.22.1')).toBe(
+      'volunteer 1234567 at 1795629730875 ms, v24.22.1',
+    )
+  })
+
+  it('replaces any run of 40 or more token characters, digits or not', () => {
+    const noDigits = 'kJdXqLmNvBrTyUwEoPaSdFgHzXcVbNmQwErTyUiOpAs'
+    expect(scrubText(`invite ${noDigits} expired`)).toBe('invite [Filtered] expired')
+  })
+})
+
+describe('isSensitiveKey', () => {
+  it('matches personal words as whole words of a key, in any case style', () => {
+    for (const key of [
+      'name',
+      'firstName',
+      'user_name',
+      'username',
+      'aria-label',
+      'signalNumber',
+      'passwordHash',
+      'contactNotes',
+      'e-mail',
+      'X-Api-Key',
+      'http.query',
+      'ip_address',
+    ]) {
+      expect(isSensitiveKey(key), key).toBe(true)
+    }
+  })
+
+  it('leaves words that only contain one alone', () => {
+    for (const key of ['filename', 'hostname', 'pathname', 'statusCode', 'metadata', 'route']) {
+      expect(isSensitiveKey(key), key).toBe(false)
+    }
+  })
+})
+
 describe('scrubUrl', () => {
   it('drops the query string and fragment', () => {
     expect(scrubUrl('https://action.pauseai.info/verify-email?token=abc#top')).toBe(
@@ -146,6 +198,14 @@ describe('scrubValue', () => {
     expect(JSON.stringify(scrubValue(deep))).toContain('"[Filtered]"')
   })
 
+  it("keeps an error-like object's own name, message and stack, scrubbing their text", () => {
+    expect(
+      scrubValue({ name: 'validation_error', message: 'Invalid from a@b.co', statusCode: 422 }),
+    ).toEqual({ name: 'validation_error', message: 'Invalid from [email]', statusCode: 422 })
+    expect(scrubValue({ name: 'Ada', message: 'hi' })).toEqual({ name: 'Ada', message: 'hi' })
+    expect(scrubValue({ name: 'Ada', team: 'x' })).toEqual({ name: '[Filtered]', team: 'x' })
+  })
+
   it('passes other primitives through', () => {
     expect(scrubValue(3)).toBe(3)
     expect(scrubValue(null)).toBe(null)
@@ -187,6 +247,15 @@ describe('scrubBreadcrumb', () => {
       message: 'POST to [email]',
       data: { 'http.query': '[Filtered]', email: '[Filtered]', status: 500 },
     })
+  })
+
+  it("strips attributes from a click's selector, where aria-label can hold a name", () => {
+    expect(
+      scrubBreadcrumb({
+        category: 'ui.click',
+        message: 'header > button.rounded-full[type="button"][aria-label="Ada Lovelace"]',
+      }),
+    ).toEqual({ category: 'ui.click', message: 'header > button.rounded-full' })
   })
 
   it('leaves a breadcrumb with nothing to scrub as it was', () => {
@@ -246,6 +315,10 @@ describe('scrubEvent', () => {
                 frames: [
                   { filename: 'app/x.ts', lineno: 3, vars: { email: 'ada@example.com' } },
                   {
+                    filename: 'https://action.pauseai.info/reset-password?token=abc#x',
+                    abs_path: 'https://action.pauseai.info/login?email=ada@example.com',
+                  },
+                  {
                     filename: 'app/y.ts',
                     pre_context: ['const to = "ada@example.com"'],
                     context_line: 'send(to, "grace@example.com")',
@@ -276,6 +349,10 @@ describe('scrubEvent', () => {
         stacktrace: {
           frames: [
             { filename: 'app/x.ts', lineno: 3 },
+            {
+              filename: 'https://action.pauseai.info/reset-password',
+              abs_path: 'https://action.pauseai.info/login',
+            },
             {
               filename: 'app/y.ts',
               pre_context: ['const to = "[email]"'],
@@ -351,6 +428,13 @@ describe('serverSentrySettings', () => {
     )
     expect(serverSentrySettings({ ...base, NODE_ENV: 'production' }).environment).toBe('production')
     expect(serverSentrySettings(base).environment).toBe('development')
+  })
+
+  it('names the Render standby apart from production', () => {
+    expect(
+      serverSentrySettings({ RENDER: 'true', RAILWAY_ENVIRONMENT_NAME: 'production' }).environment,
+    ).toBe('render-standby')
+    expect(serverSentrySettings({ RENDER: 'true', SENTRY_ENVIRONMENT: 'x' }).environment).toBe('x')
   })
 
   it("tags the release with Railway's commit, else Render's", () => {

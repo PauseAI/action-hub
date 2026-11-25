@@ -1,6 +1,7 @@
 import pino from 'pino'
 import { describe, expect, it } from 'vitest'
 import { errorReports } from '@/test/fakes/error-reporter'
+import { setErrorReporter } from './error-reporter'
 import { logger, loggerDestination, loggerOptions } from './logger'
 
 describe('loggerOptions', () => {
@@ -35,6 +36,22 @@ describe('error reporting', () => {
     ])
     expect(lines).toHaveLength(2)
     expect(JSON.parse(lines[0])).toMatchObject({ level: 50, msg: '[EMAIL ERROR]' })
+  })
+
+  it('still logs, and does not throw, when reporting fails', () => {
+    const { log, lines } = productionLogger()
+    setErrorReporter({
+      captureException: () => {
+        throw new Error('reporter down')
+      },
+      captureMessage: () => {},
+    })
+    try {
+      expect(() => log.error(new Error('boom'), '[EMAIL ERROR]')).not.toThrow()
+      expect(lines).toHaveLength(1)
+    } finally {
+      setErrorReporter(errorReports)
+    }
   })
 
   it('reports nothing below error level', () => {

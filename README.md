@@ -112,7 +112,8 @@ Key variables:
 - `SENTRY_AUTH_TOKEN` — build only: uploads source maps to Sentry and creates the release.
   Without it the upload is skipped and the build still passes. `SENTRY_ORG` and
   `SENTRY_PROJECT` override `pauseai-global` and `action-hub`
-- `SENTRY_ENVIRONMENT` — optional; defaults to `RAILWAY_ENVIRONMENT_NAME`, then `NODE_ENV`
+- `SENTRY_ENVIRONMENT` — optional; defaults to `render-standby` on Render, else
+  `RAILWAY_ENVIRONMENT_NAME`, then `NODE_ENV`
 
 ### Error reporting
 
@@ -135,7 +136,8 @@ every header but `User-Agent` are removed. Sentry is told not to record the send
 (`infer_ip: never`). Email and IP addresses, phone numbers, bearer and session tokens, Prisma's
 dump of a failed call's arguments, and values under keys naming personal data (any key
 containing `name`, `email`, `number`, `notes`, `message`, `password`, `token` and the like) are
-replaced. Console breadcrumbs are dropped.
+replaced. Console breadcrumbs are dropped, click breadcrumbs lose their selectors' attributes (an
+`aria-label` can be a name), and stack frames' file names lose their query strings.
 There is no tracing, session replay or browser session tracking.
 
 ### Running

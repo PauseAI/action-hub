@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { reportError } from '@/lib/error-reporter'
+import { reportClientError } from '@/lib/error-reporter'
 
 /**
  * Replaces the root layout when it fails to render, so it brings its own document and none of
@@ -10,8 +10,7 @@ import { reportError } from '@/lib/error-reporter'
 export default function GlobalError({ error, retry }: { error: unknown; retry: () => void }) {
   useEffect(() => {
     console.error(error)
-    // An error with a digest was thrown on the server, which has already reported it.
-    if (!(error as { digest?: unknown } | null)?.digest) reportError(error)
+    reportClientError(error)
   }, [error])
 
   return (

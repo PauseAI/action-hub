@@ -8,7 +8,12 @@ const ERROR_LEVEL = 50
 /** Every `logger.error` and `logger.fatal` is also sent to the error reporter. */
 const hooks: pino.LoggerOptions['hooks'] = {
   logMethod(args, method, level) {
-    if (level >= ERROR_LEVEL) reportLoggedError(args, level)
+    if (level >= ERROR_LEVEL) {
+      // Reporting must never stop the line being logged, or throw out of a catch handler.
+      try {
+        reportLoggedError(args, level)
+      } catch {}
+    }
     return method.apply(this, args)
   },
 }

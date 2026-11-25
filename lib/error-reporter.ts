@@ -1,3 +1,5 @@
+import { scrubText } from './sentry'
+
 /**
  * Where errors are reported beyond the logs. Nothing is reported until a runtime that has
  * initialised Sentry installs a reporter with `setErrorReporter` (see `sentryOptions`).
@@ -23,8 +25,12 @@ function reporter(): ErrorReporter | undefined {
   return (globalThis as Holder)[KEY]
 }
 
-/** Reports an error caught by an error boundary or handler. */
-export function reportError(error: unknown): void {
+/**
+ * Reports an error caught by an error boundary. One with a `digest` was thrown on the server,
+ * which reported it through `onRequestError`; the browser holds only Next's redacted copy.
+ */
+export function reportClientError(error: unknown): void {
+  if ((error as { digest?: unknown } | null)?.digest) return
   reporter()?.captureException(error)
 }
 
@@ -77,8 +83,9 @@ export function reportLoggedError(args: unknown[], pinoLevel = 50): void {
     error = first
   }
   const level: Level = pinoLevel >= FATAL_LEVEL ? 'fatal' : 'error'
-  const errorText = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
-  if (throttled(`${message ?? ''}\n${error === undefined ? '' : errorText}`)) return
+  // Scrubbed, so an error naming each recipient of a failing digest is throttled as one.
+  const errorText = error instanceof Error ? `${error.name}: ${error.message}` : typeof error
+  if (throttled(scrubText(`${message ?? ''}\n${error === undefined ? '' : errorText}`))) return
 
   const hasFields = Object.keys(fields).length > 0
   if (error === undefined) {

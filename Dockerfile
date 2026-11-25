@@ -1,6 +1,6 @@
 # Node is pinned to an exact patch release: a Node security release reaches production by
 # bumping this tag. Dockerfile.cron uses the same image.
-FROM node:24.22.1-bookworm-slim
+FROM node:24.22.1-bookworm-slim AS base
 
 # openssl for the Prisma engines. pg_dump for the pre-deploy backup and pg_restore for preview
 # seeding: the client major must be >= the Railway Postgres service's major (pg_dump refuses newer
@@ -20,6 +20,8 @@ RUN apt-get update \
 
 WORKDIR /app
 
+FROM base AS build
+
 COPY package.json package-lock.json .npmrc ./
 RUN npm ci
 
@@ -29,7 +31,8 @@ COPY . .
 # reads DATABASE_URL; NEXT_PUBLIC_* values are inlined into the client bundle;
 # RAILWAY_GIT_COMMIT_SHA (RENDER_GIT_COMMIT on the Render standby) becomes Next's deploymentId
 # and the Sentry release. SENTRY_DSN and the environment's name are inlined into the browser's
-# Sentry settings; SENTRY_AUTH_TOKEN uploads source maps and is skipped when unset.
+# Sentry settings (RENDER names the standby's environment); SENTRY_AUTH_TOKEN uploads source
+# maps and is skipped when unset.
 ARG DATABASE_URL
 ARG RAILWAY_GIT_COMMIT_SHA
 ARG RENDER_GIT_COMMIT
@@ -37,8 +40,14 @@ ARG RAILWAY_ENVIRONMENT_NAME
 ARG NEXT_PUBLIC_GA_MEASUREMENT_ID
 ARG SENTRY_DSN
 ARG SENTRY_ENVIRONMENT
+ARG RENDER
 ARG SENTRY_AUTH_TOKEN
 RUN npm run build:railway
+
+# A stage's build arguments are recorded in its image's history, so the image that runs starts
+# again from base and takes only the built files, keeping DATABASE_URL and SENTRY_AUTH_TOKEN out.
+FROM base
+COPY --from=build /app /app
 
 ENV NODE_ENV=production
 

@@ -10,18 +10,32 @@ import type { Breadcrumb, ErrorEvent, StackFrame, init } from '@sentry/nextjs'
 
 const FILTERED = '[Filtered]'
 
-// Words that mark a key as holding personal data or credentials wherever they appear in it
-// (`signalNumber`, `passwordHash`, `contactNotes`), covering the schema's personal and free-text
-// fields.
-const PERSONAL_WORDS =
-  'name|e-?mail|phone|mobile|number|handle|signal|whatsapp|discord|location|address|postcode|' +
-  'bio|note|message|content|body|subject|title|description|skill|interest|organi[sz]ation|' +
-  'website|reason|summary|detail|password|passwd|hash|token|secret|cookie|session|auth|' +
-  'credential|api[_-]?key'
-const SENSITIVE_KEY = new RegExp(
-  `${PERSONAL_WORDS}|^(?:ip|ip[_-]?address|zip|data|query|query[_-]?string|http\\.query|http\\.fragment)$`,
-  'i',
+// A key holds personal data or a credential when one of its words (camelCase, snake_case,
+// kebab-case or dotted) is one of these, so `signalNumber`, `passwordHash`, `contactNotes` and
+// `aria-label` are caught and `filename` and `hostname` are not.
+const PERSONAL_WORDS = new Set(
+  (
+    'name surname nickname username firstname lastname fullname email mail phone mobile number ' +
+    'handle signal whatsapp discord location address postcode zip bio note notes message content ' +
+    'body subject title description skill skills interest interests organisation organization ' +
+    'website reason summary detail details password passwd pwd hash token secret cookie cookies ' +
+    'session auth authorization credential credentials apikey ip query data label alt'
+  ).split(' '),
 )
+
+function keyWords(key: string): string[] {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+}
+
+/** Whether a key names personal data or a credential. */
+export function isSensitiveKey(key: string): boolean {
+  const words = keyWords(key)
+  return words.some((w) => PERSONAL_WORDS.has(w)) || words.join('').includes('apikey')
+}
 
 const EMAIL = /[A-Z0-9._%+-]+@[A-Z0-9-]+(?:\.[A-Z0-9-]+)*\.[A-Z]{2,}/gi
 const IPV4 = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g
@@ -31,20 +45,24 @@ const IPV6 =
 const BEARER = /\b(Bearer|Basic|Token)\s+[A-Za-z0-9._~+/=-]+/gi
 // A query string after a URL or path: `?a=b&c=d`.
 const QUERY = /\?[^\s"'<>#?]*=[^\s"'<>#]*/g
-// `name: "Ada"`, `"signalNumber":"+44…"`, `firstName='Ada'`: quoted values under such keys.
-const SENSITIVE_PAIR = new RegExp(
-  `\\b(\\w*(?:${PERSONAL_WORDS})\\w*)(["']?\\s*[:=]\\s*)(["'\`])(?:(?!\\3)[^\\\\]|\\\\.)*\\3`,
-  'gi',
-)
+// `key: "value"`, `"key":"value"`, `key='value'` and `key=value words`: Prisma's and Node's
+// dumps, JSON and form bodies. An unquoted value runs to the next delimiter or key, and never
+// takes in a brace, so a sensitive pair nested inside it is still reached.
+const PAIR =
+  /\b([A-Za-z_][\w.-]*)(["']?\s*[:=]\s*)(?:(["'`])((?:(?!\3)[^\\]|\\.)*)\3|([^\s"'`,;&{}[\]()<>]+(?: [^\s"'`,;&{}[\]()<>:=]+)*))/g
 // Postgres's constraint detail: `Key (email)=(ada@example.com) already exists.`
 const PG_KEY = /(\bKey \([^)]*\)=\().*?(\) (?:already exists|is not present|is still referenced))/g
 const PG_KEY_REST = /(\bKey \([^)]*\)=\()(?!\[Filtered\]\))[^\n]*/g
 const PHONE = /\+\d[\d ().-]{6,}\d/g
+// National format, such as `07700 900123` and `020-7946-0958`.
+const NATIONAL_PHONE = /(?<![\w.])0\d(?:[ -]?\d){8,10}(?![\w.])/g
 // Prisma prints a failed call's arguments, values and all, between this line and its reason.
 const PRISMA_CALL = /Invalid `[^`\n]*` invocation/
-// Long opaque strings with letters and digits: session and verification tokens are 32 random
-// bytes in base64url or hex.
+// Session and verification tokens are 32 random bytes in base64url (43 characters) or hex (64):
+// any run of 32 or more with letters and digits, and any of 40 or more, as one in about 1,500
+// base64url tokens has no digit.
 const OPAQUE = /\b(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{32,}\b/g
+const LONG_OPAQUE = /\b[A-Za-z0-9_-]{40,}\b/g
 
 /** Keeps a Prisma error's first line and its closing reason, dropping the arguments between. */
 function cutPrismaArguments(text: string): string {
@@ -62,18 +80,30 @@ export function scrubText(text: string): string {
     .replace(IPV6, '[ip]')
     .replace(IPV4, '[ip]')
     .replace(BEARER, `$1 ${FILTERED}`)
-    .replace(SENSITIVE_PAIR, `$1$2$3${FILTERED}$3`)
+    .replace(PAIR, (pair, key: string, separator: string, quote?: string) => {
+      if (!isSensitiveKey(key)) return pair
+      return quote
+        ? `${key}${separator}${quote}${FILTERED}${quote}`
+        : `${key}${separator}${FILTERED}`
+    })
     .replace(PG_KEY, `$1${FILTERED}$2`)
     .replace(PG_KEY_REST, `$1${FILTERED})`)
     .replace(PHONE, '[phone]')
+    .replace(NATIONAL_PHONE, '[phone]')
     .replace(QUERY, `?${FILTERED}`)
     .replace(OPAQUE, FILTERED)
+    .replace(LONG_OPAQUE, FILTERED)
 }
 
 /** A URL with its query string and fragment removed. */
 export function scrubUrl(url: string): string {
   return scrubText(url.replace(/[?#][\s\S]*$/, ''))
 }
+
+// An error-like object's own fields say what went wrong; their text is still scrubbed.
+const ERROR_FIELDS = new Set(['name', 'message', 'stack', 'code'])
+const isErrorLike = (v: Record<string, unknown>) =>
+  typeof v.message === 'string' && (typeof v.name === 'string' || typeof v.stack === 'string')
 
 /**
  * Copies a value with every string scrubbed and, when `byKey` is set, every sensitive key's
@@ -86,8 +116,10 @@ export function scrubValue(value: unknown, byKey = true, depth = 0, seen = new W
   seen.add(value)
   if (Array.isArray(value)) return value.map((v) => scrubValue(v, byKey, depth + 1, seen))
   const out: Record<string, unknown> = {}
+  const errorLike = isErrorLike(value as Record<string, unknown>)
   for (const [key, v] of Object.entries(value)) {
-    out[key] = byKey && SENSITIVE_KEY.test(key) ? FILTERED : scrubValue(v, byKey, depth + 1, seen)
+    const sensitive = byKey && isSensitiveKey(key) && !(errorLike && ERROR_FIELDS.has(key))
+    out[key] = sensitive ? FILTERED : scrubValue(v, byKey, depth + 1, seen)
   }
   return out
 }
@@ -110,10 +142,17 @@ const SDK_CONTEXTS = new Set([
 // Each fetch, xhr and navigation breadcrumb's URL fields.
 const URL_FIELDS = ['url', 'from', 'to']
 
-/** Drops console breadcrumbs, whose arguments can be anything, and scrubs the rest. */
+/**
+ * Drops console breadcrumbs, whose arguments can be anything, and scrubs the rest. A click or
+ * input breadcrumb's selector loses its attributes, as `aria-label` and `title` often hold a
+ * person's name.
+ */
 export function scrubBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb | null {
   if (breadcrumb.category === 'console') return null
   const out: Breadcrumb = { ...breadcrumb }
+  if (out.message && out.category?.startsWith('ui.')) {
+    out.message = out.message.replace(/\[[^\]]*\]/g, '')
+  }
   if (out.message) out.message = scrubText(out.message)
   if (out.data) {
     const data: Record<string, unknown> = { ...out.data }
@@ -125,9 +164,14 @@ export function scrubBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb | null {
   return out
 }
 
-/** Drops a frame's local variables and scrubs the source lines sent around it. */
+/**
+ * Drops a frame's local variables and scrubs the source lines sent around it, and its file,
+ * which for an inline script is the page's URL, query string and all.
+ */
 function scrubFrame({ vars: _vars, ...frame }: StackFrame): StackFrame {
   const out: StackFrame = { ...frame }
+  if (out.filename) out.filename = scrubUrl(out.filename)
+  if (out.abs_path) out.abs_path = scrubUrl(out.abs_path)
   if (out.context_line) out.context_line = scrubText(out.context_line)
   if (out.pre_context) out.pre_context = out.pre_context.map(scrubText)
   if (out.post_context) out.post_context = out.post_context.map(scrubText)
@@ -210,7 +254,13 @@ type Env = Record<string, string | undefined>
 export function serverSentrySettings(e: Env = process.env): SentrySettings {
   return {
     dsn: e.SENTRY_DSN?.trim() || undefined,
-    environment: e.SENTRY_ENVIRONMENT || e.RAILWAY_ENVIRONMENT_NAME || e.NODE_ENV || 'development',
+    environment:
+      e.SENTRY_ENVIRONMENT ||
+      // Render sets RENDER; the standby also sets RAILWAY_ENVIRONMENT_NAME, to production.
+      (e.RENDER ? 'render-standby' : undefined) ||
+      e.RAILWAY_ENVIRONMENT_NAME ||
+      e.NODE_ENV ||
+      'development',
     release: e.RAILWAY_GIT_COMMIT_SHA || e.RENDER_GIT_COMMIT || undefined,
   }
 }

@@ -1,22 +1,27 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { errorReports } from '@/test/fakes/error-reporter'
-import { reportError, reportLoggedError, setErrorReporter } from './error-reporter'
+import { reportClientError, reportLoggedError, setErrorReporter } from './error-reporter'
 
 afterEach(() => {
   setErrorReporter(errorReports)
   vi.useRealTimers()
 })
 
-describe('reportError', () => {
-  it('reports the error', () => {
+describe('reportClientError', () => {
+  it('reports an error thrown in the browser, and leaves one from the server to the server', () => {
     const error = new Error('boom')
-    reportError(error)
-    expect(errorReports.last).toEqual({ kind: 'exception', error })
+    reportClientError(error)
+    reportClientError(Object.assign(new Error('rsc'), { digest: 'd1' }))
+    reportClientError(null)
+    expect(errorReports.reports).toEqual([
+      { kind: 'exception', error },
+      { kind: 'exception', error: null },
+    ])
   })
 
   it('does nothing without a reporter installed', () => {
     setErrorReporter(undefined)
-    expect(() => reportError(new Error('boom'))).not.toThrow()
+    expect(() => reportClientError(new Error('boom'))).not.toThrow()
     expect(() => reportLoggedError([new Error('boom')])).not.toThrow()
     expect(errorReports.reports).toEqual([])
   })
@@ -95,6 +100,21 @@ describe('reportLoggedError', () => {
     vi.advanceTimersByTime(60_000)
     reportLoggedError([new Error('Resend down'), '[EMAIL ERROR]'])
     expect(errorReports.reports).toHaveLength(7)
+  })
+
+  it('throttles errors that differ only in the personal data they name', () => {
+    for (let i = 0; i < 20; i++) {
+      reportLoggedError([
+        new Error(`Email address is not verified: user${i}@example.com`),
+        '[EMAIL ERROR] SES',
+      ])
+    }
+    expect(errorReports.reports).toHaveLength(5)
+  })
+
+  it('throttles thrown non-Error values by their type', () => {
+    for (let i = 0; i < 8; i++) reportLoggedError([{ err: Object.create(null) }, '[X]'])
+    expect(errorReports.reports).toHaveLength(5)
   })
 
   it('forgets every key once it holds too many, rather than growing without end', () => {
