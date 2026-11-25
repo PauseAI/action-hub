@@ -32,6 +32,16 @@ describe('quick task detail', () => {
     expect(screen.queryByText('Task not found.')).toBeNull()
   })
 
+  it('shows the page as before when it cannot find out where a link leads', async () => {
+    const me = await createVolunteer()
+    // An id past Postgres's integer range fails the lookup outright.
+    await renderApp(<QuickTaskDetailPage params={Promise.resolve({ id: '2147483648' })} />, {
+      as: me,
+    })
+    await screen.findByText('Task not found.')
+    expect(navigation.replace).not.toHaveBeenCalled()
+  })
+
   it('walks a task from open through claim, submit and review', async () => {
     const me = await createVolunteer()
     const skill = await createSkill()

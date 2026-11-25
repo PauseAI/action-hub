@@ -376,7 +376,11 @@ export const volunteersRouter = {
         }),
         prisma.workItem.findMany({
           where: {
-            type: WorkItemType.QUICK_TASK,
+            // Quick tasks moved into Requests for help projects keep their rating there.
+            OR: [
+              { type: WorkItemType.QUICK_TASK },
+              { type: WorkItemType.TASK, parent: { standingRequests: true } },
+            ],
             assigneeId: input.id,
             status: QuickTaskStatus.completed,
             reviewRating: { in: ['excellent', 'good'] },

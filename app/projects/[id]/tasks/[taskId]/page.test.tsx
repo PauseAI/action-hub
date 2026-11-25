@@ -3,7 +3,15 @@ import { screen, waitFor, fireEvent, cleanup, within } from '@testing-library/re
 import userEvent from '@testing-library/user-event'
 import { prisma } from '@/lib/prisma'
 import { queryClient } from '@/lib/query-client'
-import { createVolunteer, createAdmin, createProject, createTask } from '@/test/factories'
+import {
+  createVolunteer,
+  createAdmin,
+  createProject,
+  createTask,
+  createChapter,
+  createMember,
+} from '@/test/factories'
+import { clientAs } from '@/test/rpc'
 import { fullText, renderApp } from '@/test/render'
 import { addDays, startOfUtcDay } from '@/lib/schedule'
 import { formatDateShort, toDateInputValue } from '@/lib/format-date'
@@ -25,6 +33,37 @@ const mount = (
   )
 
 describe('task detail page', () => {
+  it('names who reviews a request: whoever asked, or chapter staff when nobody did', async () => {
+    const chapter = await createChapter()
+    const asker = await createMember(chapter, { name: 'Ada Asker' })
+    const doer = await createMember(chapter)
+    const asked = await clientAs(asker).requests.ask({ title: 'Asked for' })
+    const unasked = await createTask(asked.projectId, { title: 'Nobody asked', creatorId: null })
+    for (const id of [asked.id, unasked.id]) {
+      await clientAs(doer).projects.updateTask({
+        projectId: asked.projectId,
+        taskId: id,
+        data: { assigneeId: doer.id },
+      })
+    }
+    await mount(asked.projectId, asked.id, doer)
+    expect(within(await submitBox()).getByText(/Ada Asker will look at it/)).toBeInTheDocument()
+    expect(screen.getByText('Asked by Ada Asker')).toBeInTheDocument()
+    cleanup()
+    await mount(asked.projectId, unasked.id, doer)
+    expect(within(await submitBox()).getByText(/Chapter staff will look at it/)).toBeInTheDocument()
+    cleanup()
+    // Whoever asked takes their own request and hands it in: nobody else needs to look.
+    const own = await clientAs(asker).requests.ask({ title: 'My own' })
+    await clientAs(asker).projects.updateTask({
+      projectId: own.projectId,
+      taskId: own.id,
+      data: { assigneeId: asker.id },
+    })
+    await mount(own.projectId, own.id, asker)
+    expect(within(await submitBox()).queryByText(/will look at it/)).toBeNull()
+  })
+
   it('lets the assignee start and submit their work from the box on the page', async () => {
     const me = await createVolunteer()
     const someoneElse = await createVolunteer()

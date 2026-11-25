@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { AskForHelpSchema } from '@/lib/schemas'
 import { requestsProjectFor } from '@/lib/requests'
-import { applyScheduleWrite, CLAIM_BLOCKING_INTEREST } from '@/lib/work-item'
+import { applyScheduleWrite, CLAIM_BLOCKING_INTEREST, projectScopeWhere } from '@/lib/work-item'
 import { approvedProcedure } from '../procedures'
 import { TaskStatus, TaskTiming, WorkItemType } from '@/generated/prisma/enums'
 
@@ -112,14 +112,26 @@ export const requestsRouter = {
     })
   }),
 
-  /** Where a quick task moved to, now that it is a request for help; null for anything else. */
-  locate: approvedProcedure.input(z.object({ id: z.number().int() })).handler(async ({ input }) => {
-    const task = await prisma.workItem.findFirst({
-      where: { id: input.id, type: WorkItemType.TASK, parent: { standingRequests: true } },
-      select: { id: true, parentId: true },
-    })
-    return task?.parentId ? { projectId: task.parentId, taskId: task.id } : null
-  }),
+  /**
+   * The project and task of a request the caller can see, for /quick-tasks/:id links; null for
+   * anything else.
+   */
+  locate: approvedProcedure
+    .input(z.object({ id: z.number().int() }))
+    .handler(async ({ input, context }) => {
+      const task = await prisma.workItem.findFirst({
+        where: {
+          id: input.id,
+          type: WorkItemType.TASK,
+          parent: {
+            standingRequests: true,
+            AND: [projectScopeWhere(context.volunteer)],
+          },
+        },
+        select: { id: true, parentId: true },
+      })
+      return task?.parentId ? { projectId: task.parentId, taskId: task.id } : null
+    }),
 
   /** The requests for help the caller has asked for, newest first, done ones included. */
   mine: approvedProcedure.handler(async ({ context }) => {

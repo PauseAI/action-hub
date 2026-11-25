@@ -41,8 +41,13 @@ export default function QuickTaskDetailPage({ params }: { params: Promise<{ id: 
 
   const router = useRouter()
 
-  // Quick tasks became requests for help; an old link opens the request.
-  const { data: moved, isPending: locating } = useQuery({
+  // A link to a quick task that is a request opens the request; failing to find out where
+  // it is, the quick task is shown as before.
+  const {
+    data: moved,
+    isPending: locating,
+    isError: unlocated,
+  } = useQuery({
     ...orpc.requests.locate.queryOptions({ input: { id } }),
     enabled: !!user && !isNaN(id),
   })
@@ -52,7 +57,7 @@ export default function QuickTaskDetailPage({ params }: { params: Promise<{ id: 
 
   const { data: task, isLoading } = useQuery({
     ...orpc.quickTasks.get.queryOptions({ input: { id } }),
-    enabled: !!user && !isNaN(id) && moved === null,
+    enabled: !!user && !isNaN(id) && (moved === null || unlocated),
   })
 
   const claimMutation = useMutation({
@@ -68,7 +73,9 @@ export default function QuickTaskDetailPage({ params }: { params: Promise<{ id: 
     },
   })
 
-  if (loading || !user || (!isNaN(id) && (locating || moved))) return <PageLoading />
+  if (loading || !user || (!isNaN(id) && !unlocated && (locating || moved))) {
+    return <PageLoading />
+  }
 
   if (isLoading) {
     return (

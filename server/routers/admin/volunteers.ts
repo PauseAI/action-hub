@@ -104,7 +104,13 @@ export const adminVolunteersRouter = {
           take: MAX_DETAIL_ROWS,
         }),
         prisma.workItem.findMany({
-          where: { type: WorkItemType.QUICK_TASK, assigneeId: input.id },
+          where: {
+            OR: [
+              { type: WorkItemType.QUICK_TASK },
+              { type: WorkItemType.TASK, parent: { standingRequests: true } },
+            ],
+            assigneeId: input.id,
+          },
           include: { skill: { select: { name: true } } },
           orderBy: { createdAt: 'desc' },
           take: MAX_DETAIL_ROWS,
