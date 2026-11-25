@@ -483,3 +483,18 @@ describe('direct links', () => {
     ).rejects.toMatchObject(refused)
   })
 })
+
+describe('projects.finishPlanning', () => {
+  it('logs a failed skill-match alert, and still finishes planning', async () => {
+    const owner = await createVolunteer()
+    const project = await createProject({ assigneeId: owner.id, plannedAt: null })
+    await createTask(project.id)
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => logger)
+    vi.mocked(notifyMatchingVolunteers).mockRejectedValueOnce(new Error('m'))
+    await clientAs(owner).projects.finishPlanning({ id: project.id })
+    expect(
+      (await prisma.workItem.findUniqueOrThrow({ where: { id: project.id } })).plannedAt,
+    ).not.toBeNull()
+    await vi.waitFor(() => expect(error).toHaveBeenCalledWith(expect.any(Error), '[MATCH NOTIFY]'))
+  })
+})
