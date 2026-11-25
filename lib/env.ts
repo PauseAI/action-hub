@@ -3,7 +3,7 @@ type EnvError = { var: string; reason: string }
 const flag = (value: string | undefined): boolean =>
   ['1', 'true', 'yes'].includes((value ?? '').toLowerCase())
 
-const DEFAULT_EMAIL_HOURLY_CAP = 500
+const DEFAULT_EMAIL_HOURLY_CAP = 1000
 const DEFAULT_EMAIL_ESSENTIAL_HOURLY_CAP = 200
 
 const wholeNumber = (value: string | undefined, fallback: number): number =>
@@ -34,11 +34,11 @@ export const env = {
   get EMAIL_PROVIDER(): string {
     return (process.env.EMAIL_PROVIDER || 'resend').trim().toLowerCase()
   },
-  /** Most non-essential emails handed to SES in one clock hour, across every process. */
+  /** Most non-essential emails handed to the provider in one clock hour, across every process. */
   get EMAIL_HOURLY_CAP(): number {
     return wholeNumber(process.env.EMAIL_HOURLY_CAP, DEFAULT_EMAIL_HOURLY_CAP)
   },
-  /** Most essential emails (password resets, confirmations) handed to SES in one clock hour. */
+  /** Most essential emails (password resets, confirmations) handed to the provider in an hour. */
   get EMAIL_ESSENTIAL_HOURLY_CAP(): number {
     return wholeNumber(process.env.EMAIL_ESSENTIAL_HOURLY_CAP, DEFAULT_EMAIL_ESSENTIAL_HOURLY_CAP)
   },

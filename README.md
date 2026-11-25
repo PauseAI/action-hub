@@ -95,12 +95,15 @@ Key variables:
 
 - `FROM_EMAIL` — the sender; with SES it must be set, on the verified domain:
   `Action Hub <noreply@action.pauseai.info>`
-- `EMAIL_HOURLY_CAP` — with `ses`, the most emails sent in one clock hour across every process
-  (default 500); beyond it mail is dropped and logged. Keep it above the number of people a
-  digest or call reaches.
-- `EMAIL_ESSENTIAL_HOURLY_CAP` — with `ses`, the same for essential mail (password reset, signup
+- `EMAIL_HOURLY_CAP` — the most emails sent in one clock hour across every process, through
+  either provider (default 1000); beyond it mail is dropped and logged, and the hourly
+  `email-cap-check` cron job fails, so the cron healthcheck alerts (and stays down for that hour
+  and the next, whatever else fails). Keep it above the number of people a digest or call
+  reaches.
+- `EMAIL_ESSENTIAL_HOURLY_CAP` — the same for essential mail (password reset, signup
   confirmation, account merge, outreach login), kept apart from the cap above (default 200), plus
-  five an hour to any one address
+  five an hour to any one address when `EMAIL_HASH_SECRET` is set (with Resend too) to key it.
+  Reaching it is logged but raises no alert, since anyone can request resets
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — for Google OAuth
 - `STUB_EMAIL=true` — suppress real emails in development
 

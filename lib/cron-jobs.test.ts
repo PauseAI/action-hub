@@ -42,6 +42,7 @@ describe('runScheduledJobs (the hourly trigger)', () => {
   afterEach(() => vi.useRealTimers())
 
   const DAILY = CRON_JOB_NAMES.filter((n) => CRON_JOB_INFO[n].every === 'day')
+  const HOURLY = CRON_JOB_NAMES.filter((n) => CRON_JOB_INFO[n].every === 'hour').sort()
 
   /** Runs the trigger at `iso`, with the clock there too; the jobs it ran. */
   async function trigger(iso: string) {
@@ -53,7 +54,7 @@ describe('runScheduledJobs (the hourly trigger)', () => {
   }
   const hour = (day: string, h: number) => `${day}T${String(h).padStart(2, '0')}:05:00Z`
 
-  it('runs each daily job once a day from its hour, and the digest every hour', async () => {
+  it('runs each daily job once a day from its hour, and the hourly ones every hour', async () => {
     const ran: string[] = []
     for (let h = 0; h < 24; h++) ran.push(...(await trigger(hour('2026-12-01', h))).ran)
     for (const name of DAILY)
@@ -61,11 +62,9 @@ describe('runScheduledJobs (the hourly trigger)', () => {
         ran.filter((n) => n === name),
         name,
       ).toHaveLength(1)
-    expect(ran.filter((n) => n === 'notification-digest')).toHaveLength(24)
+    for (const name of HOURLY) expect(ran.filter((n) => n === name)).toHaveLength(24)
     // Not before the hour.
-    expect((await trigger(hour('2026-12-02', DAILY_JOBS_HOUR_UTC - 1))).ran).toEqual([
-      'notification-digest',
-    ])
+    expect((await trigger(hour('2026-12-02', DAILY_JOBS_HOUR_UTC - 1))).ran.sort()).toEqual(HOURLY)
     expect((await trigger(hour('2026-12-02', DAILY_JOBS_HOUR_UTC))).ran).toContain('digest')
   })
 
@@ -73,7 +72,7 @@ describe('runScheduledJobs (the hourly trigger)', () => {
     const { ran } = await trigger(hour('2026-12-03', 13))
     expect([...ran].sort()).toEqual([...CRON_JOB_NAMES].sort())
     const again = await trigger(hour('2026-12-03', 14))
-    expect(again.ran).toEqual(['notification-digest'])
+    expect(again.ran.sort()).toEqual(HOURLY)
     expect(again.body).toMatchObject({ digest: { skipped: 'not due' } })
   })
 
@@ -82,11 +81,8 @@ describe('runScheduledJobs (the hourly trigger)', () => {
     const first = await trigger(hour('2026-12-04', 8))
     expect(first.body.nudges).toEqual({ error: 'Error: smtp down' })
     cronJobs.returns('nudges', { nudged: 0 })
-    expect((await trigger(hour('2026-12-04', 9))).ran.sort()).toEqual([
-      'notification-digest',
-      'nudges',
-    ])
-    expect((await trigger(hour('2026-12-04', 10))).ran).toEqual(['notification-digest'])
+    expect((await trigger(hour('2026-12-04', 9))).ran.sort()).toEqual([...HOURLY, 'nudges'].sort())
+    expect((await trigger(hour('2026-12-04', 10))).ran.sort()).toEqual(HOURLY)
 
     // A run started an hour ago and still going holds the day; one six hours old has died.
     await prisma.cronJobRun.create({
@@ -134,6 +130,43 @@ describe('runScheduledJobs (the hourly trigger)', () => {
     cronJobs.returns('notification-digest', { candidates: 3, due: 1, sent: 1 })
     await trigger(hour('2026-12-10', 4))
     expect(await digestRuns()).toBe(before + 1)
+  })
+
+  it('keeps the email cap check in the history when it fails and when it recovers', async () => {
+    const checks = async () =>
+      (
+        await prisma.cronJobRun.findMany({
+          where: { jobName: 'email-cap-check' },
+          orderBy: { id: 'asc' },
+          select: { status: true },
+        })
+      ).map((r) => r.status)
+    await prisma.cronJobRun.deleteMany({ where: { jobName: 'email-cap-check' } })
+    await trigger(hour('2026-12-11', 3))
+    expect(await checks()).toEqual([])
+    cronJobs.fails('email-cap-check', 'Email held back')
+    expect((await trigger(hour('2026-12-11', 4))).body['email-cap-check']).toEqual({
+      error: 'Error: Email held back',
+    })
+    cronJobs.returns('email-cap-check', { reached: 0 })
+    await trigger(hour('2026-12-11', 5))
+    await trigger(hour('2026-12-11', 6))
+    expect(await checks()).toEqual(['error', 'success'])
+  })
+
+  it('starts the email cap check only once the other jobs have settled', async () => {
+    let finish!: () => void
+    cronJobs.returns(
+      'notification-digest',
+      new Promise((resolve) => (finish = () => resolve({ due: 0 }))),
+    )
+    const run = trigger(hour('2026-12-12', 3))
+    await vi.waitFor(() => expect(cronJobs.runs).toContain('notification-digest'))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(cronJobs.runs).not.toContain('email-cap-check')
+    finish()
+    const { ran } = await run
+    expect(ran.at(-1)).toBe('email-cap-check')
   })
 
   it("leaves an admin's Run now out of the day's tries", async () => {
