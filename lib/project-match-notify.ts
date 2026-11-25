@@ -7,8 +7,9 @@ import { logger } from './logger'
 const NOTIFIABLE_GRADES = new Set(MATCH_GRADES.filter((g) => g.notifiable).map((g) => g.label))
 
 // Emails volunteers who asked for immediate skill-match alerts (emailDigest: 'match')
-// as soon as a project they're at least a good fit for goes live — either an admin
-// approves a volunteer-proposed project, or an admin publishes an org-proposed one directly.
+// as soon as a project they're at least a good fit for goes live: an admin approves a
+// volunteer-proposed project, its owner finishes planning it, or an admin publishes an
+// org-proposed one directly.
 export async function notifyMatchingVolunteers(projectId: number): Promise<void> {
   if (!isEmailConfigured()) return
 

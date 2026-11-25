@@ -2452,3 +2452,111 @@ describe('project page — every task done', () => {
     await screen.findByText(ask)
   })
 })
+
+describe('project page — Planning', () => {
+  /** An approved project its owner has not finished planning, with a rough outline. */
+  async function inPlanning(overrides = {}) {
+    const owner = await createVolunteer({ name: 'Olive Owner' })
+    const project = await createProject({
+      title: 'Leaflet the high street',
+      assigneeId: owner.id,
+      plannedAt: null,
+      ...overrides,
+    })
+    const print = await createTask(project.id, {
+      title: 'Print leaflets',
+      description: 'Ask the print shop',
+      isOutline: true,
+      sortOrder: 1,
+    })
+    const saturday = await createTask(project.id, {
+      title: 'Pick a Saturday',
+      isOutline: true,
+      sortOrder: 2,
+    })
+    return { owner, project, print, saturday }
+  }
+
+  it('lets the owner plan outline items into tasks, then finish planning', async () => {
+    // Work may start during Planning; the banner, not "Needs tasks", says what is missing.
+    const { owner, project, print } = await inPlanning({ status: 'in_progress' })
+    await mount(project.id, owner, '#tasks')
+    const banner = await screen.findByRole('region', { name: 'Planning' })
+    expect(banner.textContent).toContain('No tasks planned yet')
+    expect(banner.textContent).toContain('2 outline items left')
+    expect(banner.textContent).toContain('No total hours yet')
+    expect(within(banner).getByRole('button', { name: 'Finish planning' })).toBeDisabled()
+    expect(screen.getByText('• Planning')).toBeInTheDocument()
+    expect(screen.queryByText('• Needs tasks')).toBeNull()
+
+    const outline = screen.getByRole('region', { name: 'Outline' })
+    expect(within(outline).getByText('Ask the print shop')).toBeInTheDocument()
+    expect(screen.getByText('No tasks yet.')).toBeInTheDocument()
+
+    // Cancel leaves it an outline item.
+    await userEvent.click(within(outline).getAllByRole('button', { name: 'Plan as task' })[1])
+    await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    await userEvent.click(within(outline).getAllByRole('button', { name: 'Plan as task' })[0])
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByLabelText('Task title')).toHaveValue('Print leaflets')
+    expect(within(dialog).getByLabelText('Details (optional)')).toHaveValue('Ask the print shop')
+    await userEvent.type(within(dialog).getByLabelText('Helpers wanted (optional)'), '2')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Make it a task' }))
+    expect(await screen.findByText('Planned as a task')).toBeInTheDocument()
+    await waitFor(async () =>
+      expect(await row(print.id)).toMatchObject({ isOutline: false, helpersWanted: 2 }),
+    )
+    await waitFor(() => expect(banner.textContent).toContain('1 task planned'))
+    expect(banner.textContent).toContain('1 outline item left')
+
+    const finish = within(banner).getByRole('button', { name: 'Finish planning' })
+    await waitFor(() => expect(finish).toBeEnabled())
+    await userEvent.click(finish)
+    expect(await screen.findByText('Planning finished')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Planning' })).toBeNull())
+    expect((await row(project.id)).plannedAt).not.toBeNull()
+    expect(screen.queryByText('• Planning')).toBeNull()
+    // The rough item left over stays in the outline.
+    expect(within(screen.getByRole('region', { name: 'Outline' })).getByText('Pick a Saturday'))
+  })
+
+  it('shows the total hours beside what the tasks add up to, and reports refusals', async () => {
+    const { owner, project, print } = await inPlanning({ estimatedTotalHours: 40 })
+    await createTask(project.id, { title: 'Book a stall', estimatedHours: 3, sortOrder: 3 })
+    await mount(project.id, owner, '#tasks')
+    const banner = await screen.findByRole('region', { name: 'Planning' })
+    expect(banner.textContent).toContain('About 40 hours in total; the tasks add up to 3 hours')
+
+    // The outline item went while the page was open.
+    await prisma.workItem.delete({ where: { id: print.id } })
+    await userEvent.click(screen.getAllByRole('button', { name: 'Plan as task' })[0])
+    await userEvent.click(await screen.findByRole('button', { name: 'Make it a task' }))
+    expect(await screen.findByText('Project or task not found')).toBeInTheDocument()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    // The owner stepped down while the page was open.
+    await prisma.workItem.update({ where: { id: project.id }, data: { assigneeId: null } })
+    const admin = await createAdmin()
+    cleanup()
+    queryClient.clear()
+    await mount(project.id, admin, '#tasks')
+    const stale = await screen.findByRole('region', { name: 'Planning' })
+    expect(stale.textContent).toContain('It needs an owner first')
+    await prisma.workItem.update({ where: { id: project.id }, data: { assigneeId: owner.id } })
+    await prisma.workItem.update({ where: { id: project.id }, data: { assigneeId: null } })
+  })
+
+  it('tells everyone else the tasks open up as they are planned, with nothing to plan', async () => {
+    const { project } = await inPlanning()
+    const visitor = await createVolunteer()
+    await mount(project.id, visitor, '#tasks')
+    expect(
+      await screen.findByText(/is being planned\. Its tasks open up as the owner plans them\./),
+    ).toBeInTheDocument()
+    const outline = screen.getByRole('region', { name: 'Outline' })
+    expect(within(outline).getByText('Pick a Saturday')).toBeInTheDocument()
+    expect(within(outline).queryByRole('button', { name: 'Plan as task' })).toBeNull()
+  })
+})

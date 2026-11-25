@@ -84,6 +84,7 @@ import ReplanDialog from '@/components/ReplanDialog'
 import { PlanningTools } from '@/components/gantt/GanttLegend'
 import ProjectPorting from '@/components/ProjectPorting'
 import LockedProjectBanner, { ReopenProjectButton } from '@/components/LockedProjectBanner'
+import { OutlineList, PlanningBanner } from '@/components/PlanningPanel'
 import SaveAsTemplateButton from '@/components/SaveAsTemplateButton'
 import { scheduleWithPatches } from '@/components/gantt/optimistic'
 import { startOfUtcDay } from '@/lib/schedule'
@@ -867,12 +868,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // finished tasks last); new tasks are added at the end and the next load uses server order.
   useEffect(() => {
     if (project?.tasks) {
-      const fresh = new Map(project.tasks.map((t) => [t.id, t]))
+      // Outline items are listed apart, in the Outline, until they are planned into tasks.
+      const tasks = project.tasks.filter((t) => !t.isOutline)
+      const fresh = new Map(tasks.map((t) => [t.id, t]))
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setOrderedTasks((current) => {
         const kept = current.flatMap((t) => fresh.get(t.id) ?? [])
         const seen = new Set(kept.map((t) => t.id))
-        return [...kept, ...project.tasks.filter((t) => !seen.has(t.id))]
+        return [...kept, ...tasks.filter((t) => !seen.has(t.id))]
       })
     }
   }, [project?.tasks])
@@ -1178,6 +1181,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const canRunTasks = !locked && may('task.assign')
   const canManageProject = may('project.manage')
   const canManageTasks = !locked && may('task.manage')
+  const outline = project.tasks.filter((t) => t.isOutline)
   const deputyIds = new Set(
     (project.helpers ?? []).filter((h) => h.isDeputy).map((h) => h.volunteerId),
   )
@@ -2190,7 +2194,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       )}
       {project.isSeekingOwner && !leadRequestPending && <StatusFlag>Seeking owner</StatusFlag>}
       {project.isSeekingHelp && <StatusFlag>Seeking help</StatusFlag>}
-      {project.needsTasks && <StatusFlag>Needs tasks</StatusFlag>}
+      {/* While planning, the Planning banner says what is missing. */}
+      {project.stage === 'planning' ? (
+        <StatusFlag>Planning</StatusFlag>
+      ) : (
+        project.needsTasks && <StatusFlag>Needs tasks</StatusFlag>
+      )}
       {leadRequestPending && requestStatus}
     </>
   )
@@ -2304,6 +2313,20 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           <div className="max-w-3xl">
             {locked && (
               <LockedProjectBanner status={project.status} completedAt={project.completedAt} />
+            )}
+            {project.stage === 'planning' && (
+              <PlanningBanner
+                projectId={project.id}
+                title={project.title}
+                hasOwner={project.ownerId !== null}
+                plannedTasks={orderedTasks.length}
+                outlineItems={outline.length}
+                totalHours={project.estimatedTotalHours}
+                taskHours={orderedTasks.reduce((sum, t) => sum + (t.estimatedHours ?? 0), 0)}
+                canFinish={!locked && canManageProject}
+                editHref={`/projects/${idParam}/edit`}
+                onChanged={() => void invalidateProject()}
+              />
             )}
             {project.allTasksDone && (
               <ReadyToCompleteBanner
@@ -2561,6 +2584,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   <strong>{keyDateTask.title}</strong>. The work it waits for is marked Before; the
                   work that follows it, After.
                 </P>
+              )}
+              {tab === 'tasks' && outline.length > 0 && (
+                <OutlineList
+                  projectId={project.id}
+                  outline={outline}
+                  canPlan={canManageTasks}
+                  onChanged={() => void invalidateProject()}
+                />
               )}
               {tab === 'tasks' &&
                 (orderedTasks.length === 0 ? (

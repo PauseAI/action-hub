@@ -1639,17 +1639,19 @@ export const projectsRouter = {
 
       // The owner or an admin is asked to complete a running project once every task is done.
       // `lastDoneAt` changes whenever a task is done again, which brings back a dismissed ask.
+      // Outline items left unplanned don't hold that back.
+      const realTasks = sortedTasks.filter((t) => !t.isOutline)
       const allTasksDone =
         can(viewer, 'project.changeStatus', resource) &&
         !project.standingRequests &&
         project.status === ProjectStatus.in_progress &&
-        sortedTasks.length > 0 &&
-        sortedTasks.every((t) => t.status === TaskStatus.completed)
+        realTasks.length > 0 &&
+        realTasks.every((t) => t.status === TaskStatus.completed)
           ? {
-              count: sortedTasks.length,
-              includesKeyDate: sortedTasks.some((t) => t.isAnchor),
+              count: realTasks.length,
+              includesKeyDate: realTasks.some((t) => t.isAnchor),
               lastDoneAt: new Date(
-                Math.max(...sortedTasks.map((t) => t.completedAt?.getTime() ?? 0)),
+                Math.max(...realTasks.map((t) => t.completedAt?.getTime() ?? 0)),
               ),
             }
           : null
@@ -1948,6 +1950,8 @@ export const projectsRouter = {
         { plannedAt: now, updatedAt: now },
         { actorId: context.volunteer.id },
       )
+      // Skills are set while planning, so a planned project is when a match is news.
+      notifyMatchingVolunteers(project.id).catch((e) => logger.error(e, '[MATCH NOTIFY]'))
       return { message: 'Planning finished' }
     }),
 

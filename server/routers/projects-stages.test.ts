@@ -1,7 +1,14 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { prisma } from '@/lib/prisma'
-import { createAdmin, createProject, createTask, createVolunteer } from '@/test/factories'
+import {
+  createAdmin,
+  createProject,
+  createSkill,
+  createTask,
+  createVolunteer,
+} from '@/test/factories'
 import { clientAs } from '@/test/rpc'
+import { emails } from '@/test/fakes/email'
 
 const OUTLINE = 'This is still an outline item. The owner needs to plan it into a task first'
 
@@ -253,5 +260,44 @@ describe('stage edge cases', () => {
     ).rejects.toMatchObject({
       message: 'A project cannot be moved to In Progress without at least one open task',
     })
+  })
+})
+
+describe('Finish planning tells matching volunteers', () => {
+  it('emails volunteers whose skills the planned project needs', async () => {
+    const { owner, projectId, print } = await inPlanning()
+    const [a, b] = [await createSkill(), await createSkill()]
+    const project = await prisma.workItem.findUniqueOrThrow({ where: { id: projectId } })
+    const fan = await createVolunteer({
+      emailDigest: 'match',
+      nationalChapterId: project.nationalChapterId,
+      skills: { create: [{ skillId: a.id }, { skillId: b.id }] },
+    })
+    const o = clientAs(owner)
+    // Skills are chosen while planning, after the approval that had none to match.
+    await o.projects.update({
+      id: projectId,
+      skillIds: [a.id, b.id],
+      skillRequiredMap: { [a.id]: true, [b.id]: true },
+    })
+    await o.projects.updateTask({ projectId, taskId: print.id, data: { isOutline: false } })
+    expect(emails.to(fan.email!)).toEqual([])
+    await o.projects.finishPlanning({ id: projectId })
+    await vi.waitFor(() =>
+      expect(emails.lastTo(fan.email!).html).toContain(`/projects/${projectId}`),
+    )
+  })
+})
+
+describe('outline items left over on a running project', () => {
+  it('neither count as open work nor hold back the ask to complete', async () => {
+    const owner = await createVolunteer()
+    const project = await createProject({ assigneeId: owner.id, status: 'in_progress' })
+    await createTask(project.id, { isOutline: true })
+    const o = clientAs(owner)
+    expect((await o.projects.getById({ id: project.id })).needsTasks).toBe(true)
+    await createTask(project.id, { status: 'completed', completedAt: new Date() })
+    const after = await o.projects.getById({ id: project.id })
+    expect(after.allTasksDone).toMatchObject({ count: 1 })
   })
 })

@@ -36,6 +36,7 @@ export default function NewTaskForm({
   datesNote,
   autoFocus,
   allowQuickTask = true,
+  initial,
   className = '',
 }: {
   /** Creates the task; resolves true once it exists, which clears the form. */
@@ -49,15 +50,17 @@ export default function NewTaskForm({
   autoFocus?: boolean
   /** Offers featuring it on the Tasks page; off where the project is not yet approved. */
   allowQuickTask?: boolean
+  /** An outline item being planned into a task: its title and note, with the details open. */
+  initial?: { title: string; description: string | null }
   className?: string
 }) {
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
+  const [title, setTitle] = useState(initial?.title ?? '')
+  const [description, setDescription] = useState(initial?.description ?? '')
   const [dates, setDates] = useState(EMPTY_DATES)
   const [ask, setAsk] = useState(NEW_SUBMISSION_ASK)
   const [helpers, setHelpers] = useState('')
   const [featured, setFeatured] = useState(false)
-  const [showDetails, setShowDetails] = useState(false)
+  const [showDetails, setShowDetails] = useState(initial !== undefined)
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
