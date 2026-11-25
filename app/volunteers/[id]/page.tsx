@@ -16,11 +16,60 @@ import { orpc } from '@/lib/orpc'
 import { SECTION_CARD } from '@/lib/ui-classes'
 import { H1, H2, H3, H4 } from '@/components/Heading'
 import { P } from '@/components/Text'
+import { Badge } from '@/components/Badge'
 import TextLink from '@/components/TextLink'
 import PersonName, { RoleBadge } from '@/components/PersonName'
 import { usePerson } from '@/lib/hooks/usePerson'
 import Avatar from '@/components/Avatar'
 import MemberManage from '@/components/MemberManage'
+
+/** Fast track (lib/fast-track.ts): staff put someone on it, or take them off, from here. */
+function FastTrackControl({
+  volunteerId,
+  name,
+  isMe,
+  fastTrack,
+}: {
+  volunteerId: number
+  name: string
+  isMe: boolean
+  fastTrack: { on: boolean; canSet: boolean }
+}) {
+  const showToast = useToast()
+  const queryClient = useQueryClient()
+  const set = useMutation({
+    ...orpc.volunteers.setFastTrack.mutationOptions(),
+    onSuccess: ({ message }) => showToast(message, 'success'),
+    onError: (err: unknown) =>
+      showToast(err instanceof Error ? err.message : 'Failed to save', 'error'),
+    onSettled: () =>
+      void queryClient.invalidateQueries({ queryKey: orpc.volunteers.getById.key() }),
+  })
+  if (!fastTrack.on && !fastTrack.canSet) return null
+  return (
+    <section aria-label="Fast track" className="mt-2 text-sm">
+      {fastTrack.on && (
+        <P className="m-0">
+          <Badge variant="success">Fast track</Badge>{' '}
+          {isMe
+            ? 'You start tasks straight away, without waiting for approval. Owners are told.'
+            : `${name} starts tasks straight away, without waiting for approval.`}
+        </P>
+      )}
+      {fastTrack.canSet && (
+        <Button
+          variant="secondary"
+          size="sm"
+          className="mt-2"
+          disabled={set.isPending}
+          onClick={() => set.mutate({ volunteerId, on: !fastTrack.on })}
+        >
+          {fastTrack.on ? 'Take off fast track' : `Fast track ${name}`}
+        </Button>
+      )}
+    </section>
+  )
+}
 
 export default function VolunteerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -136,6 +185,14 @@ export default function VolunteerDetailPage({ params }: { params: Promise<{ id: 
                   <RoleBadge person={person} className="ml-2" />
                   {volunteer.activeRecently && <ActiveDot />}
                 </div>
+                {volunteer.fastTrack && (
+                  <FastTrackControl
+                    volunteerId={volunteer.id}
+                    name={volunteer.name}
+                    isMe={isMe}
+                    fastTrack={volunteer.fastTrack}
+                  />
+                )}
               </div>
               {isMe && (
                 <Button

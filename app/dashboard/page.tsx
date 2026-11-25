@@ -129,7 +129,8 @@ function FindRowView({
 }: {
   label: string
   row: FindRow
-  seeAll: string
+  /** Where the whole list is; none where the viewer has no page that lists it. */
+  seeAll?: string
   empty: React.ReactNode
 }) {
   return (
@@ -139,7 +140,7 @@ function FindRowView({
           {label}
           <Count n={row.count} />
         </H3>
-        {row.count > 0 && (
+        {row.count > 0 && seeAll && (
           <Link href={seeAll} className="text-sm">
             See all →
           </Link>
@@ -573,6 +574,13 @@ export default function HomePage() {
                   row={data.find.quickTasks}
                   seeAll="/quick-tasks"
                   empty="No open quick tasks right now."
+                />
+                <FindRowView
+                  label="Helpers wanted"
+                  row={data.find.helpersWanted}
+                  // Staff get the Quick Tasks admin view, which lists no helper places.
+                  seeAll={user.isAdmin || user.access.role ? undefined : '/quick-tasks'}
+                  empty="No tasks are asking for helpers right now."
                 />
                 <FindRowView
                   label="Matches your skills"

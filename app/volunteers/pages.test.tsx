@@ -19,6 +19,7 @@ import {
   chapterFor,
 } from '@/test/factories'
 import { renderApp } from '@/test/render'
+import { queryClient } from '@/lib/query-client'
 import { navigation } from '@/test/next-navigation'
 import { emails } from '@/test/fakes/email'
 import VolunteersPage from './page'
@@ -377,6 +378,52 @@ describe('volunteer profile', () => {
     expect(await screen.findByText('They have no picture')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Remove picture' })).toBeNull())
+  })
+
+  it("shows fast track to the volunteer and their chapter's staff, who set it here", async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter)
+    const sam = await createMember(chapter, { name: 'Sam Steady' })
+    const mount = (as: { id: number }) =>
+      renderApp(<VolunteerDetailPage params={Promise.resolve({ id: String(sam.id) })} />, {
+        as: as as never,
+      })
+    await mount(lead)
+    await userEvent.click(await screen.findByRole('button', { name: 'Fast track Sam Steady' }))
+    await screen.findByText('On fast track')
+    const section = await screen.findByRole('region', { name: 'Fast track' })
+    await within(section).findByText(/Sam Steady starts tasks straight away/)
+    expect((await prisma.volunteer.findUniqueOrThrow({ where: { id: sam.id } })).fastTrack).toBe(
+      true,
+    )
+    // A refusal says why: the lead stepped down meanwhile.
+    await prisma.nationalChapter.update({ where: { id: chapter.id }, data: { leadId: null } })
+    await userEvent.click(within(section).getByRole('button', { name: 'Take off fast track' }))
+    await screen.findByText("Only their chapter's lead or deputies can change fast track")
+
+    cleanup()
+    queryClient.clear()
+    await mount(sam)
+    expect(
+      within(await screen.findByRole('region', { name: 'Fast track' })).getByText(
+        /You start tasks straight away/,
+      ),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /fast track/i })).toBeNull()
+
+    // Off fast track, Sam's own profile says nothing about it.
+    await prisma.volunteer.update({ where: { id: sam.id }, data: { fastTrack: false } })
+    cleanup()
+    queryClient.clear()
+    await mount(sam)
+    await screen.findByRole('heading', { name: 'Sam Steady' })
+    expect(screen.queryByRole('region', { name: 'Fast track' })).toBeNull()
+
+    cleanup()
+    queryClient.clear()
+    await mount(await createMember(chapter))
+    await screen.findByRole('heading', { name: 'Sam Steady' })
+    expect(screen.queryByRole('region', { name: 'Fast track' })).toBeNull()
   })
 
   it("lets a chapter's lead make a member a chapter deputy, and stand them down", async () => {

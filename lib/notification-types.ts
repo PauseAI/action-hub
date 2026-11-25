@@ -41,6 +41,7 @@ const HIDDEN_UNLESS_HELD: Role[] = ['staff', 'technical']
 const ROLE_TYPES: Record<Exclude<Role, 'everyone'>, string[]> = {
   project_lead: [
     'new_interest',
+    'fast_track_started',
     'task_submitted',
     'project_ready_to_complete',
     'invite_accepted',
@@ -58,6 +59,7 @@ const ROLE_TYPES: Record<Exclude<Role, 'everyone'>, string[]> = {
     'new_volunteer_signup',
     'new_project_proposal',
     'project_lead_offer',
+    'fast_track_suggested',
     'project_resubmitted',
     'team_suggestion',
     'local_group_suggestion',
@@ -143,6 +145,14 @@ const TYPES: Record<string, TypeInfo> = {
     label: 'Someone offers to lead a project',
     default: 'email',
   },
+  fast_track_suggested: {
+    label: 'A volunteer in your chapter could go on fast track',
+    default: 'in_app',
+  },
+  fast_track_started: {
+    label: 'A volunteer on fast track starts on a task in your project',
+    default: 'in_app',
+  },
   team_suggestion: { label: 'Someone suggests a team', default: 'email' },
   local_group_suggestion: {
     label: 'Someone suggests a local group',
@@ -193,6 +203,10 @@ const TYPES: Record<string, TypeInfo> = {
   task_helpers_changed: { label: 'Helpers on your task change', default: 'in_app' },
   helper_added: { label: "You're added as a helper on a task", default: 'in_app' },
   helper_removed: { label: "You're removed as a helper on a task", default: 'in_app' },
+  helper_place_filled: {
+    label: 'A helper place you offered for goes to someone else',
+    default: 'in_app',
+  },
   comment_reply: { label: 'Someone replies to your comment', default: 'email' },
   work_item_comment: {
     label: "Someone comments on a project or task you're on",

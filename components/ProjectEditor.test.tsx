@@ -483,6 +483,8 @@ describe('ProjectEditor — editing an existing project', () => {
     await waitFor(async () => expect((await row(project.id)).isSeekingHelp).toBe(true))
     await userEvent.click(screen.getByLabelText('Accept submitted work automatically'))
     await waitFor(async () => expect((await row(project.id)).autoAcceptTasks).toBe(false))
+    await userEvent.click(screen.getByLabelText('Always ask me'))
+    await waitFor(async () => expect((await row(project.id)).alwaysAskToJoin).toBe(true))
     expect(screen.getByLabelText('Show timeline')).not.toBeChecked()
     await userEvent.click(screen.getByLabelText('Show timeline'))
     await waitFor(async () => expect((await row(project.id)).showTimeline).toBe(true))

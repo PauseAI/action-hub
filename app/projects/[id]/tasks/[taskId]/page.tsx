@@ -30,7 +30,13 @@ import { UNCLAIMED_LABEL } from '@/lib/status-labels'
 import { lateness } from '@/lib/lateness'
 import { LatenessBadge, WorkStatusBadge } from '@/components/StatusBadges'
 import { PROJECT_TASK_CLAIMED_MESSAGE, TASK_REQUESTED_MESSAGE } from '@/lib/action-messages'
-import { CLAIMING, JOIN_AS_HELPER, UNASSIGN, claimLabel } from '@/lib/action-labels'
+import {
+  CLAIMING,
+  UNASSIGN,
+  claimLabel,
+  joinAsHelperLabel,
+  takesStraightAway,
+} from '@/lib/action-labels'
 import { TASK_INACTIVITY_RULE } from '@/lib/staleness'
 import { awaitsOwnerReview } from '@/lib/task-review'
 import { handedIn } from '@/lib/overdue'
@@ -244,6 +250,17 @@ export default function TaskDetailPage({
       showToast(err instanceof Error ? err.message : 'Failed to join', 'error'),
   })
 
+  // Takes back an offer to help, or an ask to take the task, made while waiting to join.
+  const withdrawRequestMutation = useMutation({
+    ...orpc.projects.withdrawInterest.mutationOptions(),
+    onSuccess: (data) => {
+      showToast(data.message, 'success')
+      void invalidateTask()
+    },
+    onError: (err: unknown) =>
+      showToast(err instanceof Error ? err.message : 'Failed to withdraw', 'error'),
+  })
+
   function handleClaimTask(assigneeId: number) {
     updateMutation.mutate({ projectId, taskId, data: { assigneeId } })
   }
@@ -369,7 +386,7 @@ export default function TaskDetailPage({
                       })
                     }
                   >
-                    {JOIN_AS_HELPER}
+                    {joinAsHelperLabel(task.claimViewer)}
                   </Button>
                 )
               }
@@ -462,6 +479,9 @@ export default function TaskDetailPage({
                   ariaLabel="Reassign to"
                   value={reassignTo}
                   onChange={setReassignTo}
+                  pinned={task.projectPeople}
+                  exclude={task.assignedToId === null ? [] : [task.assignedToId]}
+                  chapter={task.searchChapter}
                 />
               </div>
               <Button
@@ -534,6 +554,33 @@ export default function TaskDetailPage({
               </>
             )}
           </P>
+        )}
+        {task.offeredBy.length > 0 && (
+          <ul className="text-sm text-text-light mt-4 mb-0 list-none p-0">
+            {task.offeredBy.map((o) => (
+              <li key={o.volunteerId}>
+                {o.volunteerId === user.id ? (
+                  "You've offered to help. You'll join the task and the project when the owner accepts."
+                ) : (
+                  <>
+                    <PersonName id={o.volunteerId} name={o.name} /> offered to help, waiting for the
+                    owner.
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {!projectLocked && (task.hasOffered || task.requestedById === user.id) && (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="mt-2"
+            disabled={withdrawRequestMutation.isPending}
+            onClick={() => withdrawRequestMutation.mutate({ projectId, taskId })}
+          >
+            Withdraw request
+          </Button>
         )}
 
         <SubmittedWork submission={task.submission} changesRequested={task.changesRequested} />
@@ -657,7 +704,7 @@ export default function TaskDetailPage({
         <ConfirmDialog
           id="confirm-claim-task"
           isOpen
-          title={`${task.claimViewer.onProject || task.claimViewer.invited ? 'Claim' : 'Ask to take'} '${task.title}'?`}
+          title={`${takesStraightAway(task.claimViewer) ? 'Claim' : 'Ask to take'} '${task.title}'?`}
           body={TASK_INACTIVITY_RULE}
           confirmLabel={claimLabel(task.claimViewer)}
           busyLabel={CLAIMING}

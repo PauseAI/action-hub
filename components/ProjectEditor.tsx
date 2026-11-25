@@ -130,6 +130,7 @@ export default function ProjectEditor(props: ProjectEditorProps) {
   const [skills, setSkills] = useState<SelectedSkill[]>([])
   const [seekingHelp, setSeekingHelp] = useState(true)
   const [autoAccept, setAutoAccept] = useState(true)
+  const [alwaysAsk, setAlwaysAsk] = useState(false)
   const [showTimeline, setShowTimeline] = useState(false)
   const [wantToOwn, setWantToOwn] = useState(false)
 
@@ -197,6 +198,7 @@ export default function ProjectEditor(props: ProjectEditorProps) {
     setProjectDeadline(toDateInputValue(data.deadline))
     setSeekingHelp(data.isSeekingHelp ?? false)
     setAutoAccept(data.autoAcceptTasks)
+    setAlwaysAsk(data.alwaysAskToJoin)
     setShowTimeline(data.showTimeline)
     setWantToOwn(data.ownerId === user?.id)
     setCanEdit(data.permissions.includes('project.edit'))
@@ -953,6 +955,21 @@ export default function ProjectEditor(props: ProjectEditorProps) {
             <P className="text-sm text-text-light mt-1 mb-0">
               Helpers always say what they did. Turn this off to check each task before it counts as
               done.
+            </P>
+            <P className="font-medium mt-4 mb-2">Joining:</P>
+            <Checkbox
+              checked={alwaysAsk}
+              onChange={(e) => {
+                setAlwaysAsk(e.target.checked)
+                commitField({ alwaysAskToJoin: e.target.checked })
+              }}
+              disabled={!canEdit}
+            >
+              Always ask me
+            </Checkbox>
+            <P className="text-sm text-text-light mt-1 mb-0">
+              Volunteers on fast track start tasks straight away and tell you after. Turn this on to
+              have everyone wait for you to accept them.
             </P>
           </div>
         )}

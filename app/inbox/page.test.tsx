@@ -170,6 +170,45 @@ describe('inbox', () => {
     await waitFor(() => expect(screen.queryByText('Invited: help')).toBeNull())
   })
 
+  it('puts someone on fast track, or says not now, in place', async () => {
+    const lead = await createVolunteer()
+    const sam = await createVolunteer({ name: 'Sam' })
+    const kim = await createVolunteer({ name: 'Kim' })
+    for (const v of [sam, kim]) {
+      await prisma.notification.create({
+        data: {
+          volunteerId: lead.id,
+          type: 'fast_track_suggested',
+          title: `${v.name} has had 3 tasks submitted and accepted`,
+          entityId: v.id,
+        },
+      })
+    }
+    // Both are in the pool, so the lead answers as a global admin would.
+    await prisma.volunteer.update({ where: { id: lead.id }, data: { email: 'admin@example.com' } })
+    await renderApp(<InboxPage />, { as: lead, url: '/inbox' })
+    const row = async (name: string) =>
+      (await screen.findByText(`${name} has had 3 tasks submitted and accepted`)).closest(
+        'li',
+      ) as HTMLElement
+    await userEvent.click(within(await row('Sam')).getByRole('button', { name: 'Fast track Sam' }))
+    await screen.findByText('On fast track')
+    await waitFor(async () =>
+      expect((await prisma.volunteer.findUniqueOrThrow({ where: { id: sam.id } })).fastTrack).toBe(
+        true,
+      ),
+    )
+    await userEvent.click(within(await row('Kim')).getByRole('button', { name: 'Not now' }))
+    await screen.findByText(/Not now\. You'll be asked again/)
+    await waitFor(async () =>
+      expect(
+        await prisma.notification.count({
+          where: { type: 'fast_track_suggested', entityId: kim.id },
+        }),
+      ).toBe(0),
+    )
+  })
+
   it('answers a contact request in place', async () => {
     const me = await createVolunteer()
     const asker = await createVolunteer({ name: 'Ada Asker' })

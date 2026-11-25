@@ -17,7 +17,8 @@ import {
   TeamMembershipRole,
 } from '@/generated/prisma/enums'
 import type { Prisma } from '@/generated/prisma/client'
-import { isStaff, type ChapterAccess } from '@/lib/chapter-access'
+import { canAdminChapter, isStaff, type ChapterAccess } from '@/lib/chapter-access'
+import { FAST_TRACK_SUGGESTED } from '@/lib/fast-track'
 import { loadWorkItemSummaries, workItemIdFromLink } from '@/lib/work-item-summary'
 import { preferenceRows } from '@/lib/notification-types'
 import { chosenDeliveries, digestScheduleOf, heldRoles } from '@/lib/notification-preferences'
@@ -46,6 +47,7 @@ export type NotificationAction =
   | { kind: 'join_request'; requestId: number }
   | { kind: 'invite'; projectId: number }
   | { kind: 'contact_request'; requestId: number }
+  | { kind: 'fast_track'; volunteerId: number; name: string }
 
 /**
  * What can be answered from the Inbox itself: an applicant still waiting on a project the
@@ -54,6 +56,7 @@ export type NotificationAction =
  */
 async function actionsFor(
   viewer: Viewer,
+  access: ChapterAccess,
   rows: { id: number; type: string; entityId: number | null }[],
 ): Promise<Map<number, NotificationAction>> {
   const ids = (type: string) =>
@@ -63,7 +66,18 @@ async function actionsFor(
       where: {
         id: { in: ids('new_interest') },
         status: InterestStatus.pending,
-        ...(viewer.isAdmin ? {} : { workItem: { assigneeId: viewer.id } }),
+        // A project's deputies answer the requests that come with a task.
+        ...(viewer.isAdmin
+          ? {}
+          : {
+              OR: [
+                { workItem: { assigneeId: viewer.id } },
+                {
+                  interestType: 'want_to_contribute',
+                  workItem: { deputies: { some: { volunteerId: viewer.id } } },
+                },
+              ],
+            }),
       },
       select: { id: true, workItemId: true },
     }),
@@ -98,6 +112,18 @@ async function actionsFor(
       select: { id: true },
     }),
   ])
+  // An ask to put someone on fast track, while they are not on it and the viewer still runs
+  // their chapter.
+  const fastTrackable = new Map(
+    (
+      await prisma.volunteer.findMany({
+        where: { id: { in: ids(FAST_TRACK_SUGGESTED) }, fastTrack: false, deletedAt: null },
+        select: { id: true, name: true, nationalChapterId: true },
+      })
+    )
+      .filter((v) => v.id !== viewer.id && canAdminChapter(access, v.nationalChapterId))
+      .map((v) => [v.id, v.name]),
+  )
   const contactRequestIds = new Set(contactRequests.map((r) => r.id))
   const inviteById = new Map(invites.map((i) => [i.id, i]))
   const interestById = new Map(interests.map((i) => [i.id, i]))
@@ -118,6 +144,13 @@ async function actionsFor(
       actions.set(r.id, { kind: 'invite', projectId: invite.workItemId })
     } else if (r.type === 'contact_request' && contactRequestIds.has(r.entityId as number)) {
       actions.set(r.id, { kind: 'contact_request', requestId: r.entityId as number })
+    } else if (r.type === FAST_TRACK_SUGGESTED && fastTrackable.has(r.entityId as number)) {
+      const volunteerId = r.entityId as number
+      actions.set(r.id, {
+        kind: 'fast_track',
+        volunteerId,
+        name: fastTrackable.get(volunteerId) as string,
+      })
     }
   }
   return actions
@@ -164,7 +197,7 @@ export const notificationsRouter = {
       // `entityId` means something different per type, so the task comes from the link.
       const workItemIds = notifications.map((n) => workItemIdFromLink(n.link))
       const [actions, workItems] = await Promise.all([
-        actionsFor(context.volunteer, notifications),
+        actionsFor(context.volunteer, context.access, notifications),
         loadWorkItemSummaries(
           workItemIds.filter((id) => id !== null),
           context.volunteer,

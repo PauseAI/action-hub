@@ -27,6 +27,14 @@ export const UNASSIGN = 'Unassign'
 /** A project member joining a task that seeks helpers, beside its lead. */
 export const JOIN_AS_HELPER = 'Join as helper'
 
+/** Someone not yet on the project asking for a helper place, which also asks to join it. */
+export const OFFER_TO_HELP = 'Offer to help'
+
+/** Joining as a helper, worded for where the viewer stands on the project. */
+export function joinAsHelperLabel(viewer: ClaimViewer): string {
+  return takesStraightAway(viewer) ? JOIN_AS_HELPER : OFFER_TO_HELP
+}
+
 /** A helper leaving the task, from their own chip. Matches the project-level "Withdraw". */
 export const LEAVE_HELPING = 'Withdraw'
 
@@ -41,9 +49,19 @@ export const ADD_HELPER = 'Add helper'
  * takes the task or asks first. `onProject` covers the owner, an admin, a deputy, an accepted
  * helper and a member of the project's team.
  */
-export type ClaimViewer = { onProject: boolean; invited: boolean }
+export type ClaimViewer = {
+  onProject: boolean
+  invited: boolean
+  /** On fast track, on a project that does not always ask (lib/fast-track.ts). */
+  fastTrack?: boolean
+}
 
-/** Claiming takes the task for someone on the project or invited to it; anyone else asks. */
+/** Does taking a task, or a helper place, happen at once rather than asking the owner? */
+export function takesStraightAway(viewer: ClaimViewer): boolean {
+  return viewer.onProject || viewer.invited || viewer.fastTrack === true
+}
+
+/** Claiming takes the task for someone on the project, invited or on fast track; anyone else asks. */
 export function claimLabel(viewer: ClaimViewer): string {
-  return viewer.onProject || viewer.invited ? CLAIM_TASK : ASK_TO_TAKE
+  return takesStraightAway(viewer) ? CLAIM_TASK : ASK_TO_TAKE
 }

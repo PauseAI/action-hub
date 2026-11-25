@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, act, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { ThemeProvider, useTheme } from './ThemeProvider'
@@ -304,6 +304,31 @@ describe('FilterDropdown', () => {
     await userEvent.clear(input)
     await userEvent.keyboard('{Backspace}')
     expect(screen.queryByRole('listbox')).toBeNull()
+  })
+
+  it('keeps a heading while something under it matches the search, and drops it otherwise', async () => {
+    const grouped: FilterOption[] = [
+      { value: 'h1', label: 'Owner', header: true },
+      { value: '1', label: 'Olive' },
+      { value: 'h2', label: 'Members', header: true },
+      { value: '2', label: 'Ann', description: 'ann@example.com' },
+      { value: 'h3', label: 'Nobody here', header: true },
+    ]
+    function GroupedHost() {
+      const state = useFilterOptions(grouped, '')
+      return <FilterDropdown id="g" label="G" ariaLabel="G" searchable {...state} />
+    }
+    render(<GroupedHost />)
+    await userEvent.click(screen.getByRole('button', { name: 'G' }))
+    // A heading with nobody under it never shows.
+    const list = () => screen.getByRole('listbox')
+    expect(within(list()).queryByText('Nobody here')).toBeNull()
+    await userEvent.type(screen.getByRole('searchbox'), 'ann@')
+    expect(within(list()).getByText('Members')).toBeInTheDocument()
+    expect(within(list()).queryByText('Owner')).toBeNull()
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([
+      expect.stringContaining('Ann'),
+    ])
   })
 
   it('hands focus back to the trigger whenever a searchable list closes from the keyboard', async () => {

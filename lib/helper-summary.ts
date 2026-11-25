@@ -16,3 +16,17 @@ export function leadAndHelpers(leadName: string, count: number, wanted: number |
   const helpers = helperSummary(count, wanted)
   return helpers ? `Lead: ${leadName} · ${helpers}` : leadName
 }
+
+/** "Lee is asking for 2 helpers", or "2 helpers wanted" when nobody leads the task. */
+export function askingFor(askedBy: { name: string } | null, placesLeft: number): string {
+  const helpers = plural(placesLeft, 'helper')
+  return askedBy ? `${askedBy.name} is asking for ${helpers}` : `${helpers} wanted`
+}
+
+/** "Sam has offered", "Sam and Kim have offered", "3 people have offered"; null for nobody. */
+export function offeredSummary(people: { name: string }[]): string | null {
+  if (people.length === 0) return null
+  if (people.length === 1) return `${people[0].name} has offered`
+  if (people.length === 2) return `${people[0].name} and ${people[1].name} have offered`
+  return `${people.length} people have offered`
+}

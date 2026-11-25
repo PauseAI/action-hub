@@ -28,6 +28,9 @@ export const PROJECT_TASK_CLAIMED_MESSAGE = `Task claimed. Post an update within
 export const TASK_REQUESTED_MESSAGE =
   'Requested. The task is held for you until the owner accepts you onto the project.'
 
+export const TASK_OFFER_SENT_MESSAGE =
+  "Offer sent. You'll be on the task, and the project, when the owner accepts."
+
 export const VOLUNTEER_ADDED_MESSAGE =
   'Added to the project. They have been told, and can see it in their notifications.'
 

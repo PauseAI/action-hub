@@ -277,7 +277,12 @@ export async function resolveProjectMembership(
   return Boolean(membership || interest)
 }
 
-type ClaimProject = { id: number; teamId: number | null; assigneeId: number | null }
+type ClaimProject = {
+  id: number
+  teamId: number | null
+  assigneeId: number | null
+  alwaysAskToJoin: boolean
+}
 
 /**
  * Where `volunteer` stands on each of `projects`, for `claimLabel`: the returned function
@@ -289,7 +294,7 @@ export async function resolveClaimViewers(
   volunteer: { id: number; isAdmin?: boolean | null },
 ): Promise<(project: ClaimProject) => ClaimViewer> {
   const teamIds = projects.flatMap((p) => (p.teamId === null ? [] : [p.teamId]))
-  const [memberships, interests] = await Promise.all([
+  const [memberships, interests, me] = await Promise.all([
     prisma.teamMembership.findMany({
       where: { volunteerId: volunteer.id, teamId: { in: teamIds } },
       select: { teamId: true },
@@ -302,17 +307,21 @@ export async function resolveClaimViewers(
       },
       select: { workItemId: true, status: true },
     }),
+    prisma.volunteer.findUnique({ where: { id: volunteer.id }, select: { fastTrack: true } }),
   ])
   const myTeams = new Set(memberships.map((m) => m.teamId))
   const statusOn = new Map(interests.map((i) => [i.workItemId, i.status]))
-  return (p) => ({
-    onProject:
+  return (p) => {
+    const onProject =
       Boolean(volunteer.isAdmin) ||
       p.assigneeId === volunteer.id ||
       (p.teamId !== null && myTeams.has(p.teamId)) ||
-      statusOn.get(p.id) === InterestStatus.accepted,
-    invited: statusOn.get(p.id) === InterestStatus.invited,
-  })
+      statusOn.get(p.id) === InterestStatus.accepted
+    const invited = statusOn.get(p.id) === InterestStatus.invited
+    // Only where it changes what they see, so the usual answer stays two fields.
+    const fastTrack = !onProject && !invited && me?.fastTrack === true && !p.alwaysAskToJoin
+    return { onProject, invited, ...(fastTrack ? { fastTrack } : {}) }
+  }
 }
 
 /** `resolveClaimViewers` for one project. */
@@ -402,6 +411,7 @@ export type EnrichedProject = ScheduleFieldsLike & {
   reviewedAt: Date | null
   collaborationLink: string | null
   autoAcceptTasks: boolean
+  alwaysAskToJoin: boolean
   showTimeline: boolean
   outcome: string | null
   outcomeNotes: string | null
@@ -462,6 +472,7 @@ export function withProjectExtras(
     updatedAt: p.updatedAt,
     isSeekingHelp: p.isSeekingHelp,
     autoAcceptTasks: p.autoAcceptTasks,
+    alwaysAskToJoin: p.alwaysAskToJoin,
     showTimeline: p.showTimeline,
     // Derived, not stored — see isSeekingOwner() in lib/project-status.ts.
     isSeekingOwner: isSeekingOwner(p),

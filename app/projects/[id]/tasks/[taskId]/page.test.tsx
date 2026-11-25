@@ -8,6 +8,7 @@ import { fullText, renderApp } from '@/test/render'
 import { addDays, startOfUtcDay } from '@/lib/schedule'
 import { formatDateShort, toDateInputValue } from '@/lib/format-date'
 import { initials } from '@/components/WorkItemHeader'
+import { REOPEN_PROJECT_TO_CHANGE } from '@/lib/work-item-lock'
 import TaskDetailPage from './page'
 
 const row = (id: number) => prisma.workItem.findUniqueOrThrow({ where: { id } })
@@ -915,14 +916,12 @@ describe('task detail page — a completed project', () => {
     queryClient.clear()
     await mount(project.id, task.id, owner)
     await screen.findByRole('heading', { name: 'Flyering' })
-    await userEvent.click(
-      within(helpers()).getByRole('button', { name: 'Add a member as a helper' }),
-    )
-    await userEvent.type(screen.getByRole('searchbox', { name: 'Add a member as a helper' }), 'Bob')
-    await userEvent.click(screen.getByRole('option', { name: 'Bob Late' }))
+    await userEvent.click(within(helpers()).getByRole('button', { name: 'Add a helper' }))
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Add a helper' }), 'Bob')
+    await userEvent.click(await screen.findByRole('option', { name: 'Bob Late' }))
     await within(helpers()).findByText('1 helper')
     expect(within(helpers()).getByText('Bob Late')).toBeInTheDocument()
-    expect(within(helpers()).queryByLabelText('Add a member as a helper')).toBeNull()
+    expect(within(helpers()).queryByLabelText('Add a helper')).toBeNull()
   })
 
   it('shows the server error when withdrawing from helping fails', async () => {
@@ -971,3 +970,39 @@ const clientJoin = (volunteerId: number, workItemId: number) =>
     where: { volunteerId_workItemId: { volunteerId, workItemId } },
     data: { status: 'accepted' },
   })
+
+describe('task detail page — offering to help before joining', () => {
+  it('offers, shows the offer waiting to everyone, and takes it back', async () => {
+    const owner = await createVolunteer({ name: 'Olive Owner' })
+    const sam = await createVolunteer({ name: 'Sam Newcomer' })
+    const project = await createProject({ assigneeId: owner.id, status: 'in_progress' })
+    const task = await createTask(project.id, { title: 'Practise', helpersWanted: 1 })
+
+    await mount(project.id, task.id, sam)
+    await userEvent.click(await screen.findByRole('button', { name: 'Offer to help' }))
+    await screen.findByText(/^Offer sent/)
+    await screen.findByText(/^You've offered to help/)
+    expect(screen.queryByRole('button', { name: 'Offer to help' })).toBeNull()
+
+    cleanup()
+    queryClient.clear()
+    await mount(project.id, task.id, owner)
+    expect(await screen.findByText(/offered to help, waiting for the owner/)).toHaveTextContent(
+      'Sam Newcomer offered to help',
+    )
+    expect(screen.queryByRole('button', { name: 'Withdraw request' })).toBeNull()
+
+    cleanup()
+    queryClient.clear()
+    await mount(project.id, task.id, sam)
+    // Taking it back fails once the project is completed, and says why.
+    const withdraw = await screen.findByRole('button', { name: 'Withdraw request' })
+    await prisma.workItem.update({ where: { id: project.id }, data: { status: 'completed' } })
+    await userEvent.click(withdraw)
+    await screen.findByText(REOPEN_PROJECT_TO_CHANGE)
+    await prisma.workItem.update({ where: { id: project.id }, data: { status: 'in_progress' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Withdraw request' }))
+    await screen.findByText('Offer withdrawn')
+    await screen.findByRole('button', { name: 'Offer to help' })
+  })
+})

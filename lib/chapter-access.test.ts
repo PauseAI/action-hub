@@ -6,6 +6,7 @@ import {
   canAppointDeputies,
   inChapter,
   isStaff,
+  pickerChapter,
   type ChapterAccess,
 } from './chapter-access'
 
@@ -51,5 +52,12 @@ describe('chapter access', () => {
     expect(actingOn(volunteer, deputy, 1)).toEqual({ id: 7, isAdmin: true })
     expect(actingOn(volunteer, deputy, 2)).toEqual({ id: 7, isAdmin: false })
     expect(actingOn({ id: 7, isAdmin: true }, member, 1).isAdmin).toBe(false)
+  })
+
+  it("narrows a picker to the project's chapter only for whoever sees every chapter", () => {
+    const coordinator = { ...member, coordinator: true }
+    expect(pickerChapter(global, { nationalChapterId: 2 })).toBe(2)
+    expect(pickerChapter(coordinator, { nationalChapterId: null })).toBe('pool')
+    expect(pickerChapter(lead, { nationalChapterId: 1 })).toBeUndefined()
   })
 })

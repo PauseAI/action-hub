@@ -97,7 +97,25 @@ export default function InboxRow({
     ...orpc.contacts.respond.mutationOptions(),
     ...handlers('Answer sent'),
   })
-  const busy = respond.isPending || review.isPending || invite.isPending || connect.isPending
+  const fastTrack = useMutation({
+    ...orpc.volunteers.setFastTrack.mutationOptions(),
+    ...handlers('On fast track'),
+  })
+  const notNow = useMutation({
+    ...orpc.volunteers.dismissFastTrack.mutationOptions(),
+    onSuccess: ({ message }) => {
+      showToast(message, 'success')
+      refresh()
+    },
+    onError: handlers('').onError,
+  })
+  const busy =
+    respond.isPending ||
+    review.isPending ||
+    invite.isPending ||
+    connect.isPending ||
+    fastTrack.isPending ||
+    notNow.isPending
 
   function answer(accept: boolean) {
     const action = n.action as NonNullable<InboxNotification['action']>
@@ -111,6 +129,9 @@ export default function InboxRow({
       invite.mutate({ projectId: action.projectId, accept })
     } else if (action.kind === 'contact_request') {
       connect.mutate({ id: action.requestId, accept })
+    } else if (action.kind === 'fast_track') {
+      if (accept) fastTrack.mutate({ volunteerId: action.volunteerId, on: true })
+      else notNow.mutate({ volunteerId: action.volunteerId })
     } else {
       review.mutate({ id: action.requestId, action: accept ? 'accept' : 'decline' })
     }
@@ -145,10 +166,10 @@ export default function InboxRow({
         {n.action && (
           <>
             <Button size="sm" onClick={() => answer(true)} disabled={busy}>
-              Accept
+              {n.action.kind === 'fast_track' ? `Fast track ${n.action.name}` : 'Accept'}
             </Button>
             <Button size="sm" variant="secondary" onClick={() => answer(false)} disabled={busy}>
-              Decline
+              {n.action.kind === 'fast_track' ? 'Not now' : 'Decline'}
             </Button>
           </>
         )}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cleanup, screen, within } from '@testing-library/react'
+import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { prisma } from '@/lib/prisma'
 import { queryClient } from '@/lib/query-client'
@@ -34,6 +34,7 @@ const baseState: TaskHelpersState = {
   canRemoveHelpers: true,
   canAddHelpers: true,
   eligibleHelpers: [],
+  offeredBy: [],
   assignedToId: null,
   projectOwnerId: null,
 }
@@ -62,8 +63,8 @@ describe('TaskHelpers', () => {
       { as: owner },
     )
 
-    await userEvent.click(screen.getByRole('button', { name: 'Add a member as a helper' }))
-    const input = screen.getByRole('searchbox', { name: 'Add a member as a helper' })
+    await userEvent.click(screen.getByRole('button', { name: 'Add a helper' }))
+    const input = screen.getByRole('searchbox', { name: 'Add a helper' })
     await userEvent.type(input, 'Ada')
     expect(screen.getByRole('option', { name: 'Ada Lovelace' })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: 'Grace Hopper' })).toBeNull()
@@ -93,7 +94,7 @@ describe('TaskHelpers', () => {
     )
 
     expect(screen.queryByRole('button', { name: 'Add helper' })).toBeNull()
-    await userEvent.click(screen.getByRole('button', { name: 'Add a member as a helper' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Add a helper' }))
     await userEvent.click(screen.getByRole('option', { name: 'Grace Hopper' }))
 
     await screen.findByText('Grace Hopper is now helping on this task')
@@ -101,6 +102,48 @@ describe('TaskHelpers', () => {
       where: { workItemId: task.id, volunteerId: grace.id },
     })
     expect(interest.status).toBe('accepted')
+  })
+
+  it('lists members and offers first, and finds anyone else by searching', async () => {
+    const { owner, project, task } = await setUp()
+    const ada = await createVolunteer({ name: 'Ada Member' })
+    const sam = await createVolunteer({ name: 'Sam Offered' })
+    const zed = await createVolunteer({ name: 'Zed Newcomer' })
+    await joinProject(project.id, ada.id)
+
+    await renderApp(
+      <TaskHelpers
+        projectId={project.id}
+        taskId={task.id}
+        viewerId={owner.id}
+        state={{
+          ...baseState,
+          eligibleHelpers: [{ id: ada.id, name: ada.name }],
+          offeredBy: [{ volunteerId: sam.id, name: sam.name }],
+        }}
+      />,
+      { as: owner },
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Add a helper' }))
+    const names = () =>
+      screen
+        .getAllByRole('option')
+        .map((o) => o.textContent)
+        .slice(1, 3)
+    await waitFor(() => expect(names()).toEqual(['Sam Offered', 'Ada Member']))
+
+    // Someone not on the project is found by name, and adding them brings them on.
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Add a helper' }), 'Zed')
+    await userEvent.click(await screen.findByRole('option', { name: 'Zed Newcomer' }))
+    await screen.findByText('Zed Newcomer is now helping on this task')
+    expect(
+      (
+        await prisma.workItemInterest.findFirstOrThrow({
+          where: { workItemId: project.id, volunteerId: zed.id },
+        })
+      ).status,
+    ).toBe('accepted')
   })
 
   it('renders a current helper as a chip, and removes them only after confirming', async () => {

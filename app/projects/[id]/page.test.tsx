@@ -500,6 +500,9 @@ describe('project page — owner', () => {
     await userEvent.click(
       await screen.findByRole('button', { name: 'Assign volunteer to First task' }),
     )
+    // The owner, then the project's members, come first (bug report #67: the owner was missing).
+    const options = screen.getAllByRole('option').map((o) => o.textContent)
+    expect(options.slice(0, 3)).toEqual(['— Select volunteer —', 'Owen Owner', 'Hana Helper'])
     await userEvent.click(screen.getByRole('option', { name: 'Hana Helper' }))
     await userEvent.click(within(screen.getByRole('menu')).getByRole('button', { name: 'Assign' }))
     await screen.findByText('Task assigned!')
@@ -1704,10 +1707,10 @@ describe('project page — timeline tab', () => {
     await waitFor(async () => expect((await row(b.id)).assigneeId).toBe(owner.id))
     await userEvent.click(await within(panel()).findByRole('button', { name: 'Unassign' }))
     await screen.findByText('Task unassigned!')
-    await userEvent.selectOptions(
-      await within(panel()).findByLabelText('Assign to a volunteer'),
-      String(helper.id),
+    await userEvent.click(
+      await within(panel()).findByRole('button', { name: 'Assign to a volunteer' }),
     )
+    await userEvent.click(await screen.findByRole('option', { name: helper.name }))
     await userEvent.click(within(panel()).getByRole('button', { name: 'Assign' }))
     await screen.findByText('Task assigned!')
     await userEvent.click(within(panel()).getByLabelText('Close panel'))
@@ -2046,7 +2049,7 @@ describe('project page — remaining edges', () => {
     expect(screen.queryByRole('button', { name: 'Join and claim a task' })).toBeNull()
     expect(
       (await prisma.workItemInterest.findFirstOrThrow({ where: { volunteerId: me.id } })).message,
-    ).toBe("Asked to take 'Wanted task': Keen to help")
+    ).toBe('Keen to help')
     await userEvent.click(await screen.findByRole('button', { name: 'Withdraw request' }))
     await userEvent.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancel' }),

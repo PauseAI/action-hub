@@ -100,9 +100,10 @@ describe('the people on a running project', () => {
         as.projects.invite({ projectId: w.project.id, volunteerId: p.newcomer.id }),
     }))
 
-  it('have their applications answered by its admins or owner', async () => {
+  // A request to join comes with a task asked for, which a deputy answers too.
+  it('have their applications answered by its admins, owner or deputies', async () => {
     await expectAccess(people, {
-      allowed: [...ADMINS, 'owner'],
+      allowed: [...ADMINS, 'owner', 'projectDeputy'],
       attempt: async (as, w, p) => {
         const interest = await prisma.workItemInterest.findFirstOrThrow({
           where: { workItemId: w.project.id, volunteerId: p.applicant.id },
@@ -265,7 +266,7 @@ describe('what the project page tells each person they may do', () => {
       otherChapterLead: 'NOT_FOUND',
       owner: page(false, true, true, true, true),
       proposer: page(false, false, false, false, true),
-      projectDeputy: page(false, true, true, false, false),
+      projectDeputy: page(false, true, true, true, false),
       member: page(false, false, true, false, false),
       taskAssignee: page(false, false, true, false, false),
       stranger: page(false, false, false, false, false),
