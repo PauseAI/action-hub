@@ -99,6 +99,23 @@ describe('application review', () => {
     ).toBe('approved')
   })
 
+  it("lists who took each step in the application's history", async () => {
+    const sa = await createSuperAdmin({ name: 'Rita Reviewer' })
+    const app = await createVolunteer({ approvalStatus: 'pending', name: 'Trail Applicant' })
+    const gone = await createVolunteer({ name: 'Gone Reviewer' })
+    await prisma.chapterAuditEvent.createMany({
+      data: [
+        { action: 'APPLICATION_REVIEW_STARTED', actorId: gone.id, targetVolunteerId: app.id },
+        { action: 'APPLICATION_INFO_REQUESTED', actorId: sa.id, targetVolunteerId: app.id },
+      ],
+    })
+    await prisma.volunteer.delete({ where: { id: gone.id } })
+    await renderApp(<ApplicationReviewPage />, { as: sa, params: { id: String(app.id) } })
+    const history = await screen.findByRole('region', { name: 'History' })
+    expect(history).toHaveTextContent('Review started by a removed account')
+    expect(history).toHaveTextContent('More information asked for by Rita Reviewer')
+  })
+
   it('warns the reviewer when the applicant wrote a link', async () => {
     const sa = await createSuperAdmin()
     const app = await createVolunteer({

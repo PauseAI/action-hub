@@ -8,6 +8,7 @@ import {
   createSkill,
   createChapter,
   createChapterDeputy,
+  createChapterLead,
   createMember,
 } from '@/test/factories'
 import { clientAs } from '@/test/rpc'
@@ -139,8 +140,8 @@ describe('admin.applications by chapter', () => {
   })
 })
 
-describe('admin.applications decisions on record', () => {
-  it('logs who made each decision, and from which status, in the chapter audit', async () => {
+describe('admin.applications trail', () => {
+  it('records who took each step, and from which status, and lists it on the application', async () => {
     const chapter = await createChapter()
     const [first, second] = [await createChapterDeputy(chapter), await createChapterDeputy(chapter)]
     const applicant = await createMember(chapter, { approvalStatus: 'pending' })
@@ -151,26 +152,30 @@ describe('admin.applications decisions on record', () => {
         select: { action: true, actorId: true, nationalChapterId: true, details: true },
       })
 
+    await clientAs(first).admin.applications.action({ id: applicant.id, action: 'start_review' })
+    await clientAs(first).admin.applications.action({
+      id: applicant.id,
+      action: 'update_notes',
+      adminNotes: 'Editing notes is not a step',
+    })
     await clientAs(first).admin.applications.action({ id: applicant.id, action: 'request_info' })
     await clientAs(second).admin.applications.action({ id: applicant.id, action: 'reject' })
     await clientAs(first).admin.applications.action({ id: applicant.id, action: 'reopen' })
     await clientAs(second).admin.applications.action({ id: applicant.id, action: 'approve' })
-    // Starting a review and editing notes are not decisions.
-    const other = await createMember(chapter, { approvalStatus: 'pending' })
-    await clientAs(first).admin.applications.action({ id: other.id, action: 'start_review' })
-    await clientAs(first).admin.applications.action({
-      id: other.id,
-      action: 'update_notes',
-      adminNotes: 'x',
-    })
 
     const at = { nationalChapterId: chapter.id }
     expect(await events()).toEqual([
       {
-        action: 'APPLICATION_INFO_REQUESTED',
+        action: 'APPLICATION_REVIEW_STARTED',
         actorId: first.id,
         ...at,
         details: { from: 'pending' },
+      },
+      {
+        action: 'APPLICATION_INFO_REQUESTED',
+        actorId: first.id,
+        ...at,
+        details: { from: 'under_review' },
       },
       {
         action: 'APPLICATION_REJECTED',
@@ -186,10 +191,42 @@ describe('admin.applications decisions on record', () => {
         details: { from: 'needs_info' },
       },
     ])
-    expect(await prisma.chapterAuditEvent.count({ where: { targetVolunteerId: other.id } })).toBe(0)
+    const { trail } = await clientAs(first).admin.applications.getById({ id: applicant.id })
+    expect(trail.map((t) => [t.action, t.actor?.name])).toEqual([
+      ['APPLICATION_REVIEW_STARTED', first.name],
+      ['APPLICATION_INFO_REQUESTED', first.name],
+      ['APPLICATION_REJECTED', second.name],
+      ['APPLICATION_REOPENED', first.name],
+      ['APPLICATION_APPROVED', second.name],
+    ])
+
+    // The chapter's History leaves application steps to each application's own trail.
+    const lead = await createChapterLead(chapter)
+    await clientAs(await createSuperAdmin()).admin.chapters.appointDeputy({
+      chapterId: chapter.id,
+      volunteerId: applicant.id,
+    })
+    const history = await clientAs(lead).admin.chapters.audit({})
+    expect(history.map((e) => e.action)).toEqual(['DEPUTY_APPOINTED'])
   })
 
-  it('logs a pool application under no chapter, and nothing for a refused decision', async () => {
+  it('refuses the second of two reviewers acting at once, and records only the first', async () => {
+    const chapter = await createChapter()
+    const [a, b] = [await createChapterDeputy(chapter), await createChapterDeputy(chapter)]
+    const applicant = await createMember(chapter, { approvalStatus: 'pending' })
+    const results = await Promise.allSettled([
+      clientAs(a).admin.applications.action({ id: applicant.id, action: 'approve' }),
+      clientAs(b).admin.applications.action({ id: applicant.id, action: 'reject' }),
+    ])
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
+    const [refused] = results.filter((r) => r.status === 'rejected')
+    expect(['CONFLICT', 'BAD_REQUEST']).toContain((refused as PromiseRejectedResult).reason.code)
+    expect(
+      await prisma.chapterAuditEvent.count({ where: { targetVolunteerId: applicant.id } }),
+    ).toBe(1)
+  })
+
+  it('logs a pool application under no chapter, and nothing for a refused step', async () => {
     const admin = await createSuperAdmin()
     const pooled = await createVolunteer({ approvalStatus: 'approved' })
     await expect(

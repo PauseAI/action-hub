@@ -162,6 +162,7 @@ test.describe('Application follow-up actions', () => {
   test('Admin UI: Request more info and Reopen buttons drive the same flow', async ({
     adminPage,
     baseUrl,
+    snap,
   }) => {
     const person = fake.person()
     const signupResult = await createApiClient(baseUrl).auth.signup({
@@ -202,6 +203,15 @@ test.describe('Application follow-up actions', () => {
     await reopenModal.getByRole('button', { name: 'Reopen' }).click()
     await expect(getAlert(adminPage)).toContainText('Application reopened', { timeout: 10_000 })
     await expect(adminPage).toHaveURL(/\/admin\/applications$/, { timeout: 10_000 })
+
+    // Each step is on the application's history, with who took it.
+    await adminPage.goto(`${baseUrl}/admin/applications/${volunteerId}`)
+    const history = adminPage.getByRole('region', { name: 'History' })
+    await expect(history.getByRole('listitem')).toHaveCount(3, { timeout: 10_000 })
+    await expect(history).toContainText('More information asked for by')
+    await expect(history).toContainText('Rejected by')
+    await expect(history).toContainText('Reopened by')
+    await snap(adminPage, 'application history')
   })
 
   test('An anonymised rejection blocks reapplying until an admin allows it, and the admin sees the history', async ({

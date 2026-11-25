@@ -16,6 +16,7 @@ import {
 import { sendAdminInviteEmail } from '@/lib/email'
 import { InviteChapterStaffSchema } from '@/lib/schemas'
 import { ChapterAuditAction, ChapterRoleKind, InviteStatus } from '@/generated/prisma/enums'
+import { APPLICATION_STEPS } from './applications'
 import { adminProcedure, staffProcedure } from '../../procedures'
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
@@ -227,7 +228,12 @@ export const adminChaptersRouter = {
       // Staff see their own chapter's log whatever they ask for; a global admin sees any, or all.
       const chapterId = access.globalAdmin ? input.chapterId : access.chapterId
       const events = await prisma.chapterAuditEvent.findMany({
-        where: chapterId === undefined ? {} : { nationalChapterId: chapterId },
+        // Application steps are many and belong to each application's own trail; left in, they
+        // would push the chapter's roles and moves out of the newest 200.
+        where: {
+          action: { notIn: [...APPLICATION_STEPS] },
+          ...(chapterId === undefined ? {} : { nationalChapterId: chapterId }),
+        },
         include: {
           actor: { select: { name: true } },
           targetVolunteer: { select: { name: true } },
