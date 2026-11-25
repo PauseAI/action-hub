@@ -13,3 +13,4 @@ A script that runs the unit suite several times under load and lists every test 
 ## Hits
 
 - 2026-10-17: three unrelated flakes (an unawaited notification in `quickTasks.submit`, a scratch-database drop timing out in `disposable-db.test.ts`, a `ProjectEditor` test clicking before its task saved) on three successive runs, each passing alone; with half the cores busy, more of `ProjectEditor` failed on waits that assume a round trip within the default second
+- 2026-11-25 (x2): with the host loaded by other pods, `settings/page.test.tsx` failed 1 in 9 (its toast shows while `onSuccess` still refetches, so Save changes read Saving…; fixed in countries-all) and `volunteers.test.ts`'s first directory test hit its 20s timeout twice in about 15 runs, never reproduced once load dropped

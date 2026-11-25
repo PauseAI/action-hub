@@ -18,3 +18,4 @@ Size: S. Kind: small fix.
 - 2026-10-17 (x2): both duplicate-account migrations carried it; the chapter-joining enum migration was run before stripping and left recorded as failed
 - 2026-11-11: the call dismissals migration carried both; a chained `new-migration && migrate` failed the same way
 - 2026-11-18: the email suppression migration carried both; migrate ran first, failed, and needed `prisma migrate resolve --rolled-back`
+- 2026-11-25: the project chat link migration carried the `schema_migrations` line; stripped before migrate
