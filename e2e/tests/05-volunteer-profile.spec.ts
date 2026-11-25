@@ -53,6 +53,17 @@ test.describe('Volunteer Profile', () => {
     await expect(volunteer.page.locator('#availabilityText')).toContainText('10 hours/week')
   })
 
+  test('Volunteer goes from their profile to editing it', async ({ volunteer, baseUrl, snap }) => {
+    const { page } = volunteer
+    await page.goto(`${baseUrl}/dashboard`)
+    await page.goto(`${baseUrl}/volunteers/${await getVolunteerId(page, baseUrl)}`)
+    await expect(page.locator('#volunteerName')).toHaveText(volunteer.name, { timeout: 10_000 })
+    await snap(page, 'own profile')
+    await page.getByRole('link', { name: 'Edit profile' }).click()
+    await expect(page).toHaveURL(`${baseUrl}/settings?tab=profile`)
+    await expect(page.getByLabel('Your name')).toHaveValue(volunteer.name)
+  })
+
   test('Volunteer adds skills to their profile', async ({ volunteer, baseUrl }) => {
     await volunteer.page.goto(`${baseUrl}/profile`)
     const skillOption = volunteer.page.locator('.skill-option').filter({ hasText: 'Fundraising' })

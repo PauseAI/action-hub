@@ -213,7 +213,7 @@ describe('volunteer profile', () => {
     ).toBeInTheDocument()
   })
 
-  it('offers a message to someone the viewer is connected with, but not to themselves', async () => {
+  it('offers a message to someone the viewer is connected with, and themselves an edit link instead', async () => {
     const me = await createVolunteer({ name: 'Sender' })
     const vol = await createVolunteer({
       name: 'Reachable',
@@ -225,6 +225,7 @@ describe('volunteer profile', () => {
       as: me,
     })
     await screen.findByRole('heading', { name: 'Reachable' })
+    expect(screen.queryByRole('link', { name: 'Edit profile' })).toBeNull()
     await userEvent.click(await screen.findByRole('button', { name: 'Message' }))
     const dialog = screen.getByRole('dialog', { name: 'Message Reachable' })
     expect(dialog).toHaveTextContent(
@@ -259,6 +260,10 @@ describe('volunteer profile', () => {
     await screen.findByRole('heading', { name: 'Reachable' })
     expect(screen.getByRole('img', { name: 'Active in the last 14 days' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Message' })).toBeNull()
+    expect(screen.getByRole('link', { name: 'Edit profile' })).toHaveAttribute(
+      'href',
+      '/settings?tab=profile',
+    )
   })
 
   it('answers a contact request from the profile, and says when there is no way in', async () => {
