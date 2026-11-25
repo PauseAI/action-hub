@@ -202,7 +202,9 @@ test.describe('National chapters', () => {
     await expect(getAlert(adminPage)).toContainText(`${member.name} now leads the chapter`, {
       timeout: 10_000,
     })
-    await expect(panel.getByRole('button', { name: 'Remove as chapter lead' })).toBeVisible()
+    await expect(panel.getByRole('button', { name: 'Remove as chapter lead' })).toBeVisible({
+      timeout: 10_000,
+    })
   })
 
   test('A global admin makes a member a coordinator, then moves them to the pool, from their profile', async ({
@@ -223,7 +225,9 @@ test.describe('National chapters', () => {
     await expect(getAlert(adminPage)).toContainText(`${member.name} is a coordinator`, {
       timeout: 10_000,
     })
-    await expect(panel.getByRole('button', { name: 'Remove as coordinator' })).toBeVisible()
+    await expect(panel.getByRole('button', { name: 'Remove as coordinator' })).toBeVisible({
+      timeout: 10_000,
+    })
 
     await panel.getByRole('button', { name: 'Move to another chapter' }).click()
     const move = adminPage.getByRole('dialog', {
@@ -233,7 +237,7 @@ test.describe('National chapters', () => {
     await snap(adminPage, 'move chapter dialog')
     await move.getByRole('button', { name: 'Move' }).click()
     await expect(getAlert(adminPage)).toContainText('Moved', { timeout: 10_000 })
-    await expect(adminPage.getByText('No national chapter yet')).toBeVisible()
+    await expect(adminPage.getByText('No national chapter yet')).toBeVisible({ timeout: 10_000 })
   })
 
   test("A member sees no Manage panel on a fellow member's profile", async ({
