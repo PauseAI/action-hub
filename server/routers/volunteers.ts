@@ -282,7 +282,8 @@ export const volunteersRouter = {
             ],
           },
           skillEndorsementsReceived: {
-            include: { skill: true },
+            include: { skill: true, endorsedBy: { select: { name: true, deletedAt: true } } },
+            orderBy: { createdAt: 'asc' },
           },
           duplicateOf: { select: { id: true, name: true } },
         },
@@ -323,10 +324,14 @@ export const volunteersRouter = {
         categoryName: vs.skill.category.name,
         proficiencyLevel: vs.proficiencyLevel,
       }))
+      // Who verified each skill and how, for the tooltip on its chip; never the reviewer's notes.
       const endorsements = vol.skillEndorsementsReceived.map((se) => ({
         skillId: se.skillId,
         rating: se.rating,
         skillName: se.skill.name,
+        source: se.source,
+        endorsedByName: se.endorsedBy.deletedAt ? null : se.endorsedBy.name,
+        createdAt: se.createdAt,
       }))
 
       const history = {

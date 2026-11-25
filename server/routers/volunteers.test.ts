@@ -163,8 +163,16 @@ describe('volunteers.getById', () => {
     const view = await clientAs(me).volunteers.getById({ id: vol.id })
     expect(view.discordHandle).toBe('vol#1')
     expect(view).toMatchObject({ canMessage: true, canRequestContact: false })
+    // Who verified it and how, for the chip's tooltip; never the notes.
     expect(view.endorsements).toEqual([
-      { skillId: skill.id, rating: 'strong', skillName: skill.name },
+      {
+        skillId: skill.id,
+        rating: 'strong',
+        skillName: skill.name,
+        source: 'direct_observation',
+        endorsedByName: expect.any(String),
+        createdAt: expect.any(Date),
+      },
     ])
     expect(view.projects.map((p) => [p.id, p.roles.map((r) => r.role)]).sort()).toEqual(
       [
