@@ -22,7 +22,7 @@ type Member = { id: number; name: string; chapterName: string | null }
  * Saves through `mutation`, then refetches the profile and the people it shows whether or not it
  * worked: a refusal usually means someone else changed it first.
  */
-function useManaged(close: () => void) {
+function useManaged(close: () => void, fallback = 'Failed to save') {
   const showToast = useToast()
   const queryClient = useQueryClient()
   const refresh = () => {
@@ -38,14 +38,19 @@ function useManaged(close: () => void) {
     },
     onError: (err: unknown) => {
       refresh()
-      showToast(err instanceof Error ? err.message : 'Failed to save', 'error')
+      showToast(err instanceof Error ? err.message : fallback, 'error')
     },
   }
 }
 
-function useDialog() {
+/** A dialog's open state; `reset` clears what it holds each time it opens. */
+function useDialog(reset?: () => void) {
   const [open, setOpen] = useState(false)
-  return { open, show: () => setOpen(true), close: () => setOpen(false) }
+  const show = () => {
+    reset?.()
+    setOpen(true)
+  }
+  return { open, show, close: () => setOpen(false) }
 }
 
 /** Staff take down a picture that should not be shown; the volunteer is left with initials. */
@@ -53,7 +58,7 @@ function RemovePicture({ member }: { member: Member }) {
   const dialog = useDialog()
   const remove = useMutation({
     ...orpc.profilePictures.removeFor.mutationOptions(),
-    ...useManaged(dialog.close),
+    ...useManaged(dialog.close, 'Failed to remove the picture'),
   })
   return (
     <>
@@ -128,9 +133,11 @@ function DeputyControl({
 function LeadControl({
   member,
   control,
+  isDeputy,
 }: {
   member: Member
   control: NonNullable<Manage['chapterLead']>
+  isDeputy: boolean
 }) {
   const dialog = useDialog()
   const options = useManaged(dialog.close)
@@ -141,6 +148,7 @@ function LeadControl({
   const replaced = control.currentLead
     ? ` ${control.currentLead.name} stops leading it and stays a member.`
     : ''
+  const promoted = isDeputy ? ` ${name} stops being a deputy.` : ''
   return (
     <>
       <Button variant="secondary" size="sm" onClick={dialog.show}>
@@ -157,7 +165,7 @@ function LeadControl({
         body={
           control.isLead
             ? `${name} stays a member, and the chapter has no lead until you appoint one.`
-            : `The lead runs the ${chapterName} chapter and appoints its deputies.${replaced}`
+            : `The lead runs the ${chapterName} chapter and appoints its deputies.${replaced}${promoted}`
         }
         confirmLabel={label}
         busy={appoint.isPending || remove.isPending}
@@ -180,8 +188,8 @@ function CoordinatorControl({
   member: Member
   control: NonNullable<Manage['coordinator']>
 }) {
-  const dialog = useDialog()
   const [remit, setRemit] = useState('')
+  const dialog = useDialog(() => setRemit(''))
   const options = useManaged(dialog.close)
   const appoint = useMutation({ ...orpc.admin.coordinators.appoint.mutationOptions(), ...options })
   const remove = useMutation({ ...orpc.admin.coordinators.remove.mutationOptions(), ...options })
@@ -200,7 +208,7 @@ function CoordinatorControl({
         }
         body={
           control.isCoordinator ? (
-            `${name} can no longer put out calls or see every chapter's volunteers, and their open calls close.`
+            `${name}${control.remit ? `, who coordinates ${control.remit},` : ''} can no longer put out calls or see every chapter's volunteers, and their open calls close.`
           ) : (
             <>
               <p className="mt-0">
@@ -241,16 +249,19 @@ function MoveChapter({
   member: Member
   control: NonNullable<Manage['moveChapter']>
 }) {
-  const dialog = useDialog()
   const [target, setTarget] = useState('')
+  const dialog = useDialog(() => setTarget(''))
   const { data } = useQuery({ ...orpc.admin.chapters.list.queryOptions(), enabled: dialog.open })
   const move = useMutation({
     ...orpc.admin.chapters.reassign.mutationOptions(),
     ...useManaged(dialog.close),
   })
   const chapters = (data?.chapters ?? []).filter((c) => c.id !== control.chapterId)
+  const poolOffered = control.chapterId !== null
   const targetName =
-    target === POOL ? 'the holding pool' : chapters.find((c) => String(c.id) === target)?.name
+    target === POOL && poolOffered
+      ? 'the holding pool'
+      : chapters.find((c) => String(c.id) === target)?.name
   return (
     <>
       <Button variant="secondary" size="sm" onClick={dialog.show}>
@@ -270,7 +281,7 @@ function MoveChapter({
                   {c.name}
                 </option>
               ))}
-              {control.chapterId !== null && <option value={POOL}>Holding pool</option>}
+              {poolOffered && <option value={POOL}>Holding pool</option>}
             </Select>
             <p className="mb-0">
               They lose any chapter role, their local group and any pending transfer request. Their
@@ -282,13 +293,13 @@ function MoveChapter({
         confirmLabel="Move"
         busy={move.isPending}
         busyLabel="Moving…"
-        onConfirm={() => {
-          if (!target) return
+        confirmDisabled={!targetName}
+        onConfirm={() =>
           move.mutate({
             volunteerId: member.id,
             chapterId: target === POOL ? null : Number(target),
           })
-        }}
+        }
         onClose={dialog.close}
       />
     </>
@@ -320,7 +331,13 @@ export default function MemberManage({
           <H3 id="manage-roles">Role and access</H3>
           <div className="flex flex-wrap gap-2">
             {chapterDeputy && <DeputyControl member={member} control={chapterDeputy} />}
-            {chapterLead && <LeadControl member={member} control={chapterLead} />}
+            {chapterLead && (
+              <LeadControl
+                member={member}
+                control={chapterLead}
+                isDeputy={Boolean(chapterDeputy?.isDeputy)}
+              />
+            )}
             {coordinator && <CoordinatorControl member={member} control={coordinator} />}
             {moveChapter && <MoveChapter member={member} control={moveChapter} />}
           </div>

@@ -205,6 +205,37 @@ test.describe('National chapters', () => {
     await expect(panel.getByRole('button', { name: 'Remove as chapter lead' })).toBeVisible()
   })
 
+  test('A global admin makes a member a coordinator, then moves them to the pool, from their profile', async ({
+    adminPage,
+    baseUrl,
+    snap,
+  }) => {
+    await ensureChapter(baseUrl, COUNTRY)
+    const member = await createApprovedVolunteer(baseUrl, { country: COUNTRY })
+
+    await adminPage.goto(`${baseUrl}/volunteers/${member.id}`)
+    const panel = adminPage.getByRole('region', { name: 'Manage' })
+    await panel.getByRole('button', { name: 'Make coordinator' }).click({ timeout: 10_000 })
+    const appoint = adminPage.getByRole('dialog', { name: `Make ${member.name} a coordinator?` })
+    await appoint.getByLabel(/What they coordinate/).fill('Media')
+    await snap(adminPage, 'make coordinator dialog')
+    await appoint.getByRole('button', { name: 'Make coordinator' }).click()
+    await expect(getAlert(adminPage)).toContainText(`${member.name} is a coordinator`, {
+      timeout: 10_000,
+    })
+    await expect(panel.getByRole('button', { name: 'Remove as coordinator' })).toBeVisible()
+
+    await panel.getByRole('button', { name: 'Move to another chapter' }).click()
+    const move = adminPage.getByRole('dialog', {
+      name: `Move ${member.name} to another chapter?`,
+    })
+    await move.getByLabel('Move to').selectOption('pool')
+    await snap(adminPage, 'move chapter dialog')
+    await move.getByRole('button', { name: 'Move' }).click()
+    await expect(getAlert(adminPage)).toContainText('Moved', { timeout: 10_000 })
+    await expect(adminPage.getByText('No national chapter yet')).toBeVisible()
+  })
+
   test("A member sees no Manage panel on a fellow member's profile", async ({
     browser,
     baseUrl,

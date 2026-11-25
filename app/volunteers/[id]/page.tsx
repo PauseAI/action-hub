@@ -149,6 +149,16 @@ export default function VolunteerDetailPage({ params }: { params: Promise<{ id: 
               )}
             </div>
 
+            {isMe && user.access.globalAdmin && (
+              <P className="text-sm mt-0 mb-2">
+                <Link
+                  className="text-primary-text underline"
+                  href={`/admin/volunteers/${volunteer.id}`}
+                >
+                  Admin record
+                </Link>
+              </P>
+            )}
             {volunteer.duplicateOf && (
               <P className="text-sm mt-0 mb-2">
                 Duplicate account of{' '}

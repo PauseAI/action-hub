@@ -502,6 +502,18 @@ describe('volunteer profile', () => {
     )
   })
 
+  it("warns that making a deputy the chapter's lead ends their deputy role", async () => {
+    const chapter = await createChapter()
+    const deputy = await createChapterDeputy(chapter, { name: 'Rising Deputy' })
+    await openProfile(deputy, await createAdmin())
+    await userEvent.click(screen.getByRole('button', { name: 'Make chapter lead' }))
+    const appoint = dialogNamed(`Make Rising Deputy lead of the ${chapter.name} chapter?`)
+    expect(appoint).toHaveTextContent('Rising Deputy stops being a deputy.')
+    await confirmIn(appoint, 'Make chapter lead')
+    await screen.findByText('Rising Deputy now leads the chapter')
+    expect(await prisma.chapterDeputy.findUnique({ where: { volunteerId: deputy.id } })).toBeNull()
+  })
+
   it('lets a global admin make a member a coordinator with a remit, and remove them', async () => {
     const chapter = await createChapter()
     const member = await createMember(chapter, { name: 'Coord Hopeful' })
@@ -517,9 +529,18 @@ describe('volunteer profile', () => {
     ).toMatchObject({ remit: 'Press' })
 
     await userEvent.click(await screen.findByRole('button', { name: 'Remove as coordinator' }))
-    await confirmIn(dialogNamed('Remove Coord Hopeful as a coordinator?'), 'Remove as coordinator')
+    const remove = dialogNamed('Remove Coord Hopeful as a coordinator?')
+    expect(remove).toHaveTextContent('Coord Hopeful, who coordinates Press, can no longer')
+    await confirmIn(remove, 'Remove as coordinator')
     await screen.findByText('They are no longer a coordinator')
     expect(await prisma.coordinator.findUnique({ where: { volunteerId: member.id } })).toBeNull()
+    // What was typed before is gone when the dialog opens again.
+    await userEvent.click(await screen.findByRole('button', { name: 'Make coordinator' }))
+    expect(
+      within(dialogNamed('Make Coord Hopeful a coordinator?')).getByLabelText(
+        /What they coordinate/,
+      ),
+    ).toHaveValue('')
   })
 
   it('appoints a coordinator with no remit when none is given', async () => {
@@ -531,6 +552,10 @@ describe('volunteer profile', () => {
     expect(
       await prisma.coordinator.findUnique({ where: { volunteerId: member.id } }),
     ).toMatchObject({ remit: null })
+    await userEvent.click(await screen.findByRole('button', { name: 'Remove as coordinator' }))
+    expect(dialogNamed('Remove No Remit as a coordinator?')).toHaveTextContent(
+      'No Remit can no longer',
+    )
   })
 
   it('lets a global admin move a member to another chapter or the pool', async () => {
@@ -541,9 +566,8 @@ describe('volunteer profile', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Move to another chapter' }))
     const dialog = dialogNamed('Move Moving Member to another chapter?')
-    // Nothing happens until a chapter is chosen.
-    await confirmIn(dialog, 'Move')
-    expect(dialog).toBeInTheDocument()
+    // Move waits for a chapter to be chosen.
+    expect(within(dialog).getByRole('button', { name: 'Move' })).toBeDisabled()
     const select = within(dialog).getByLabelText('Move to')
     await within(select).findByRole('option', { name: to.name })
     expect(within(select).queryByRole('option', { name: from.name })).toBeNull()
@@ -556,6 +580,11 @@ describe('volunteer profile', () => {
     expect(await prisma.volunteer.findUnique({ where: { id: member.id } })).toMatchObject({
       nationalChapterId: to.id,
     })
+    // Opened again, it starts from nothing rather than the chapter they are now in.
+    await userEvent.click(screen.getByRole('button', { name: 'Move to another chapter' }))
+    const again = dialogNamed('Move Moving Member to another chapter?')
+    expect(within(again).getByLabelText('Move to')).toHaveValue('')
+    expect(within(again).getByRole('button', { name: 'Move' })).toBeDisabled()
   })
 
   it('offers no move to the pool for someone already in it', async () => {
@@ -567,6 +596,16 @@ describe('volunteer profile', () => {
     )
     expect(within(select).queryByRole('option', { name: 'Holding pool' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Make chapter lead' })).toBeNull()
+  })
+
+  it('links a global admin to their own admin record, with no Manage panel', async () => {
+    const admin = await createAdmin({ name: 'Self Admin' })
+    await openProfile(admin, admin)
+    expect(screen.getByRole('link', { name: 'Admin record' })).toHaveAttribute(
+      'href',
+      `/admin/volunteers/${admin.id}`,
+    )
+    expect(screen.queryByRole('heading', { name: 'Manage' })).toBeNull()
   })
 
   it('shows a minimal profile, and a not-found state', async () => {
