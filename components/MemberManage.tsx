@@ -13,10 +13,17 @@ import { H2, H3 } from '@/components/Heading'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
+import Textarea from '@/components/ui/Textarea'
 
 export type Manage = NonNullable<InferRouterOutputs<AppRouter>['volunteers']['getById']['manage']>
 
-type Member = { id: number; name: string; chapterName: string | null }
+type Member = {
+  id: number
+  name: string
+  chapterName: string | null
+  /** The skills they list, offered first when verifying one. */
+  skills: { id: number; name: string }[]
+}
 
 /**
  * Saves through `mutation`, then refetches the profile and the people it shows whether or not it
@@ -240,6 +247,239 @@ function CoordinatorControl({
   )
 }
 
+/** Staff record that they have seen the member deliver a skill; it shows on the profile. */
+function VerifySkill({ member }: { member: Member }) {
+  const [skillId, setSkillId] = useState('')
+  const [rating, setRating] = useState<'verified' | 'strong'>('verified')
+  const [source, setSource] = useState<'direct_observation' | 'project_outcome'>(
+    'direct_observation',
+  )
+  const dialog = useDialog(() => {
+    setSkillId('')
+    setRating('verified')
+    setSource('direct_observation')
+  })
+  const { data: categories = [] } = useQuery({
+    ...orpc.skills.list.queryOptions({ input: {} }),
+    enabled: dialog.open,
+  })
+  const endorse = useMutation({
+    ...orpc.admin.volunteers.addEndorsement.mutationOptions(),
+    ...useManaged(dialog.close),
+  })
+  const listed = new Set(member.skills.map((s) => s.id))
+  return (
+    <>
+      <Button variant="secondary" size="sm" onClick={dialog.show}>
+        Verify a skill
+      </Button>
+      <ConfirmDialog
+        id="verify-skill-dialog"
+        isOpen={dialog.open}
+        title={`Verify one of ${member.name}'s skills`}
+        body={
+          <div className="grid gap-3">
+            <p className="m-0">
+              Say you have seen them deliver it. It shows as verified on their profile, with your
+              name to their chapter&apos;s staff.
+            </p>
+            <div>
+              <FormLabel htmlFor="verify-skill">Skill</FormLabel>
+              <Select
+                id="verify-skill"
+                value={skillId}
+                onChange={(e) => setSkillId(e.target.value)}
+              >
+                <option value="">Choose a skill…</option>
+                {member.skills.length > 0 && (
+                  <optgroup label="Skills they list">
+                    {member.skills.map((s) => (
+                      <option key={s.id} value={String(s.id)}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {categories.map((c) => (
+                  <optgroup key={c.id} label={c.name}>
+                    {c.skills
+                      .filter((s) => !listed.has(s.id))
+                      .map((s) => (
+                        <option key={s.id} value={String(s.id)}>
+                          {s.name}
+                        </option>
+                      ))}
+                  </optgroup>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <FormLabel htmlFor="verify-rating">How well</FormLabel>
+              <Select
+                id="verify-rating"
+                value={rating}
+                onChange={(e) => setRating(e.target.value as typeof rating)}
+              >
+                <option value="verified">Verified: can deliver</option>
+                <option value="strong">Strong: highly skilled</option>
+              </Select>
+            </div>
+            <div>
+              <FormLabel htmlFor="verify-source">Based on</FormLabel>
+              <Select
+                id="verify-source"
+                value={source}
+                onChange={(e) => setSource(e.target.value as typeof source)}
+              >
+                <option value="direct_observation">Seeing their work</option>
+                <option value="project_outcome">A project they delivered</option>
+              </Select>
+            </div>
+          </div>
+        }
+        confirmLabel="Verify skill"
+        confirmDisabled={!skillId}
+        busy={endorse.isPending}
+        busyLabel="Saving…"
+        onConfirm={() =>
+          endorse.mutate({ volunteerId: member.id, skillId: Number(skillId), rating, source })
+        }
+        onClose={dialog.close}
+      />
+    </>
+  )
+}
+
+/**
+ * Staff invite a member to one of their chapter's projects, or put them straight on it; either
+ * way the project's own rules apply (`projects.invite`, `projects.assign`).
+ */
+function OfferProject({ member }: { member: Member }) {
+  const [projectId, setProjectId] = useState('')
+  const [how, setHow] = useState<'invite' | 'add'>('invite')
+  const [note, setNote] = useState('')
+  const dialog = useDialog(() => {
+    setProjectId('')
+    setHow('invite')
+    setNote('')
+  })
+  const { data: projects } = useQuery({
+    ...orpc.admin.volunteers.projectsToOffer.queryOptions({ input: { volunteerId: member.id } }),
+    enabled: dialog.open,
+  })
+  const options = useManaged(dialog.close)
+  const invite = useMutation({ ...orpc.projects.invite.mutationOptions(), ...options })
+  const add = useMutation({ ...orpc.projects.assign.mutationOptions(), ...options })
+  const chosen = projects?.find((p) => String(p.id) === projectId)
+  return (
+    <>
+      <Button variant="secondary" size="sm" onClick={dialog.show}>
+        Invite to a project
+      </Button>
+      <ConfirmDialog
+        id="offer-project-dialog"
+        isOpen={dialog.open}
+        title={`Invite ${member.name} to a project`}
+        body={
+          projects?.length === 0 ? (
+            <p className="m-0">
+              There is no live project in their chapter that they are not already on.
+            </p>
+          ) : (
+            <div className="grid gap-3">
+              <div>
+                <FormLabel htmlFor="offer-project">Project</FormLabel>
+                <Select
+                  id="offer-project"
+                  value={projectId}
+                  onChange={(e) => setProjectId(e.target.value)}
+                >
+                  <option value="">Choose a project…</option>
+                  {projects?.map((p) => (
+                    <option key={p.id} value={String(p.id)}>
+                      {p.title}
+                      {p.standing === 'applied' && ' (asked to join)'}
+                      {p.standing === 'invited' && ' (invited already)'}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <fieldset className="m-0 p-0 border-0 grid gap-1">
+                <legend className="mb-1">How</legend>
+                <label className="flex gap-2 items-center">
+                  <input
+                    type="radio"
+                    name="offer-how"
+                    checked={how === 'invite'}
+                    onChange={() => setHow('invite')}
+                  />
+                  Invite them: they accept or decline
+                </label>
+                <label className="flex gap-2 items-center">
+                  <input
+                    type="radio"
+                    name="offer-how"
+                    checked={how === 'add'}
+                    onChange={() => setHow('add')}
+                  />
+                  Add them now, without asking
+                </label>
+              </fieldset>
+              {how === 'invite' && (
+                <div>
+                  <FormLabel htmlFor="offer-note">Note (optional)</FormLabel>
+                  <Textarea
+                    id="offer-note"
+                    rows={2}
+                    maxLength={1000}
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                  />
+                </div>
+              )}
+              {chosen?.standing === 'applied' && (
+                <p className="m-0">They asked to join this one, so either way they are on it.</p>
+              )}
+            </div>
+          )
+        }
+        confirmLabel={how === 'invite' ? 'Send invite' : 'Add to project'}
+        confirmDisabled={!chosen || (how === 'invite' && chosen.standing === 'invited')}
+        busy={invite.isPending || add.isPending}
+        busyLabel="Saving…"
+        onConfirm={() =>
+          how === 'invite'
+            ? invite.mutate({
+                projectId: Number(projectId),
+                volunteerId: member.id,
+                message: note.trim() || null,
+              })
+            : add.mutate({ projectId: Number(projectId), volunteerId: member.id })
+        }
+        onClose={dialog.close}
+      />
+    </>
+  )
+}
+
+/** Staff put a member on fast track (lib/fast-track.ts), or take them off it. */
+function FastTrackToggle({ member, on }: { member: Member; on: boolean }) {
+  const set = useMutation({
+    ...orpc.volunteers.setFastTrack.mutationOptions(),
+    ...useManaged(() => {}),
+  })
+  return (
+    <Button
+      variant="secondary"
+      size="sm"
+      disabled={set.isPending}
+      onClick={() => set.mutate({ volunteerId: member.id, on: !on })}
+    >
+      {on ? 'Take off fast track' : `Fast track ${member.name}`}
+    </Button>
+  )
+}
+
 const POOL = 'pool'
 
 function MoveChapter({
@@ -343,6 +583,14 @@ export default function MemberManage({
           </div>
         </div>
       )}
+      <div role="group" aria-labelledby="manage-work" className="mb-4">
+        <H3 id="manage-work">Work</H3>
+        <div className="flex flex-wrap gap-2">
+          <FastTrackToggle member={member} on={manage.fastTrack.on} />
+          <VerifySkill member={member} />
+          {manage.offerProjects && <OfferProject member={member} />}
+        </div>
+      </div>
       <div role="group" aria-labelledby="manage-account">
         <H3 id="manage-account">Account</H3>
         <div className="flex flex-wrap gap-2">

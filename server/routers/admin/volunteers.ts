@@ -5,7 +5,7 @@ import { redactVolunteer } from '@/lib/auth'
 import { dismissDuplicatePair, findDuplicatePairs } from '@/lib/duplicate-accounts'
 import { adminProcedure, staffProcedure } from '../../procedures'
 import { canAdminChapter, type ChapterAccess } from '@/lib/chapter-access'
-import { WorkItemType } from '@/generated/prisma/enums'
+import { InterestStatus, ProjectStatus, WorkItemType } from '@/generated/prisma/enums'
 
 const MAX_DETAIL_ROWS = 100
 
@@ -256,6 +256,49 @@ export const adminVolunteersRouter = {
         },
       })
       return { message: 'Skill endorsed' }
+    }),
+
+  /**
+   * The live projects of the member's chapter (the pool's, for someone in it) that the caller,
+   * as its staff, may invite them to or add them to: not ones they own or are already on. Each
+   * says whether they asked to join (an invite then accepts them) or were invited already.
+   */
+  projectsToOffer: staffProcedure
+    .input(z.object({ volunteerId: z.number().int() }))
+    .handler(async ({ input, context }) => {
+      await assertRunsVolunteer(context.access, input.volunteerId)
+      const member = await prisma.volunteer.findUniqueOrThrow({
+        where: { id: input.volunteerId },
+        select: { nationalChapterId: true },
+      })
+      const projects = await prisma.workItem.findMany({
+        where: {
+          type: WorkItemType.PROJECT,
+          nationalChapterId: member.nationalChapterId,
+          status: { in: [ProjectStatus.ready, ProjectStatus.in_progress, ProjectStatus.on_hold] },
+          OR: [{ assigneeId: null }, { assigneeId: { not: input.volunteerId } }],
+        },
+        select: {
+          id: true,
+          title: true,
+          interests: {
+            where: { volunteerId: input.volunteerId },
+            select: { status: true },
+          },
+        },
+        orderBy: { title: 'asc' },
+      })
+      return projects.flatMap((p) => {
+        const status = p.interests[0]?.status
+        if (status === InterestStatus.accepted) return []
+        const standing =
+          status === InterestStatus.pending
+            ? ('applied' as const)
+            : status === InterestStatus.invited
+              ? ('invited' as const)
+              : null
+        return [{ id: p.id, title: p.title, standing }]
+      })
     }),
 
   /** Pairs of accounts that look like one person; with `volunteerId`, that account's only. */

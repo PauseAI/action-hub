@@ -270,3 +270,59 @@ describe('admin.emailPreview', () => {
     })
   })
 })
+
+describe('admin.volunteers.projectsToOffer', () => {
+  it("lists the live projects of the member's chapter they are not on, saying where they stand", async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter)
+    const member = await createMember(chapter)
+    const at = { nationalChapterId: chapter.id }
+    const open = await createProject({ ...at, title: 'A open', status: 'in_progress' })
+    const applied = await createProject({ ...at, title: 'B applied', status: 'ready' })
+    const invited = await createProject({ ...at, title: 'C invited', status: 'on_hold' })
+    const on = await createProject({ ...at, title: 'D on it' })
+    await createProject({ ...at, title: 'E owned', assigneeId: member.id })
+    await createProject({ ...at, title: 'F draft', status: 'draft' })
+    await createProject({ ...at, title: 'G done', status: 'completed' })
+    await createProject({ title: 'H elsewhere', nationalChapterId: (await createChapter()).id })
+    const interest = (workItemId: number, status: 'pending' | 'invited' | 'accepted') =>
+      prisma.workItemInterest.create({
+        data: { workItemId, volunteerId: member.id, status, interestType: 'want_to_contribute' },
+      })
+    await interest(applied.id, 'pending')
+    await interest(invited.id, 'invited')
+    await interest(on.id, 'accepted')
+
+    expect(
+      await clientAs(lead).admin.volunteers.projectsToOffer({ volunteerId: member.id }),
+    ).toEqual([
+      { id: open.id, title: 'A open', standing: null },
+      { id: applied.id, title: 'B applied', standing: 'applied' },
+      { id: invited.id, title: 'C invited', standing: 'invited' },
+    ])
+  })
+
+  it("offers a pool member the pool's projects, and only to whoever runs them", async () => {
+    const pooled = await createVolunteer()
+    const poolProject = await createProject({ title: 'Pool work', nationalChapterId: null })
+    await createProject({ title: 'Chapter work', nationalChapterId: (await createChapter()).id })
+    const offered = await clientAs(await createAdmin()).admin.volunteers.projectsToOffer({
+      volunteerId: pooled.id,
+    })
+    expect(offered.map((p) => p.id)).toContain(poolProject.id)
+    expect(offered.map((p) => p.title)).not.toContain('Chapter work')
+
+    const chapter = await createChapter()
+    const member = await createMember(chapter)
+    await expect(
+      clientAs(await createChapterLead(await createChapter())).admin.volunteers.projectsToOffer({
+        volunteerId: member.id,
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    await expect(
+      clientAs(await createMember(chapter)).admin.volunteers.projectsToOffer({
+        volunteerId: member.id,
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' })
+  })
+})

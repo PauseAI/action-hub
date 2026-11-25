@@ -380,7 +380,7 @@ describe('volunteer profile', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Remove picture' })).toBeNull())
   })
 
-  it("shows fast track to the volunteer and their chapter's staff, who set it here", async () => {
+  it("shows fast track to the volunteer and their chapter's staff, who set it from Manage", async () => {
     const chapter = await createChapter()
     const lead = await createChapterLead(chapter)
     const sam = await createMember(chapter, { name: 'Sam Steady' })
@@ -398,7 +398,11 @@ describe('volunteer profile', () => {
     )
     // A refusal says why: the lead stepped down meanwhile.
     await prisma.nationalChapter.update({ where: { id: chapter.id }, data: { leadId: null } })
-    await userEvent.click(within(section).getByRole('button', { name: 'Take off fast track' }))
+    await userEvent.click(
+      within(screen.getByRole('region', { name: 'Manage' })).getByRole('button', {
+        name: 'Take off fast track',
+      }),
+    )
     await screen.findByText("Only their chapter's lead or deputies can change fast track")
 
     cleanup()
@@ -653,6 +657,127 @@ describe('volunteer profile', () => {
       `/admin/volunteers/${admin.id}`,
     )
     expect(screen.queryByRole('heading', { name: 'Manage' })).toBeNull()
+  })
+
+  it("lets a chapter's staff verify one of a member's skills", async () => {
+    const chapter = await createChapter()
+    const listed = await createSkill({ name: 'Listed Skill' })
+    const other = await createSkill({ name: 'Other Skill' })
+    const member = await createMember(chapter, { name: 'Skilled Member' })
+    await prisma.volunteerSkill.create({ data: { volunteerId: member.id, skillId: listed.id } })
+    const deputy = await createChapterDeputy(chapter)
+    await openProfile(member, deputy)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Verify a skill' }))
+    const dialog = dialogNamed("Verify one of Skilled Member's skills")
+    expect(within(dialog).getByRole('button', { name: 'Verify skill' })).toBeDisabled()
+    const select = within(dialog).getByLabelText('Skill')
+    expect(within(select).getByRole('group', { name: 'Skills they list' })).toHaveTextContent(
+      'Listed Skill',
+    )
+    await within(select).findByRole('option', { name: 'Other Skill' })
+    await userEvent.selectOptions(select, String(other.id))
+    await userEvent.selectOptions(within(dialog).getByLabelText('How well'), 'strong')
+    await userEvent.selectOptions(within(dialog).getByLabelText('Based on'), 'project_outcome')
+    await confirmIn(dialog, 'Verify skill')
+    await screen.findByText('Skill endorsed')
+    expect(
+      await prisma.skillEndorsement.findFirst({ where: { volunteerId: member.id } }),
+    ).toMatchObject({
+      skillId: other.id,
+      endorsedById: deputy.id,
+      rating: 'strong',
+      source: 'project_outcome',
+    })
+  })
+
+  it('offers only the other skills when a member lists none', async () => {
+    const chapter = await createChapter()
+    const member = await createMember(chapter, { name: 'No Listed' })
+    await openProfile(member, await createChapterLead(chapter))
+    await userEvent.click(screen.getByRole('button', { name: 'Verify a skill' }))
+    const select = within(dialogNamed("Verify one of No Listed's skills")).getByLabelText('Skill')
+    expect(within(select).queryByRole('group', { name: 'Skills they list' })).toBeNull()
+  })
+
+  it("lets a chapter's staff invite a member to a project, or add them to one", async () => {
+    const chapter = await createChapter()
+    const member = await createMember(chapter, { name: 'Invitable' })
+    const at = { nationalChapterId: chapter.id, status: 'in_progress' as const }
+    const first = await createProject({ ...at, title: 'First Project' })
+    const second = await createProject({ ...at, title: 'Second Project' })
+    const asked = await createProject({ ...at, title: 'Asked Project' })
+    await prisma.workItemInterest.create({
+      data: {
+        workItemId: asked.id,
+        volunteerId: member.id,
+        status: 'pending',
+        interestType: 'want_to_contribute',
+      },
+    })
+    await openProfile(member, await createChapterLead(chapter))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Invite to a project' }))
+    let dialog = dialogNamed('Invite Invitable to a project')
+    const pick = async (title: string | RegExp) => {
+      const select = within(dialog).getByLabelText('Project')
+      const option = await within(select).findByRole('option', { name: title })
+      await userEvent.selectOptions(select, option)
+    }
+    expect(within(dialog).getByRole('button', { name: 'Send invite' })).toBeDisabled()
+    await pick(/Asked Project \(asked to join\)/)
+    expect(dialog).toHaveTextContent('They asked to join this one')
+    await pick('First Project')
+    await userEvent.type(within(dialog).getByLabelText('Note (optional)'), 'Come and help')
+    await confirmIn(dialog, 'Send invite')
+    await screen.findByText('Invite sent')
+    expect(
+      await prisma.workItemInterest.findFirst({
+        where: { workItemId: first.id, volunteerId: member.id },
+      }),
+    ).toMatchObject({ status: 'invited', message: 'Come and help' })
+    expect(emails.lastTo(member.email as string)?.subject).toContain('First Project')
+
+    // Invited already: a second invite waits, but adding them straight away does not.
+    await userEvent.click(screen.getByRole('button', { name: 'Invite to a project' }))
+    dialog = dialogNamed('Invite Invitable to a project')
+    await pick(/First Project \(invited already\)/)
+    expect(within(dialog).getByRole('button', { name: 'Send invite' })).toBeDisabled()
+    await pick('Second Project')
+    await userEvent.click(within(dialog).getByLabelText('Add them now, without asking'))
+    expect(within(dialog).queryByLabelText('Note (optional)')).toBeNull()
+    await confirmIn(dialog, 'Add to project')
+    await screen.findByText(/assigned|added/i)
+    expect(
+      await prisma.workItemInterest.findFirst({
+        where: { workItemId: second.id, volunteerId: member.id },
+      }),
+    ).toMatchObject({ status: 'accepted', origin: 'added' })
+    await userEvent.click(screen.getByRole('button', { name: 'Invite to a project' }))
+    dialog = dialogNamed('Invite Invitable to a project')
+    await userEvent.click(within(dialog).getByLabelText('Add them now, without asking'))
+    await userEvent.click(within(dialog).getByLabelText('Invite them: they accept or decline'))
+    expect(within(dialog).getByLabelText('Note (optional)')).toBeInTheDocument()
+  })
+
+  it('says when there is no project to invite a member to, and offers none to an applicant', async () => {
+    const chapter = await createChapter()
+    const member = await createMember(chapter, { name: 'Nothing Open' })
+    const lead = await createChapterLead(chapter)
+    await openProfile(member, lead)
+    await userEvent.click(screen.getByRole('button', { name: 'Invite to a project' }))
+    expect(
+      await within(dialogNamed('Invite Nothing Open to a project')).findByText(
+        /no live project in their chapter/,
+      ),
+    ).toBeInTheDocument()
+    cleanup()
+    const applicant = await createMember(chapter, {
+      name: 'Still Applying',
+      approvalStatus: 'pending',
+    })
+    await openProfile(applicant, lead)
+    expect(screen.queryByRole('button', { name: 'Invite to a project' })).toBeNull()
   })
 
   it('shows a minimal profile, and a not-found state', async () => {

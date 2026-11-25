@@ -9,6 +9,7 @@ import {
 import { fake } from '../fake'
 import { ensureChapter, makeChapterStaff } from '../actions/chapters'
 import { selectFilterDropdown } from '../actions/ui'
+import { adminCreateProjectViaApi } from '../actions/projects'
 
 // Germany's chapter is this spec's alone.
 const COUNTRY = 'Germany'
@@ -238,6 +239,43 @@ test.describe('National chapters', () => {
     await move.getByRole('button', { name: 'Move' }).click()
     await expect(getAlert(adminPage)).toContainText('Moved', { timeout: 10_000 })
     await expect(adminPage.getByText('No national chapter yet')).toBeVisible({ timeout: 10_000 })
+  })
+
+  test("A chapter lead verifies a member's skill and invites them to a project from their profile", async ({
+    browser,
+    baseUrl,
+    snap,
+  }) => {
+    const chapterId = await ensureChapter(baseUrl, COUNTRY)
+    const lead = await createApprovedVolunteer(baseUrl, { country: COUNTRY })
+    await makeChapterStaff(baseUrl, lead.id, chapterId, 'LEAD')
+    const member = await createApprovedVolunteer(baseUrl, { country: COUNTRY })
+    const title = fake.projectTitle()
+    await adminCreateProjectViaApi(baseUrl, title, 'Invite from a profile', { chapterId })
+
+    const page = await signedInPage(browser, lead.token)
+    try {
+      await page.goto(`${baseUrl}/volunteers/${member.id}`)
+      const panel = page.getByRole('region', { name: 'Manage' })
+      await panel.getByRole('button', { name: 'Verify a skill' }).click({ timeout: 10_000 })
+      const verify = page.getByRole('dialog', { name: `Verify one of ${member.name}'s skills` })
+      const skill = verify.getByLabel('Skill')
+      await expect(skill.locator('option')).not.toHaveCount(1, { timeout: 10_000 })
+      await skill.selectOption({ index: 1 })
+      await snap(page, 'verify a skill dialog')
+      await verify.getByRole('button', { name: 'Verify skill' }).click()
+      await expect(getAlert(page)).toContainText('Skill endorsed', { timeout: 10_000 })
+
+      await panel.getByRole('button', { name: 'Invite to a project' }).click()
+      const invite = page.getByRole('dialog', { name: `Invite ${member.name} to a project` })
+      await invite.getByLabel('Project').selectOption({ label: title })
+      await invite.getByLabel('Note (optional)').fill('We could use you here')
+      await snap(page, 'invite to a project dialog')
+      await invite.getByRole('button', { name: 'Send invite' }).click()
+      await expect(getAlert(page)).toContainText('Invite sent', { timeout: 10_000 })
+    } finally {
+      await page.context().close()
+    }
   })
 
   test("A member sees no Manage panel on a fellow member's profile", async ({
