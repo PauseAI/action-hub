@@ -235,8 +235,8 @@ test.describe('Volunteer Profile', () => {
 
       await expect(volunteer.page.locator('#volunteerName')).toContainText(vol2.name)
       await expect(volunteer.page.locator('#volunteerSkills')).toContainText('Fundraising')
-      // Endorsements section only appears if there are endorsements; not present for fresh volunteer
-      await expect(volunteer.page.locator('#endorsementsSection')).not.toBeVisible()
+      // A fresh volunteer's skills carry no endorsement.
+      await expect(volunteer.page.locator('#volunteerSkills [tabindex="0"]')).toHaveCount(0)
       // Someone they don't work with can ask to connect, and never sees their login address.
       const contact = volunteer.page.locator('#contactInfo')
       await expect(contact.getByRole('button', { name: 'Request contact' })).toBeVisible()
