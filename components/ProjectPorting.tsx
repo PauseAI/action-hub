@@ -196,7 +196,7 @@ export default function ProjectPorting({
             id="import-paste"
             aria-label="Paste export JSON"
             rows={4}
-            className="w-full font-mono text-sm"
+            className="w-full font-mono"
             placeholder='{ "project": { … }, "tasks": [ … ] }'
             value={pasteText}
             onChange={(e) => setPasteText(e.target.value)}
