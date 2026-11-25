@@ -252,12 +252,14 @@ describe('what a deputy can do', () => {
     const { owner, helper, project } = await setup()
     const deputy = clientAs(helper)
     const applicant = await createVolunteer()
-    const interest = await prisma.workItemInterest.create({
+    // A deputy answers requests that come with a task, but takes nobody off the project.
+    const member = await createVolunteer()
+    const membership = await prisma.workItemInterest.create({
       data: {
-        volunteerId: applicant.id,
+        volunteerId: member.id,
         workItemId: project.id,
         interestType: 'want_to_contribute',
-        status: 'pending',
+        status: 'accepted',
       },
     })
     const forbidden = { code: 'FORBIDDEN' }
@@ -267,8 +269,8 @@ describe('what a deputy can do', () => {
     await expect(
       deputy.projects.respondToInterest({
         projectId: project.id,
-        interestId: interest.id,
-        status: 'accepted',
+        interestId: membership.id,
+        status: 'declined',
       }),
     ).rejects.toMatchObject(forbidden)
     await expect(

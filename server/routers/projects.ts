@@ -39,7 +39,17 @@ import {
   stopHelpingAsLead,
   taskHelperIds,
 } from '@/lib/task-helpers'
+import {
+  acceptHelperOffers,
+  addToProject,
+  closeOffersOnFullTask,
+  dropEmptyRequest,
+  endHelperOffers,
+  lockTask,
+  openPlaces,
+} from '@/lib/task-offers'
 import { taskCounts } from '@/lib/task-list-order'
+import { TASK_OFFER_SENT_MESSAGE } from '@/lib/action-messages'
 import { loadWorkItemSummaries, toWorkItemSummary } from '@/lib/work-item-summary'
 import {
   notifyUser,
@@ -138,6 +148,16 @@ function assertInProjectChapter(
   }
 }
 
+/**
+ * A request to join that came with a task: someone not on the project asked to take one of its
+ * tasks, or to help on one. Asking for a task is the only way to apply to help on a project.
+ */
+function isTaskRequest(interest: { status: string; interestType: string }): boolean {
+  return (
+    interest.status === InterestStatus.pending && interest.interestType === 'want_to_contribute'
+  )
+}
+
 /** Did the owner turn this volunteer down, or take them off the project? */
 async function isBlockedFromClaiming(projectId: number, volunteerId: number): Promise<boolean> {
   const blocking = await prisma.workItemInterest.findFirst({
@@ -184,36 +204,110 @@ async function releaseTasksHeldBy(
   })
 }
 
-/** Tells a project's owner that someone asked to join it by taking one of its tasks. */
+/**
+ * Tells a project's owner and deputies that someone not on it asked to take one of its tasks,
+ * or to help on one: a single request, answered by accepting them onto the project.
+ */
 async function notifyOwnerOfInterest(
   project: { id: number; title: string; assigneeId: number | null },
-  volunteer: { name: string },
-  taskTitle: string,
-  note: string | undefined,
+  volunteer: { id: number; name: string },
+  ask: { taskTitle: string; asHelper: boolean },
+  note: string | undefined | null,
   interestId: number,
 ): Promise<void> {
-  if (!project.assigneeId) return
-  const asked = `${volunteer.name} asked to take '${taskTitle}'`
-  await notifyUser(
-    project.assigneeId,
-    'new_interest',
-    `Someone's interested in '${project.title}'!`,
-    (note ? `${asked}: ${note}` : asked).slice(0, 200),
-    `/projects/${project.id}`,
-    {
-      subject: `${asked} on '${project.title}'`,
-      message: html`<strong>${volunteer.name}</strong> asked to take
-        <strong>${taskTitle}</strong> on your project <strong>${project.title}</strong>.`,
-      projectTitle: project.title,
-      projectId: project.id,
-      extraHtml: note
-        ? html`<div style="padding: 12px; background: #f7fafc; border-radius: 8px; margin: 16px 0;">
-            <strong>Their message:</strong> ${note}
-          </div>`
-        : undefined,
-    },
-    interestId,
-  )
+  const recipients = new Set(await deputyIdsOf(project.id, volunteer.id))
+  if (project.assigneeId !== null && project.assigneeId !== volunteer.id) {
+    recipients.add(project.assigneeId)
+  }
+  const verb = ask.asHelper ? 'offered to help on' : 'asked to take'
+  const asked = `${volunteer.name} ${verb} '${ask.taskTitle}'`
+  for (const to of recipients) {
+    await notifyUser(
+      to,
+      'new_interest',
+      `Someone's interested in '${project.title}'!`,
+      (note ? `${asked}: ${note}` : asked).slice(0, 200),
+      `/projects/${project.id}`,
+      {
+        subject: `${asked} on '${project.title}'`,
+        message: html`<strong>${volunteer.name}</strong> ${verb}
+          <strong>${ask.taskTitle}</strong> on the project <strong>${project.title}</strong>.
+          Accepting puts them on the task and the project.`,
+        projectTitle: project.title,
+        projectId: project.id,
+        extraHtml: note
+          ? html`<div
+              style="padding: 12px; background: #f7fafc; border-radius: 8px; margin: 16px 0;"
+            >
+              <strong>Their message:</strong> ${note}
+            </div>`
+          : undefined,
+      },
+      interestId,
+    )
+  }
+}
+
+/**
+ * Opens, or keeps open, the request to join that waits on a task someone not on the project
+ * asked for. `note` is what the owner reads on the request: what they asked for, and their
+ * message.
+ */
+async function requestToJoin(
+  projectId: number,
+  volunteerId: number,
+  existing: { id: number; status: string; interestType: string } | null,
+  note: string,
+): Promise<number> {
+  // An ownerless project's offer to lead keeps its kind; the task rides along with it.
+  const interestType =
+    existing?.status === InterestStatus.pending ? existing.interestType : 'want_to_contribute'
+  const request = {
+    interestType,
+    message: note,
+    status: InterestStatus.pending,
+    origin: InterestOrigin.applied,
+    respondedAt: null,
+    responseMessage: null,
+    invitedById: null,
+  }
+  const row = existing
+    ? await prisma.workItemInterest.update({ where: { id: existing.id }, data: request })
+    : await prisma.workItemInterest.create({
+        data: { ...request, volunteerId, workItemId: projectId },
+      })
+  return row.id
+}
+
+/**
+ * When a manager puts someone on one of a project's tasks, as its lead or a helper, they join
+ * the project too. Throws before anything is written if they cannot; returns what to run once
+ * the task is theirs, or null when they are on the project already.
+ */
+async function prepareToBringOn(
+  project: {
+    id: number
+    teamId: number | null
+    assigneeId: number | null
+    nationalChapterId: number | null
+    title: string
+  },
+  volunteerId: number,
+  access: ChapterAccess,
+): Promise<((actorId: number) => Promise<void>) | null> {
+  if (volunteerId === project.assigneeId) return null
+  if (await resolveProjectMembership(project.teamId, project.id, volunteerId)) return null
+  const person = await prisma.volunteer.findFirst({
+    where: { id: volunteerId, deletedAt: null },
+    select: { nationalChapterId: true, name: true },
+  })
+  if (!person) throw new ORPCError('BAD_REQUEST', { message: 'Volunteer not found' })
+  assertInProjectChapter(access, person, project)
+  return async (actorId) => {
+    await addToProject(project.id, volunteerId, `Put on a task in '${project.title}'`)
+    await assignHeldTasks(project.id, volunteerId, actorId)
+    await acceptHelperOffers(project.id, volunteerId, actorId)
+  }
 }
 
 /**
@@ -319,13 +413,21 @@ async function tellHelpers(
   }
 }
 
-/** A member of the project joins a task that seeks helpers, until it has as many as it wants. */
+/**
+ * A member of the project joins a task that seeks helpers, until it has as many as it wants.
+ * Anyone else offers to: the offer waits on their request to join the project (lib/task-offers.ts).
+ */
 async function joinTaskAsHelper(
   projectId: number,
   taskId: number,
-  volunteer: { id: number; name: string; isAdmin: boolean | null },
+  volunteer: {
+    id: number
+    name: string
+    isAdmin: boolean | null
+    nationalChapterId: number | null
+  },
   message: string | null,
-): Promise<{ message: string }> {
+): Promise<{ message: string; requested: boolean }> {
   const { project, task } = await findProjectTask(projectId, taskId)
   assertTaskTakesHelpers(task)
   if (task.helpersWanted === null) {
@@ -334,36 +436,61 @@ async function joinTaskAsHelper(
   if (task.assigneeId === volunteer.id) {
     throw new ORPCError('BAD_REQUEST', { message: 'You already lead this task' })
   }
-  if (!(await resolveClaimViewer(project, volunteer)).onProject) {
-    throw new ORPCError('FORBIDDEN', { message: 'Join the project to help on its tasks' })
+  const claimViewer = await resolveClaimViewer(project, volunteer)
+  let onProject = claimViewer.onProject
+  const projectRow = onProject
+    ? null
+    : await prisma.workItemInterest.findFirst({
+        where: { workItemId: projectId, volunteerId: volunteer.id },
+      })
+  if (!onProject) {
+    if (await isBlockedFromClaiming(projectId, volunteer.id)) {
+      throw new ORPCError('FORBIDDEN', {
+        message: 'You are no longer contributing to this project, so you cannot help on its tasks',
+      })
+    }
+    if (!(await canReachProject(project, volunteer))) {
+      throw new ORPCError('NOT_FOUND', { message: 'Project or task not found' })
+    }
+    if (projectRow?.status === InterestStatus.invited) {
+      // Offering answers the invite: they have said yes.
+      await prisma.workItemInterest.update({
+        where: { id: projectRow.id },
+        data: { status: InterestStatus.accepted, respondedAt: new Date() },
+      })
+      await clearNotifications('project_invite', projectRow.id)
+      await assignHeldTasks(projectId, volunteer.id, volunteer.id)
+      onProject = true
+    }
   }
   const wanted = task.helpersWanted
 
   await prisma.$transaction(async (tx) => {
-    // Holds the task row so two people taking the last place cannot both get it.
-    await tx.$queryRaw`SELECT id FROM work_items WHERE id = ${taskId} FOR UPDATE`
+    await lockTask(tx, taskId)
     const existing = await tx.workItemInterest.findFirst({
       where: { workItemId: taskId, volunteerId: volunteer.id },
     })
     if (existing?.status === InterestStatus.accepted) {
       throw new ORPCError('BAD_REQUEST', { message: 'You are already helping on this task' })
     }
+    if (existing?.status === InterestStatus.pending) {
+      throw new ORPCError('BAD_REQUEST', {
+        message: 'You have already offered to help on this task',
+      })
+    }
     // As on a project, leaving keeps the way back open; being taken off does not.
     if (existing?.status === InterestStatus.removed) {
       throw new ORPCError('FORBIDDEN', { message: 'You were taken off this task' })
     }
-    const helping = await tx.workItemInterest.count({
-      where: { workItemId: taskId, status: InterestStatus.accepted },
-    })
-    if (helping >= wanted) {
+    if ((await openPlaces(tx, { id: taskId, helpersWanted: wanted })) <= 0) {
       throw new ORPCError('BAD_REQUEST', { message: 'This task has all the helpers it wants' })
     }
     const data = {
       interestType: TASK_HELPER,
       message,
-      status: InterestStatus.accepted,
+      status: onProject ? InterestStatus.accepted : InterestStatus.pending,
       origin: InterestOrigin.applied,
-      respondedAt: new Date(),
+      respondedAt: onProject ? new Date() : null,
       responseMessage: null,
       invitedById: null,
     }
@@ -374,32 +501,75 @@ async function joinTaskAsHelper(
         data: { ...data, volunteerId: volunteer.id, workItemId: taskId },
       })
     }
-    await recordEvent(tx, {
-      workItemId: taskId,
-      actorId: volunteer.id,
-      kind: 'helper_joined',
-      before: {},
-      after: { helperId: volunteer.id },
-    })
+    if (onProject) {
+      await recordEvent(tx, {
+        workItemId: taskId,
+        actorId: volunteer.id,
+        kind: 'helper_joined',
+        before: {},
+        after: { helperId: volunteer.id },
+      })
+    }
   })
 
+  if (!onProject) {
+    const asked = message
+      ? `Offered to help on '${task.title}': ${message}`
+      : `Offered to help on '${task.title}'`
+    const requestId = await requestToJoin(projectId, volunteer.id, projectRow, asked)
+    await notifyOwnerOfInterest(
+      project,
+      volunteer,
+      { taskTitle: task.title, asHelper: true },
+      message,
+      requestId,
+    )
+    return { message: TASK_OFFER_SENT_MESSAGE, requested: true }
+  }
+
+  await closeOffersOnFullTask(projectId, taskId)
   await tellLeadAboutHelpers(
     project,
     task,
     volunteer.id,
     `${volunteer.name} joined '${task.title}' as a helper`,
   )
-  return { message: "You're helping on this task" }
+  return { message: "You're helping on this task", requested: false }
 }
 
-/** A helper leaves a task. */
+/**
+ * A helper leaves a task. Someone still waiting to join takes back their offer to help on it,
+ * or their ask to take it, and their request to join goes with it once nothing else is left.
+ */
 async function leaveTaskAsHelper(
   projectId: number,
   taskId: number,
   volunteer: { id: number; name: string },
 ): Promise<{ message: string }> {
   const { project, task } = await findProjectTask(projectId, taskId)
+  if (task.requestedById === volunteer.id) {
+    await prisma.$transaction(async (tx) => {
+      const data = { requestedById: null }
+      const freed = await tx.workItem.updateMany({
+        where: { id: taskId, requestedById: volunteer.id },
+        data,
+      })
+      if (freed.count > 0) {
+        await recordChange(tx, { row: task, data, actorId: volunteer.id, kind: 'released' })
+      }
+    })
+    await dropEmptyRequest(projectId, volunteer.id)
+    return { message: 'Request withdrawn' }
+  }
   assertTaskTakesHelpers(task)
+  const offer = await prisma.workItemInterest.updateMany({
+    where: { workItemId: taskId, volunteerId: volunteer.id, status: InterestStatus.pending },
+    data: { status: InterestStatus.withdrawn, respondedAt: new Date() },
+  })
+  if (offer.count > 0) {
+    await dropEmptyRequest(projectId, volunteer.id)
+    return { message: 'Offer withdrawn' }
+  }
   await prisma.$transaction(async (tx) => {
     const left = await tx.workItemInterest.updateMany({
       where: { workItemId: taskId, volunteerId: volunteer.id, status: InterestStatus.accepted },
@@ -494,18 +664,21 @@ async function addTaskHelper(
   if (volunteerId === task.assigneeId) {
     throw new ORPCError('BAD_REQUEST', { message: 'They already lead this task' })
   }
-  if (!(await resolveProjectMembership(project.teamId, project.id, volunteerId))) {
-    throw new ORPCError('BAD_REQUEST', { message: 'They need to join the project first' })
-  }
   const target = await prisma.volunteer.findFirst({
     where: { id: volunteerId, deletedAt: null },
-    select: { name: true },
+    select: { name: true, approvalStatus: true },
   })
   if (!target) throw new ORPCError('BAD_REQUEST', { message: 'Volunteer not found' })
+  const bringOn = await prepareToBringOn(project, volunteerId, access)
+  if (bringOn && target.approvalStatus !== ApprovalStatus.approved) {
+    throw new ORPCError('BAD_REQUEST', {
+      message: 'Cannot add a volunteer who is not yet approved',
+    })
+  }
   const wanted = task.helpersWanted
 
   await prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT id FROM work_items WHERE id = ${taskId} FOR UPDATE`
+    await lockTask(tx, taskId)
     const existing = await tx.workItemInterest.findFirst({
       where: { workItemId: taskId, volunteerId },
     })
@@ -540,6 +713,8 @@ async function addTaskHelper(
       after: { helperId: volunteerId },
     })
   })
+  await bringOn?.(actor.id)
+  await closeOffersOnFullTask(projectId, taskId)
 
   await notifyUser(
     volunteerId,
@@ -1357,6 +1532,9 @@ export const projectsRouter = {
             invitedByName: string | null
             volunteerName: string
             volunteerBio: string | null
+            // What a pending request asks for: the tasks held for them, and the helper places
+            // they offered for.
+            asks: Array<{ taskId: number; title: string; asHelper: boolean }>
             volunteerSkills: Array<{
               id: number
               name: string
@@ -1366,9 +1544,15 @@ export const projectsRouter = {
           }>
         | undefined
 
-      if (can(viewer, 'project.recruit', resource)) {
+      const recruits = can(viewer, 'project.recruit', resource)
+      if (recruits || can(viewer, 'task.answerRequests', resource)) {
         const rawInterests = await prisma.workItemInterest.findMany({
-          where: { workItemId: input.id },
+          where: {
+            workItemId: input.id,
+            ...(recruits
+              ? {}
+              : { status: InterestStatus.pending, interestType: 'want_to_contribute' }),
+          },
           include: {
             invitedBy: { select: { name: true } },
             volunteer: {
@@ -1382,6 +1566,32 @@ export const projectsRouter = {
           },
           orderBy: { createdAt: 'desc' },
         })
+        const asking = rawInterests
+          .filter((i) => i.status === InterestStatus.pending)
+          .map((i) => i.volunteerId)
+        const offers = await prisma.workItemInterest.findMany({
+          where: {
+            volunteerId: { in: asking },
+            interestType: TASK_HELPER,
+            status: InterestStatus.pending,
+            workItem: { parentId: input.id, type: WorkItemType.TASK },
+          },
+          select: { volunteerId: true, workItemId: true },
+          orderBy: { id: 'asc' },
+        })
+        const titleOf = new Map(tasks.map((t) => [t.id, t.title]))
+        const asksOf = (volunteerId: number) => [
+          ...tasks
+            .filter((t) => t.requestedById === volunteerId)
+            .map((t) => ({ taskId: t.id, title: t.title, asHelper: false })),
+          ...offers
+            .filter((o) => o.volunteerId === volunteerId)
+            .map((o) => ({
+              taskId: o.workItemId,
+              title: titleOf.get(o.workItemId) ?? '',
+              asHelper: true,
+            })),
+        ]
         interests = rawInterests.map((i) => ({
           id: i.id,
           volunteerId: i.volunteerId,
@@ -1397,6 +1607,7 @@ export const projectsRouter = {
           invitedByName: i.invitedBy?.name ?? null,
           volunteerName: i.volunteer.name,
           volunteerBio: i.volunteer.bio,
+          asks: i.status === InterestStatus.pending ? asksOf(i.volunteerId) : [],
           volunteerSkills: i.volunteer.skills.map((vs) => ({
             id: vs.skill.id,
             name: vs.skill.name,
@@ -1974,17 +2185,24 @@ export const projectsRouter = {
       if (input.taskId !== undefined) {
         return leaveTaskAsHelper(input.projectId, input.taskId, context.volunteer)
       }
-      const result = await prisma.workItemInterest.updateMany({
+      const mine = await prisma.workItemInterest.findFirst({
         where: {
           workItemId: input.projectId,
           volunteerId: context.volunteer.id,
           status: { in: [InterestStatus.pending, InterestStatus.accepted] },
         },
+      })
+      if (!mine) throw new ORPCError('NOT_FOUND', { message: 'No interest found' })
+      await prisma.workItemInterest.update({
+        where: { id: mine.id },
         data: { status: InterestStatus.withdrawn },
       })
-      if (result.count === 0) throw new ORPCError('NOT_FOUND', { message: 'No interest found' })
+      if (mine.status === InterestStatus.pending) {
+        await clearNotifications('new_interest', mine.id)
+      }
 
       await releaseTasksHeldBy(input.projectId, context.volunteer.id, context.volunteer.id)
+      await endHelperOffers(input.projectId, context.volunteer.id, InterestStatus.withdrawn)
       await endHelpingOnProject(input.projectId, context.volunteer.id, InterestStatus.withdrawn)
       const project = await prisma.workItem.findFirst({
         where: { id: input.projectId, type: WorkItemType.PROJECT },
@@ -2029,19 +2247,21 @@ export const projectsRouter = {
           input.responseMessage ?? null,
         )
       }
-      const project = await assertCanOnProject(
-        viewerOf(context),
-        'project.recruit',
-        await prisma.workItem.findFirst({
-          where: { id: input.projectId, type: WorkItemType.PROJECT },
-        }),
-        'Not authorized',
-      )
-
+      const found = await prisma.workItem.findFirst({
+        where: { id: input.projectId, type: WorkItemType.PROJECT },
+      })
       const interest = await prisma.workItemInterest.findFirst({
         where: { id: input.interestId, workItemId: input.projectId },
         include: { volunteer: { select: { approvalStatus: true, name: true } } },
       })
+      // Deputies answer the requests that come with a task (`task.answerRequests`); the rest
+      // of recruiting is the owner's.
+      const project = await assertCanOnProject(
+        viewerOf(context),
+        interest && isTaskRequest(interest) ? 'task.answerRequests' : 'project.recruit',
+        found,
+        'Not authorized',
+      )
       if (!interest) throw new ORPCError('NOT_FOUND', { message: 'Interest not found' })
       // An invite is the invitee's to answer; only an admin puts someone on a project unasked.
       if (interest.status === InterestStatus.invited) {
@@ -2083,8 +2303,10 @@ export const projectsRouter = {
 
       if (status === InterestStatus.accepted) {
         await assignHeldTasks(input.projectId, interest.volunteerId, volunteer.id)
+        await acceptHelperOffers(input.projectId, interest.volunteerId, volunteer.id)
       } else {
         await releaseTasksHeldBy(input.projectId, interest.volunteerId, volunteer.id)
+        await endHelperOffers(input.projectId, interest.volunteerId, InterestStatus.declined)
       }
 
       // A project that already has an owner changes hands only through a transfer.
@@ -2664,9 +2886,18 @@ export const projectsRouter = {
         task.helpersWanted !== null &&
         helpers.length < task.helpersWanted &&
         task.assigneeId !== volunteer.id &&
-        claimViewer.onProject &&
+        (claimViewer.onProject || canClaim) &&
         myHelperRow?.status !== InterestStatus.accepted &&
+        myHelperRow?.status !== InterestStatus.pending &&
         myHelperRow?.status !== InterestStatus.removed
+      // Offers to help from people waiting to join the project, oldest first.
+      const offeredBy = (
+        await prisma.workItemInterest.findMany({
+          where: { workItemId: task.id, status: InterestStatus.pending },
+          include: { volunteer: { select: { name: true } } },
+          orderBy: { id: 'asc' },
+        })
+      ).map((r) => ({ volunteerId: r.volunteerId, name: r.volunteer.name }))
       const canAddHelpers =
         takesHelpers &&
         manages &&
@@ -2695,6 +2926,8 @@ export const projectsRouter = {
         helpers,
         isHelper,
         canJoinAsHelper,
+        offeredBy,
+        hasOffered: myHelperRow?.status === InterestStatus.pending,
         canLeaveAsHelper: takesHelpers && isHelper,
         canRemoveHelpers: takesHelpers && can(viewer, 'task.removeHelper', resource),
         canAddHelpers,
@@ -3036,24 +3269,23 @@ export const projectsRouter = {
           const message = input.message
             ? `Asked to take '${task.title}': ${input.message}`
             : `Asked to take '${task.title}'`
-          const request = {
-            interestType: 'want_to_contribute',
-            message,
-            status: InterestStatus.pending,
-            origin: InterestOrigin.applied,
-            respondedAt: null,
-            responseMessage: null,
-            invitedById: null,
-          }
-          const row = interest
-            ? await prisma.workItemInterest.update({ where: { id: interest.id }, data: request })
-            : await prisma.workItemInterest.create({
-                data: { ...request, volunteerId: volunteer.id, workItemId: input.projectId },
-              })
-          await notifyOwnerOfInterest(project, volunteer, task.title, input.message, row.id)
+          const requestId = await requestToJoin(input.projectId, volunteer.id, interest, message)
+          await notifyOwnerOfInterest(
+            project,
+            volunteer,
+            { taskTitle: task.title, asHelper: false },
+            input.message,
+            requestId,
+          )
           return { message: 'Task requested', requested: true }
         }
       }
+
+      // A manager handing the task to someone not on the project brings them on with it.
+      const bringOn =
+        !isSelfClaim && typeof newAssigneeId === 'number' && newAssigneeId !== task.assigneeId
+          ? await prepareToBringOn(project, newAssigneeId, context.access)
+          : null
 
       const now = new Date()
       const data: Record<string, unknown> = {}
@@ -3117,6 +3349,8 @@ export const projectsRouter = {
       })
       if (data.status === TaskStatus.completed) await askOwnerToComplete(project.id)
       if (typeof data.assigneeId === 'number') await stopHelpingAsLead(task.id, data.assigneeId)
+      await bringOn?.(volunteer.id)
+      if (data.helpersWanted !== undefined) await closeOffersOnFullTask(project.id, task.id)
 
       if (isSelfClaim) {
         const existingInterest = await prisma.workItemInterest.findFirst({
@@ -3460,6 +3694,8 @@ export const projectsRouter = {
         })
       }
 
+      const bringOn = await prepareToBringOn(project, input.assigneeId, context.access)
+
       // Assigning sets who holds it, not how far the work has got: work in flight stays started.
       const now = new Date()
       await updateWorkItem(
@@ -3475,6 +3711,7 @@ export const projectsRouter = {
         { actorId: volunteer.id, extra: deputyContext(isDeputy) },
       )
       await stopHelpingAsLead(task.id, input.assigneeId)
+      await bringOn?.(volunteer.id)
 
       await notifyUser(
         input.assigneeId,

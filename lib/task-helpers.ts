@@ -3,9 +3,10 @@ import { prisma } from './prisma'
 
 /**
  * A task's helpers work beside its assignee, the lead, and are WorkItemInterest rows on the task,
- * the same table that holds a project's members. On a task the row is always this type, and only
- * `accepted` (helping), `withdrawn` (left) and `removed` (taken off) occur: a member joins without
- * being asked or accepted, as they claim a task.
+ * the same table that holds a project's members. On a task the row is always this type: `accepted`
+ * (helping), `withdrawn` (left) and `removed` (taken off). A member joins without being asked or
+ * accepted, as they claim a task; someone not yet on the project offers (`pending`, or `declined`
+ * when turned down or the place filled), see lib/task-offers.ts.
  */
 export const TASK_HELPER = 'want_to_help_task'
 
@@ -35,10 +36,14 @@ export async function taskHelperIds(taskId: number, exceptId: number | null = nu
   return rows.map((r) => r.volunteerId).filter((id) => id !== exceptId)
 }
 
-/** Someone who becomes a task's lead stops being one of its helpers. */
+/** Someone who becomes a task's lead stops being one of its helpers, or offering to be. */
 export async function stopHelpingAsLead(taskId: number, volunteerId: number): Promise<void> {
   await prisma.workItemInterest.updateMany({
-    where: { workItemId: taskId, volunteerId, status: InterestStatus.accepted },
+    where: {
+      workItemId: taskId,
+      volunteerId,
+      status: { in: [InterestStatus.accepted, InterestStatus.pending] },
+    },
     data: { status: InterestStatus.withdrawn, respondedAt: new Date() },
   })
 }

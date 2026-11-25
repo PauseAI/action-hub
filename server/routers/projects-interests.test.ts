@@ -96,7 +96,8 @@ describe('projects.expressInterest / withdrawInterest', () => {
       (await prisma.workItem.findUniqueOrThrow({ where: { id: held.id } })).requestedById,
     ).toBeNull()
 
-    // Offering again after withdrawing reuses the row; an ownerless project notifies nobody.
+    // Offering again after withdrawing reuses the row; an ownerless project notifies nobody,
+    // and the request withdrawn above took its notification with it.
     await c.projects.withdrawInterest({ projectId: proposed.id })
     await c.projects.expressInterest({
       projectId: proposed.id,
@@ -109,7 +110,7 @@ describe('projects.expressInterest / withdrawInterest', () => {
       message: 'I can run it',
     })
     await vi.waitFor(async () =>
-      expect(await prisma.notification.count({ where: { type: 'new_interest' } })).toBe(1),
+      expect(await prisma.notification.count({ where: { type: 'new_interest' } })).toBe(0),
     )
   })
 

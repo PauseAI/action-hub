@@ -193,6 +193,10 @@ const TYPES: Record<string, TypeInfo> = {
   task_helpers_changed: { label: 'Helpers on your task change', default: 'in_app' },
   helper_added: { label: "You're added as a helper on a task", default: 'in_app' },
   helper_removed: { label: "You're removed as a helper on a task", default: 'in_app' },
+  helper_place_filled: {
+    label: 'A helper place you offered for goes to someone else',
+    default: 'in_app',
+  },
   comment_reply: { label: 'Someone replies to your comment', default: 'email' },
   work_item_comment: {
     label: "Someone comments on a project or task you're on",
