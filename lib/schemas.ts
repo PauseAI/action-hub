@@ -227,6 +227,7 @@ export const UpdateProjectSchema = WorkItemSchema.pick({
   outcome: true,
   outcomeNotes: true,
   autoAcceptTasks: true,
+  alwaysAskToJoin: true,
   showTimeline: true,
   deadline: true,
 })

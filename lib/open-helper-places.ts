@@ -81,6 +81,7 @@ export async function openHelperPlaces(
           title: true,
           teamId: true,
           assigneeId: true,
+          alwaysAskToJoin: true,
           assignee: { select: { id: true, name: true } },
         },
       },

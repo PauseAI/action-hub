@@ -50,6 +50,7 @@ import {
 } from '@/lib/task-offers'
 import { taskCounts } from '@/lib/task-list-order'
 import { TASK_OFFER_SENT_MESSAGE } from '@/lib/action-messages'
+import { suggestFastTrack } from '@/lib/fast-track'
 import { loadWorkItemSummaries, toWorkItemSummary } from '@/lib/work-item-summary'
 import {
   notifyUser,
@@ -288,6 +289,52 @@ async function requestToJoin(
 }
 
 /**
+ * Does a volunteer not on the project join it as they take one of its tasks, on fast track
+ * (lib/fast-track.ts)? Not on a project whose owner always asks, nor while their offer to lead
+ * it waits for an answer, which joining as a member would quietly drop.
+ */
+async function joinsOnFastTrack(
+  project: { id: number; alwaysAskToJoin: boolean },
+  volunteerId: number,
+): Promise<boolean> {
+  if (project.alwaysAskToJoin) return false
+  const [volunteer, leadOffer] = await Promise.all([
+    prisma.volunteer.findUnique({ where: { id: volunteerId }, select: { fastTrack: true } }),
+    prisma.workItemInterest.findFirst({
+      where: {
+        workItemId: project.id,
+        volunteerId,
+        status: InterestStatus.pending,
+        interestType: 'want_to_own',
+      },
+      select: { id: true },
+    }),
+  ])
+  return volunteer?.fastTrack === true && leadOffer === null
+}
+
+/** Tells a project's owner and deputies that someone on fast track has started on a task. */
+async function tellOfFastTrackStart(
+  project: { id: number; title: string; assigneeId: number | null },
+  volunteer: { id: number; name: string },
+  task: { id: number; title: string },
+): Promise<void> {
+  const recipients = new Set(await deputyIdsOf(project.id, volunteer.id))
+  if (project.assigneeId !== null) recipients.add(project.assigneeId)
+  for (const to of recipients) {
+    await notifyUser(
+      to,
+      'fast_track_started',
+      `${volunteer.name} (fast track) has started on '${task.title}'`,
+      `They joined '${project.title}' with it.`,
+      `/projects/${project.id}/tasks/${task.id}`,
+      undefined,
+      task.id,
+    )
+  }
+}
+
+/**
  * When a manager puts someone on one of a project's tasks, as its lead or a helper, they join
  * the project too. Throws before anything is written if they cannot; returns what to run once
  * the task is theirs, or null when they are on the project already.
@@ -476,6 +523,8 @@ async function joinTaskAsHelper(
     // Offering answers an invite: they have said yes, once the helper place is theirs.
     onProject = projectRow?.status === InterestStatus.invited
   }
+  const fastTracked = !onProject && (await joinsOnFastTrack(project, volunteer.id))
+  if (fastTracked) onProject = true
   if (task.requestedById === volunteer.id) {
     throw new ORPCError('BAD_REQUEST', { message: "You've already asked to take this task" })
   }
@@ -536,6 +585,11 @@ async function joinTaskAsHelper(
     await clearNotifications('project_invite', projectRow.id)
     await assignHeldTasks(projectId, volunteer.id, volunteer.id)
   }
+  if (fastTracked) {
+    await addToProject(projectId, volunteer.id, message, InterestOrigin.applied)
+    await assignHeldTasks(projectId, volunteer.id, volunteer.id)
+    await tellOfFastTrackStart(project, volunteer, task)
+  }
 
   if (!onProject) {
     const request = await requestToJoin(projectId, volunteer.id, projectRow, message)
@@ -550,12 +604,15 @@ async function joinTaskAsHelper(
   }
 
   await closeOffersOnFullTask(projectId, taskId)
-  await tellLeadAboutHelpers(
-    project,
-    task,
-    volunteer.id,
-    `${volunteer.name} joined '${task.title}' as a helper`,
-  )
+  // On fast track the owner has heard already; only a lead other than the owner hears again.
+  if (!fastTracked || task.assigneeId !== null) {
+    await tellLeadAboutHelpers(
+      project,
+      task,
+      volunteer.id,
+      `${volunteer.name} joined '${task.title}' as a helper`,
+    )
+  }
   return { message: "You're helping on this task", requested: false }
 }
 
@@ -1947,6 +2004,14 @@ export const projectsRouter = {
         }
         data.autoAcceptTasks = body.autoAcceptTasks
       }
+      if (body.alwaysAskToJoin !== undefined && body.alwaysAskToJoin !== project.alwaysAskToJoin) {
+        if (!canReassign) {
+          throw new ORPCError('FORBIDDEN', {
+            message: 'Only the project owner or an admin can change who waits to join',
+          })
+        }
+        data.alwaysAskToJoin = body.alwaysAskToJoin
+      }
       if (body.showTimeline !== undefined && body.showTimeline !== project.showTimeline) {
         if (!canReassign) {
           throw new ORPCError('FORBIDDEN', {
@@ -3277,6 +3342,7 @@ export const projectsRouter = {
         assertCan(viewer, 'project.manage', resource, 'Only the project owner can set the key date')
       }
 
+      let fastTracked = false
       // Anyone who may hand out tasks takes one directly; anyone else claims it.
       if (isSelfClaim && !can(viewer, 'task.assign', resource)) {
         if (await isBlockedFromClaiming(input.projectId, volunteer.id)) {
@@ -3298,6 +3364,9 @@ export const projectsRouter = {
             data: { status: InterestStatus.accepted, respondedAt: new Date() },
           })
           await clearNotifications('project_invite', interest.id)
+        } else if (!resource.standing.member && (await joinsOnFastTrack(project, volunteer.id))) {
+          // On fast track: they take it like a member, and join with it (below).
+          fastTracked = true
         } else if (!resource.standing.member) {
           // Not on the project yet: ask the owner, and hold the task until they answer.
           await prisma.$transaction(async (tx) => {
@@ -3408,7 +3477,16 @@ export const projectsRouter = {
         await closeOffersOnFullTask(project.id, task.id)
       }
 
-      if (isSelfClaim) {
+      if (fastTracked) {
+        await addToProject(
+          input.projectId,
+          volunteer.id,
+          input.message ?? null,
+          InterestOrigin.applied,
+        )
+        await assignHeldTasks(input.projectId, volunteer.id, volunteer.id)
+        await tellOfFastTrackStart(project, volunteer, task)
+      } else if (isSelfClaim) {
         const existingInterest = await prisma.workItemInterest.findFirst({
           where: { workItemId: input.projectId, volunteerId: volunteer.id },
         })
@@ -3503,7 +3581,10 @@ export const projectsRouter = {
       )
       await clearNotifications('task_changes_requested', task.id)
       await closeOffersOnFullTask(project.id, task.id)
-      if (accepted) await askOwnerToComplete(project.id)
+      if (accepted) {
+        await askOwnerToComplete(project.id)
+        await suggestFastTrack(volunteer.id)
+      }
 
       const link = `/projects/${project.id}/tasks/${task.id}`
       const said = submission.submissionNote ?? submission.submissionUrl
@@ -3574,6 +3655,7 @@ export const projectsRouter = {
       )
       await clearNotifications('task_submitted', task.id)
       await askOwnerToComplete(input.projectId)
+      if (task.assigneeId !== null) await suggestFastTrack(task.assigneeId)
       await tellHelpers(task, volunteer.id, 'task_done', `Done: '${task.title}'`, null)
       if (task.assigneeId !== null) {
         await notifyUser(

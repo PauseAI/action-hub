@@ -186,4 +186,37 @@ test.describe('Task helpers', () => {
     await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/tasks/${taskId}$`))
     await expect(page.getByText("You've offered to help.")).toBeVisible({ timeout: 10_000 })
   })
+
+  test('an admin puts a volunteer on fast track, who then starts helping straight away', async ({
+    volunteer,
+    adminPage,
+    baseUrl,
+  }) => {
+    const adminApi = createApiClient(baseUrl, readAdminToken(baseUrl))
+    const projectId = await adminCreateProjectViaApi(
+      baseUrl,
+      fake.projectTitle(),
+      'Fast track e2e project',
+    )
+    const title = fake.quickTaskTitle()
+    const created = await adminApi.projects.createTask({ body: { projectId, title } })
+    const taskId = (created.body as { id: number }).id
+    await adminApi.projects.updateTask({ body: { projectId, taskId, data: { helpersWanted: 1 } } })
+
+    const page = volunteer.page
+    await page.goto(`${baseUrl}/dashboard`)
+    const token = await page.evaluate(() => localStorage.getItem('authToken'))
+    const me = (await createApiClient(baseUrl, token).auth.me()).body as { id: number }
+
+    await adminPage.goto(`${baseUrl}/volunteers/${me.id}`)
+    await adminPage.getByRole('button', { name: `Fast track ${volunteer.name}` }).click()
+    await expect(getAlert(adminPage)).toContainText('On fast track', { timeout: 10_000 })
+    await expect(adminPage.getByRole('button', { name: 'Take off fast track' })).toBeVisible()
+
+    // On fast track the task offers to join straight away rather than to ask.
+    await page.goto(`${baseUrl}/projects/${projectId}/tasks/${taskId}`)
+    await page.getByRole('button', { name: 'Join as helper' }).click()
+    await expect(getAlert(page)).toContainText("You're helping on this task", { timeout: 10_000 })
+    await expect(page.getByRole('button', { name: 'Withdraw from helping' })).toBeVisible()
+  })
 })

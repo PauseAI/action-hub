@@ -586,6 +586,8 @@ model WorkItem {
   isSeekingHelp              Boolean?  @default(false) @map("is_seeking_help")
   // Submitted tasks go straight to Done instead of waiting for the owner to accept them.
   autoAcceptTasks            Boolean   @default(true) @map("auto_accept_tasks")
+  // Everyone not on the project waits for the owner to accept them, fast track or not.
+  alwaysAskToJoin            Boolean   @default(false) @map("always_ask_to_join")
   // Whether the project page offers its Timeline tab; the owner turns it on once there's a plan.
   showTimeline               Boolean   @default(false) @map("show_timeline")
   outcome                    String? // TODO: enum — successful, partial, not_completed, ongoing
@@ -1148,6 +1150,13 @@ model Volunteer {
   contactNotes                            String?                  @map("contact_notes")
   /// Last day the volunteer used the site; written at most once a day.
   lastActiveAt                            DateTime?                @map("last_active_at")
+  /// See lib/fast-track.ts.
+  fastTrack                               Boolean                  @default(false) @map("fast_track")
+  fastTrackSetAt                          DateTime?                @map("fast_track_set_at")
+  fastTrackSetById                        Int?                     @map("fast_track_set_by_id")
+  /// How many tasks submitted and accepted before their chapter's staff are next asked to put
+  /// them on fast track (suggestFastTrack moves it on).
+  fastTrackNextAskAt                      Int                      @default(3) @map("fast_track_next_ask_at")
   availabilityHoursPerWeek                Int?                     @map("availability_hours_per_week")
   location                                String?
   otherSkills                             String?                  @map("other_skills")

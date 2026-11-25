@@ -41,6 +41,7 @@ const HIDDEN_UNLESS_HELD: Role[] = ['staff', 'technical']
 const ROLE_TYPES: Record<Exclude<Role, 'everyone'>, string[]> = {
   project_lead: [
     'new_interest',
+    'fast_track_started',
     'task_submitted',
     'project_ready_to_complete',
     'invite_accepted',
@@ -58,6 +59,7 @@ const ROLE_TYPES: Record<Exclude<Role, 'everyone'>, string[]> = {
     'new_volunteer_signup',
     'new_project_proposal',
     'project_lead_offer',
+    'fast_track_suggested',
     'project_resubmitted',
     'team_suggestion',
     'local_group_suggestion',
@@ -142,6 +144,14 @@ const TYPES: Record<string, TypeInfo> = {
   project_lead_offer: {
     label: 'Someone offers to lead a project',
     default: 'email',
+  },
+  fast_track_suggested: {
+    label: 'A volunteer in your chapter could go on fast track',
+    default: 'in_app',
+  },
+  fast_track_started: {
+    label: 'A volunteer on fast track starts on a task in your project',
+    default: 'in_app',
   },
   team_suggestion: { label: 'Someone suggests a team', default: 'email' },
   local_group_suggestion: {
