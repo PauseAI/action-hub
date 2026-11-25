@@ -15,6 +15,7 @@ import {
 } from '@/test/factories'
 import { renderApp } from '@/test/render'
 import { navigation } from '@/test/next-navigation'
+import { clientAs } from '@/test/rpc'
 import QuickTasksPage from './page'
 
 const row = (id: number) => prisma.workItem.findUniqueOrThrow({ where: { id } })
@@ -625,9 +626,29 @@ describe('requests for help', () => {
     expect(card.getByText('Asked by Pat Pool')).toBeInTheDocument()
     cleanup()
 
-    // Chapter staff run quick tasks here, and ask for help too.
+    // Chapter staff run quick tasks here, and ask for help and find their requests too.
+    const staffAsk = await clientAs(lead).requests.ask({ title: 'Staff asks' })
     await renderApp(<QuickTasksPage />, { as: lead })
     expect(await screen.findByRole('button', { name: '+ Ask for help' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Create task' })).toBeInTheDocument()
+    const staffMine = (
+      await screen.findByRole('heading', { name: 'Your requests for help' })
+    ).closest('section')!
+    expect(within(staffMine).getByRole('link', { name: 'Staff asks' })).toHaveAttribute(
+      'href',
+      `/projects/${staffAsk.projectId}/tasks/${staffAsk.id}`,
+    )
+  })
+
+  it('opens on Open once every request asked for is done', async () => {
+    const chapter = await createChapter()
+    const asker = await createMember(chapter)
+    const done = await clientAs(asker).requests.ask({ title: 'Long done' })
+    await prisma.workItem.update({ where: { id: done.id }, data: { status: 'completed' } })
+    await renderApp(<QuickTasksPage />, { as: asker })
+    expect(await screen.findByRole('heading', { name: 'Browse quick tasks' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Mine' })).toHaveAttribute('aria-selected', 'false')
+    await userEvent.click(screen.getByRole('tab', { name: 'Mine' }))
+    expect(await screen.findByText('Long done')).toBeInTheDocument()
   })
 })

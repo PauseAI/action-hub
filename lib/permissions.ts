@@ -77,8 +77,11 @@ export const PERMISSIONS = {
   },
   'task.manage': {
     scope: 'project',
-    summary:
-      'Edit, reorder, link and reschedule its tasks, review and reopen them, add helpers, and see a hidden timeline',
+    summary: 'Edit, reorder, link and reschedule its tasks, add helpers, and see a hidden timeline',
+  },
+  'task.review': {
+    scope: 'task',
+    summary: 'Accept the work handed in on it, ask for changes, or reopen it once done',
   },
   'task.assign': {
     scope: 'project',
@@ -115,6 +118,7 @@ const PROJECT_ADMIN: readonly Permission[] = [
   'task.create',
   'task.answerRequests',
   'task.manage',
+  'task.review',
   'task.assign',
   'task.delete',
   'task.removeHelper',
@@ -161,6 +165,7 @@ export const ROLES = {
       'task.create',
       'task.answerRequests',
       'task.manage',
+      'task.review',
       'task.assign',
       'task.delete',
       'task.removeHelper',
@@ -178,6 +183,7 @@ export const ROLES = {
       'project.seeChangeRequests',
       'task.create',
       'task.manage',
+      'task.review',
       'task.delete',
       'task.removeHelper',
     ],
@@ -196,6 +202,7 @@ export const ROLES = {
       'task.create',
       'task.answerRequests',
       'task.manage',
+      'task.review',
       'task.assign',
       'task.delete',
       'task.removeHelper',
@@ -223,7 +230,7 @@ export const ROLES = {
     scope: 'task',
     name: 'Requester',
     heldBy: 'Whoever asked for help, on their request in a Requests for help project',
-    grants: ['task.manage', 'task.delete', 'task.removeHelper'],
+    grants: ['task.review', 'task.delete', 'task.removeHelper'],
   },
 } as const satisfies Record<string, RoleInfo>
 

@@ -8,6 +8,7 @@ import {
   createVolunteer,
 } from '@/test/factories'
 import { clientAs } from '@/test/rpc'
+import { worksWith } from '@/lib/contact'
 
 const notes = (volunteerId: number, type: string) =>
   prisma.notification.findMany({ where: { volunteerId, type }, orderBy: { id: 'asc' } })
@@ -120,6 +121,12 @@ describe('asking for help', () => {
     await expect(clientAs(lead).projects.delete({ id: posted.projectId })).rejects.toMatchObject({
       message: 'Requests for help cannot be deleted',
     })
+    await expect(
+      clientAs(lead).admin.projects.setOutcome({ id: posted.projectId, outcome: 'successful' }),
+    ).rejects.toMatchObject({ message: 'Requests for help never finish' })
+    await expect(
+      clientAs(lead).admin.projects.review({ id: posted.projectId, status: 'approved' }),
+    ).rejects.toMatchObject({ message: 'Requests for help never finish' })
   })
 })
 
@@ -177,6 +184,26 @@ describe('taking a request', () => {
   })
 })
 
+describe('who a request puts in touch', () => {
+  it('is whoever asked and whoever took it, not everyone else who took a request there', async () => {
+    const { chapter, asker, taker } = await chapterWithPeople()
+    const other = await createMember(chapter)
+    const take = async (who: { id: number }, title: string) => {
+      const posted = await ask(asker, title)
+      await clientAs(who as never).projects.updateTask({
+        projectId: posted.projectId,
+        taskId: posted.id,
+        data: { assigneeId: who.id },
+      })
+    }
+    await take(taker, 'First')
+    await take(other, 'Second')
+    expect(await worksWith(asker.id, taker.id)).toBe(true)
+    expect(await worksWith(taker.id, asker.id)).toBe(true)
+    expect(await worksWith(taker.id, other.id)).toBe(false)
+  })
+})
+
 describe('reviewing a request', () => {
   async function handedIn() {
     const people = await chapterWithPeople()
@@ -206,6 +233,22 @@ describe('reviewing a request', () => {
       status: 'completed',
       reviewedById: asker.id,
     })
+    await clientAs(asker).projects.reopenTask(ids)
+    expect((await prisma.workItem.findUniqueOrThrow({ where: { id: ids.taskId } })).status).toBe(
+      'in_progress',
+    )
+  })
+
+  it('gives whoever asked the review, and nothing else that runs the project', async () => {
+    const { chapter, asker, taker, ids } = await handedIn()
+    const task = await clientAs(asker).projects.getTask(ids)
+    expect(task).toMatchObject({ canReview: true, canManage: false })
+    expect(task.projectPeople.flatMap((g) => g.people)).toEqual([])
+    const someone = await createMember(chapter)
+    await expect(
+      clientAs(asker).projects.updateTask({ ...ids, data: { assigneeId: someone.id } }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' })
+    expect((await clientAs(taker).projects.getTask(ids)).canReview).toBe(false)
   })
 
   it("can be done by the chapter's staff instead", async () => {

@@ -1,3 +1,4 @@
+import { ORPCError } from '@orpc/server'
 import type { Prisma } from '@/generated/prisma/client'
 import { ProjectStatus, WorkItemType } from '@/generated/prisma/enums'
 
@@ -13,6 +14,13 @@ export const GLOBAL_REQUESTS_TITLE = 'Global requests'
 
 export function requestsProjectTitle(chapter: { name: string } | null): string {
   return chapter ? `Requests for help: ${chapter.name}` : GLOBAL_REQUESTS_TITLE
+}
+
+/** Refuses to finish, reopen or review a standing project, which never changes status. */
+export function assertNotStanding(project: { standingRequests: boolean }): void {
+  if (project.standingRequests) {
+    throw new ORPCError('BAD_REQUEST', { message: 'Requests for help never finish' })
+  }
 }
 
 /** Leaves standing projects out of a project query. */

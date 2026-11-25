@@ -95,8 +95,9 @@ describe('rolesOn', () => {
       task: { assigneeId: null, creatorId },
     })
     expect(rolesOn(volunteer(5), request(5))).toEqual(['requester'])
-    expect(can(volunteer(5), 'task.manage', request(5))).toBe(true)
-    expect(can(volunteer(5), 'task.manage', request(6))).toBe(false)
+    expect(can(volunteer(5), 'task.review', request(5))).toBe(true)
+    expect(can(volunteer(5), 'task.review', request(6))).toBe(false)
+    expect(can(volunteer(5), 'task.manage', request(5))).toBe(false)
     expect(can(volunteer(5), 'task.assign', request(5))).toBe(false)
   })
 })

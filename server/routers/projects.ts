@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { ORPCError } from '@orpc/server'
 import { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
+import { assertNotStanding } from '@/lib/requests'
 import {
   withProjectExtras,
   projectInclude,
@@ -828,7 +829,6 @@ async function addTaskHelper(
   return { message: `${target.name} is now helping on this task` }
 }
 
-/** A submitted task the volunteer may accept or send back: the project's owner, a deputy or an admin. */
 /** Who reviews the work handed in on a task: on a request, whoever asked; else the owner. */
 function reviewerOf(
   project: { standingRequests: boolean; assigneeId: number | null },
@@ -837,6 +837,10 @@ function reviewerOf(
   return project.standingRequests ? task.creatorId : project.assigneeId
 }
 
+/**
+ * A submitted task the volunteer may accept or send back: the project's owner, a deputy or an
+ * admin, and on a request whoever asked.
+ */
 async function findTaskToReview(
   projectId: number,
   taskId: number,
@@ -847,7 +851,7 @@ async function findTaskToReview(
   const resource = await taskResource(found.project, found.task, volunteer.id)
   assertCan(
     { id: volunteer.id, access },
-    'task.manage',
+    'task.review',
     resource,
     found.project.standingRequests
       ? 'Only whoever asked for help, or chapter staff, can review this request'
@@ -1914,9 +1918,7 @@ export const projectsRouter = {
       }
       const body: typeof input = locked ? { id: input.id, status: input.status } : input
       const newStatus = body.status
-      if (project.standingRequests && newStatus !== undefined && newStatus !== project.status) {
-        throw new ORPCError('BAD_REQUEST', { message: 'Requests for help never finish' })
-      }
+      if (newStatus !== undefined && newStatus !== project.status) assertNotStanding(project)
       const reopening = locked && !isProjectLocked({ status: newStatus as string })
 
       // Until an admin has triaged it, a proposal's status is the admins' to change; the
@@ -3108,6 +3110,7 @@ export const projectsRouter = {
         canClaim,
         claimViewer,
         canManage: !locked && manages,
+        canReview: !locked && can(viewer, 'task.review', resource),
         assignedToName: task.assignee?.name ?? null,
         assigneeContactable:
           task.assigneeId !== null && (await canReach(volunteer, context.access, task.assigneeId)),
@@ -3615,7 +3618,7 @@ export const projectsRouter = {
       const reviewerId = reviewerOf(project, task)
       const accepted = !awaitsOwnerReview(
         { autoAcceptTasks: project.autoAcceptTasks, ownerId: reviewerId },
-        can(viewer, 'task.manage', resource),
+        can(viewer, 'task.review', resource),
       )
       await updateWorkItem(
         task,
@@ -3777,10 +3780,10 @@ export const projectsRouter = {
     .handler(async ({ input, context }) => {
       const volunteer = context.volunteer
       const { project, task } = await findProjectTask(input.projectId, input.taskId)
-      const resource = await projectResource(project, volunteer.id)
+      const resource = await taskResource(project, task, volunteer.id)
       assertCan(
         viewerOf(context),
-        'task.manage',
+        'task.review',
         resource,
         'Only the project owner, a deputy or an admin can reopen a task',
       )

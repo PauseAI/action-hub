@@ -301,7 +301,7 @@ export default function TaskDetailPage({
     task.assignedToId === user.id &&
     task.status === TaskStatus.not_started
   // Whoever sees Accept on work in review is the one it waits on.
-  const viewer = { isAssignee: task.assignedToId === user.id, canReview: task.canManage }
+  const viewer = { isAssignee: task.assignedToId === user.id, canReview: task.canReview }
 
   return (
     <main className="container py-5 pb-15">
@@ -443,7 +443,7 @@ export default function TaskDetailPage({
                   Edit
                 </Button>
               )}
-              {isDone && task.canManage && (
+              {isDone && task.canReview && (
                 <Button variant="secondary" size="sm" onClick={() => setReopening(true)}>
                   Reopen
                 </Button>
@@ -590,7 +590,7 @@ export default function TaskDetailPage({
 
         <SubmittedWork submission={task.submission} changesRequested={task.changesRequested} />
 
-        {task.status === TaskStatus.under_review && task.canManage && (
+        {task.status === TaskStatus.under_review && task.canReview && (
           <div className="flex flex-wrap gap-2 mt-4">
             <Button
               disabled={acceptMutation.isPending}
@@ -612,7 +612,7 @@ export default function TaskDetailPage({
             reviewer={
               awaitsOwnerReview(
                 { autoAcceptTasks: task.autoAcceptTasks, ownerId: task.reviewerId },
-                task.canManage,
+                task.canReview,
               )
                 ? task.isRequest
                   ? (task.createdByName ?? 'Whoever asked')

@@ -42,6 +42,8 @@ import {
 import { askingFor, offeredSummary } from '@/lib/helper-summary'
 import type { WorkViewer } from '@/lib/status-emphasis'
 import { orpc } from '@/lib/orpc'
+import type { InferRouterOutputs } from '@orpc/server'
+import type { AppRouter } from '@/server/router'
 import { useToast } from '@/lib/toast'
 import { formatDate, fromDateInputValue, toDateInputValue } from '@/lib/format-date'
 import { DueChip, WorkStatusBadge } from '@/components/StatusBadges'
@@ -217,7 +219,9 @@ function VolunteerQuickTasksView({ user }: { user: ApprovedUser }) {
   }
 
   const { data: myRequests = [] } = useQuery({ ...orpc.requests.mine.queryOptions() })
-  const mineCount = tasks.length + myRequests.length
+  // Requests already done stay listed, but don't count as something on your plate.
+  const mineCount =
+    tasks.length + myRequests.filter((r) => r.status !== TaskStatus.completed).length
 
   // Opens on my own tasks or requests when there are any; a claim moves me there to see it land.
   const [chosenTab, setChosenTab] = useState<'mine' | 'open' | null>(null)
@@ -363,40 +367,7 @@ function VolunteerQuickTasksView({ user }: { user: ApprovedUser }) {
         )}
 
         {tab === 'mine' && myRequests.length > 0 && (
-          <section aria-labelledby="my-requests" className={tasks.length > 0 ? 'mt-8' : ''}>
-            <H2 id="my-requests" className="mt-0">
-              Your requests for help
-            </H2>
-            {myRequests.map((r) => (
-              <QuickTaskCard
-                key={`my-request-${r.id}`}
-                title={r.title}
-                titleHref={`/projects/${r.projectId}/tasks/${r.id}`}
-                status={r.status}
-                viewer={ASKER}
-                description={r.description}
-                meta={[
-                  <span key="taken" className="text-text-light text-sm">
-                    {r.takenBy ? `Taken by ${r.takenBy.name}` : 'Nobody has taken it yet'}
-                  </span>,
-                  r.global && (
-                    <span key="global" className={SKILL_CHIP_CLASSES}>
-                      Every chapter
-                    </span>
-                  ),
-                  r.deadline && (
-                    <DueChip
-                      key="deadline"
-                      deadline={r.deadline}
-                      done={handedIn(r.status)}
-                      viewer={ASKER}
-                      className="text-sm"
-                    />
-                  ),
-                ]}
-              />
-            ))}
-          </section>
+          <MyRequests requests={myRequests} className={tasks.length > 0 ? 'mt-8' : ''} />
         )}
 
         {tab === 'open' && (
@@ -635,7 +606,50 @@ function VolunteerQuickTasksView({ user }: { user: ApprovedUser }) {
   )
 }
 
+type MyRequest = InferRouterOutputs<AppRouter>['requests']['mine'][number]
+
+/** The requests for help the viewer has asked for, and who has taken each. */
+function MyRequests({ requests, className }: { requests: MyRequest[]; className: string }) {
+  return (
+    <section aria-labelledby="my-requests" className={className}>
+      <H2 id="my-requests" className="mt-0">
+        Your requests for help
+      </H2>
+      {requests.map((r) => (
+        <QuickTaskCard
+          key={`my-request-${r.id}`}
+          title={r.title}
+          titleHref={`/projects/${r.projectId}/tasks/${r.id}`}
+          status={r.status}
+          viewer={ASKER}
+          description={r.description}
+          meta={[
+            <span key="taken" className="text-text-light text-sm">
+              {r.takenBy ? `Taken by ${r.takenBy.name}` : 'Nobody has taken it yet'}
+            </span>,
+            r.global && (
+              <span key="global" className={SKILL_CHIP_CLASSES}>
+                Every chapter
+              </span>
+            ),
+            r.deadline && (
+              <DueChip
+                key="deadline"
+                deadline={r.deadline}
+                done={handedIn(r.status)}
+                viewer={ASKER}
+                className="text-sm"
+              />
+            ),
+          ]}
+        />
+      ))}
+    </section>
+  )
+}
+
 function AdminQuickTasksView({ user }: { user: ApprovedUser }) {
+  const { data: myRequests = [] } = useQuery({ ...orpc.requests.mine.queryOptions() })
   const queryClient = useQueryClient()
   const {
     value: statusFilter,
@@ -902,6 +916,8 @@ function AdminQuickTasksView({ user }: { user: ApprovedUser }) {
         <P className="text-text-light mb-6">
           Small, self-contained tasks to help you get started and make an impact quickly.
         </P>
+
+        {myRequests.length > 0 && <MyRequests requests={myRequests} className="mb-8" />}
 
         <div className="mb-6 max-w-[240px]">
           <FilterDropdown
