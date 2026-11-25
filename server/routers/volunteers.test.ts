@@ -12,8 +12,10 @@ import {
   createChapterDeputy,
   createChapterLead,
   createMember,
+  createCoordinator,
 } from '@/test/factories'
 import { clientAs } from '@/test/rpc'
+import { withoutAdminRights } from '@/lib/view-as'
 import type { InterestStatus } from '@/generated/prisma/enums'
 
 describe('volunteers.list', () => {
@@ -438,14 +440,14 @@ describe('volunteers.updateMe', () => {
   })
 })
 
-describe('volunteers.getById deputy', () => {
+describe('volunteers.getById manage.chapterDeputy', () => {
   it("offers a chapter's lead and global admins the deputy control, and nobody else", async () => {
     const chapter = await createChapter()
     const lead = await createChapterLead(chapter)
     const member = await createMember(chapter, { consentMakeProfileVisibleInDirectory: true })
     const deputy = await createChapterDeputy(chapter)
     const control = async (viewer: Parameters<typeof clientAs>[0], id: number) =>
-      (await clientAs(viewer).volunteers.getById({ id })).deputy
+      (await clientAs(viewer).volunteers.getById({ id })).manage?.chapterDeputy ?? null
 
     expect(await control(lead, member.id)).toEqual({ chapterId: chapter.id, isDeputy: false })
     expect(await control(lead, deputy.id)).toEqual({ chapterId: chapter.id, isDeputy: true })
@@ -469,13 +471,115 @@ describe('volunteers.getById deputy', () => {
     const lead = await createChapterLead(chapter)
     const original = await createMember(chapter)
     const duplicate = await createMember(chapter, { duplicateOfId: original.id })
-    expect((await clientAs(lead).volunteers.getById({ id: duplicate.id })).deputy).toBeNull()
+    expect(
+      (await clientAs(lead).volunteers.getById({ id: duplicate.id })).manage?.chapterDeputy,
+    ).toBeNull()
     await prisma.chapterDeputy.create({
       data: { nationalChapterId: chapter.id, volunteerId: duplicate.id },
     })
-    expect((await clientAs(lead).volunteers.getById({ id: duplicate.id })).deputy).toEqual({
+    expect(
+      (await clientAs(lead).volunteers.getById({ id: duplicate.id })).manage?.chapterDeputy,
+    ).toEqual({
       chapterId: chapter.id,
       isDeputy: true,
+    })
+  })
+})
+
+describe('volunteers.getById manage', () => {
+  const manageOf = async (viewer: Parameters<typeof clientAs>[0], id: number) =>
+    (await clientAs(viewer).volunteers.getById({ id })).manage
+
+  it('is offered to nobody who cannot run the member, nor to anyone on their own profile', async () => {
+    const chapter = await createChapter()
+    const member = await createMember(chapter, { consentMakeProfileVisibleInDirectory: true })
+    const other = await createChapter()
+    const lead = await createChapterLead(chapter)
+
+    expect(await manageOf(await createMember(chapter), member.id)).toBeNull()
+    expect(await manageOf(await createCoordinator(chapter), member.id)).toBeNull()
+    expect(await manageOf(await createCoordinator(), member.id)).toBeNull()
+    // Another chapter's staff do not see the member at all.
+    await expect(manageOf(await createChapterLead(other), member.id)).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    })
+    expect(await manageOf(lead, lead.id)).toBeNull()
+    const admin = await createAdmin()
+    expect(await manageOf(admin, admin.id)).toBeNull()
+    // Viewing as a volunteer takes it away.
+    const chapterAdmin = await createAdmin({
+      nationalChapterId: chapter.id,
+      country: chapter.country,
+    })
+    expect(await manageOf(chapterAdmin, member.id)).not.toBeNull()
+    const asVolunteer = await clientAs(withoutAdminRights(chapterAdmin), {
+      viewingAsVolunteer: true,
+    }).volunteers.getById({ id: member.id })
+    expect(asVolunteer.manage).toBeNull()
+  })
+
+  it("gives a chapter's deputy only the account controls, and its lead the deputy control too", async () => {
+    const chapter = await createChapter()
+    const member = await createMember(chapter)
+    const noRoles = { chapterDeputy: null, chapterLead: null, coordinator: null, moveChapter: null }
+    expect(await manageOf(await createChapterDeputy(chapter), member.id)).toEqual(noRoles)
+    expect(await manageOf(await createChapterLead(chapter), member.id)).toEqual({
+      ...noRoles,
+      chapterDeputy: { chapterId: chapter.id, isDeputy: false },
+    })
+  })
+
+  it('gives a global admin the lead, coordinator and move controls', async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter, { name: 'Current Lead' })
+    const member = await createMember(chapter)
+    const admin = await createAdmin()
+
+    expect(await manageOf(admin, member.id)).toEqual({
+      chapterDeputy: { chapterId: chapter.id, isDeputy: false },
+      chapterLead: {
+        chapterId: chapter.id,
+        isLead: false,
+        currentLead: { id: lead.id, name: 'Current Lead' },
+      },
+      coordinator: { isCoordinator: false, remit: null },
+      moveChapter: { chapterId: chapter.id },
+    })
+    expect(await manageOf(admin, lead.id)).toMatchObject({
+      chapterDeputy: null,
+      chapterLead: { chapterId: chapter.id, isLead: true, currentLead: null },
+    })
+    const coordinator = await createCoordinator(chapter)
+    expect((await manageOf(admin, coordinator.id))?.coordinator).toEqual({
+      isCoordinator: true,
+      remit: 'Media',
+    })
+  })
+
+  it('offers no role a member cannot take, but still lets one be taken away', async () => {
+    const chapter = await createChapter()
+    await createChapterLead(chapter)
+    const admin = await createAdmin()
+    const original = await createMember(chapter)
+    const duplicate = await createMember(chapter, { duplicateOfId: original.id })
+    expect(await manageOf(admin, duplicate.id)).toMatchObject({
+      chapterDeputy: null,
+      chapterLead: null,
+      coordinator: null,
+    })
+    const unconfirmed = await createMember(chapter, { emailConfirmed: false })
+    expect((await manageOf(admin, unconfirmed.id))?.coordinator).toBeNull()
+    const leadless = await createChapter()
+    const coordinating = await createCoordinator(leadless, { duplicateOfId: original.id })
+    expect(await manageOf(admin, coordinating.id)).toMatchObject({
+      chapterLead: null,
+      coordinator: { isCoordinator: true },
+    })
+    const pooled = await createVolunteer()
+    expect(await manageOf(admin, pooled.id)).toMatchObject({
+      chapterDeputy: null,
+      chapterLead: null,
+      moveChapter: { chapterId: null },
     })
   })
 })

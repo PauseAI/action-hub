@@ -72,7 +72,7 @@ test.describe('National chapters', () => {
     await adminPage.goto(`${baseUrl}/volunteers/${second.id}`)
     await expect(adminPage.getByText(second.email)).toBeVisible({ timeout: 10_000 })
     await snap(adminPage, 'profile as a global admin')
-    await adminPage.getByRole('link', { name: 'Admin page' }).click()
+    await adminPage.getByRole('link', { name: 'Admin record' }).click()
     await expect(adminPage.getByRole('heading', { name: 'Duplicate accounts' })).toBeVisible({
       timeout: 10_000,
     })
@@ -175,6 +175,50 @@ test.describe('National chapters', () => {
       await expect(
         page.getByRole('button', { name: `Remove ${member.name} as deputy` }),
       ).toBeVisible({ timeout: 10_000 })
+    } finally {
+      await page.context().close()
+    }
+  })
+
+  test("A global admin makes a member the chapter's lead from the member's profile", async ({
+    adminPage,
+    baseUrl,
+    snap,
+  }) => {
+    await ensureChapter(baseUrl, COUNTRY)
+    const member = await createApprovedVolunteer(baseUrl, { country: COUNTRY })
+
+    await adminPage.goto(`${baseUrl}/volunteers/${member.id}`)
+    const panel = adminPage.getByRole('region', { name: 'Manage' })
+    await expect(panel.getByRole('link', { name: 'Admin record' })).toBeVisible({
+      timeout: 10_000,
+    })
+    await snap(adminPage, 'manage panel as a global admin')
+    await panel.getByRole('button', { name: 'Make chapter lead' }).click()
+    const dialog = adminPage.getByRole('dialog', {
+      name: `Make ${member.name} lead of the Germany chapter?`,
+    })
+    await dialog.getByRole('button', { name: 'Make chapter lead' }).click()
+    await expect(getAlert(adminPage)).toContainText(`${member.name} now leads the chapter`, {
+      timeout: 10_000,
+    })
+    await expect(panel.getByRole('button', { name: 'Remove as chapter lead' })).toBeVisible()
+  })
+
+  test("A member sees no Manage panel on a fellow member's profile", async ({
+    browser,
+    baseUrl,
+  }) => {
+    await ensureChapter(baseUrl, COUNTRY)
+    const member = await createApprovedVolunteer(baseUrl, { country: COUNTRY })
+    const other = await createApprovedVolunteer(baseUrl, { country: COUNTRY })
+    const page = await signedInPage(browser, other.token)
+    try {
+      await page.goto(`${baseUrl}/volunteers/${member.id}`)
+      await expect(page.getByRole('heading', { name: member.name })).toBeVisible({
+        timeout: 10_000,
+      })
+      await expect(page.getByRole('region', { name: 'Manage' })).toHaveCount(0)
     } finally {
       await page.context().close()
     }

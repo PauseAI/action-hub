@@ -1,6 +1,6 @@
 'use client'
 
-import { use, useState } from 'react'
+import { use } from 'react'
 import { useRequireAuth } from '@/lib/hooks/auth'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
@@ -20,114 +20,7 @@ import TextLink from '@/components/TextLink'
 import PersonName, { RoleBadge } from '@/components/PersonName'
 import { usePerson } from '@/lib/hooks/usePerson'
 import Avatar from '@/components/Avatar'
-import ConfirmDialog from '@/components/ui/ConfirmDialog'
-
-/** Staff take down a picture that should not be shown; the volunteer is left with initials. */
-function RemovePicture({ volunteerId, name }: { volunteerId: number; name: string }) {
-  const [open, setOpen] = useState(false)
-  const showToast = useToast()
-  const queryClient = useQueryClient()
-  const remove = useMutation({
-    ...orpc.profilePictures.removeFor.mutationOptions(),
-    onSuccess: () => {
-      setOpen(false)
-      showToast('Picture removed', 'success')
-      void queryClient.invalidateQueries({ queryKey: ['person'] })
-    },
-    onError: (err: unknown) => {
-      showToast(err instanceof Error ? err.message : 'Failed to remove the picture', 'error')
-      // Someone else may have taken it down first; show the profile as it now is.
-      setOpen(false)
-      void queryClient.invalidateQueries({ queryKey: ['person'] })
-    },
-  })
-  return (
-    <>
-      <Button variant="danger" size="sm" className="mt-2" onClick={() => setOpen(true)}>
-        Remove picture
-      </Button>
-      <ConfirmDialog
-        id="remove-picture-dialog"
-        isOpen={open}
-        title="Remove profile picture?"
-        body={`${name} will be shown with their initials, and told their picture was taken down. They can upload another.`}
-        confirmLabel="Remove picture"
-        danger
-        busy={remove.isPending}
-        busyLabel="Removing…"
-        onConfirm={() => remove.mutate({ volunteerId })}
-        onClose={() => setOpen(false)}
-      />
-    </>
-  )
-}
-
-/** A chapter lead makes one of their members a deputy, or stands a deputy down. */
-function DeputyControl({
-  volunteerId,
-  name,
-  chapterName,
-  deputy,
-}: {
-  volunteerId: number
-  name: string
-  chapterName: string
-  deputy: { chapterId: number; isDeputy: boolean }
-}) {
-  const [open, setOpen] = useState(false)
-  const showToast = useToast()
-  const queryClient = useQueryClient()
-  // Refetched either way: a refusal usually means someone else changed it first.
-  const refresh = () => {
-    setOpen(false)
-    void queryClient.invalidateQueries({ queryKey: orpc.volunteers.getById.key() })
-    void queryClient.invalidateQueries({ queryKey: orpc.admin.chapters.key() })
-    void queryClient.invalidateQueries({ queryKey: ['person'] })
-  }
-  const options = {
-    onSuccess: ({ message }: { message: string }) => {
-      refresh()
-      showToast(message, 'success')
-    },
-    onError: (err: unknown) => {
-      refresh()
-      showToast(err instanceof Error ? err.message : 'Failed to save', 'error')
-    },
-  }
-  const appoint = useMutation({
-    ...orpc.admin.chapters.appointDeputy.mutationOptions(),
-    ...options,
-  })
-  const remove = useMutation({ ...orpc.admin.chapters.removeDeputy.mutationOptions(), ...options })
-  const input = { chapterId: deputy.chapterId, volunteerId }
-  const label = deputy.isDeputy ? 'Remove as chapter deputy' : 'Make chapter deputy'
-  return (
-    <>
-      <Button variant="secondary" size="sm" className="mt-2" onClick={() => setOpen(true)}>
-        {label}
-      </Button>
-      <ConfirmDialog
-        id="deputy-dialog"
-        isOpen={open}
-        title={
-          deputy.isDeputy
-            ? `Remove ${name} as a ${chapterName} chapter deputy?`
-            : `Make ${name} a ${chapterName} chapter deputy?`
-        }
-        body={
-          deputy.isDeputy
-            ? `${name} stays a member of the ${chapterName} chapter, without a deputy's admin access.`
-            : `Deputies help run the ${chapterName} chapter, with admin access to its members and projects. You can remove them at any time.`
-        }
-        confirmLabel={label}
-        busy={appoint.isPending || remove.isPending}
-        busyLabel="Saving…"
-        onConfirm={() => (deputy.isDeputy ? remove : appoint).mutate(input)}
-        onClose={() => setOpen(false)}
-      />
-    </>
-  )
-}
+import MemberManage from '@/components/MemberManage'
 
 export default function VolunteerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -243,17 +136,6 @@ export default function VolunteerDetailPage({ params }: { params: Promise<{ id: 
                   <RoleBadge person={person} className="ml-2" />
                   {volunteer.activeRecently && <ActiveDot />}
                 </div>
-                {volunteer.canRemovePicture && person?.picture && (
-                  <RemovePicture volunteerId={volunteer.id} name={volunteer.name} />
-                )}
-                {volunteer.deputy && volunteer.chapter && (
-                  <DeputyControl
-                    volunteerId={volunteer.id}
-                    name={volunteer.name}
-                    chapterName={volunteer.chapter.name}
-                    deputy={volunteer.deputy}
-                  />
-                )}
               </div>
               {isMe && (
                 <Button
@@ -267,21 +149,10 @@ export default function VolunteerDetailPage({ params }: { params: Promise<{ id: 
               )}
             </div>
 
-            {user.access.globalAdmin && (
+            {volunteer.duplicateOf && (
               <P className="text-sm mt-0 mb-2">
-                {volunteer.duplicateOf && (
-                  <>
-                    Duplicate account of{' '}
-                    <PersonName id={volunteer.duplicateOf.id} name={volunteer.duplicateOf.name} />
-                    {' · '}
-                  </>
-                )}
-                <Link
-                  className="text-primary-text underline"
-                  href={`/admin/volunteers/${volunteer.id}`}
-                >
-                  Admin page
-                </Link>
+                Duplicate account of{' '}
+                <PersonName id={volunteer.duplicateOf.id} name={volunteer.duplicateOf.name} />
               </P>
             )}
 
@@ -379,6 +250,18 @@ export default function VolunteerDetailPage({ params }: { params: Promise<{ id: 
               )}
             </div>
           </div>
+
+          {volunteer.manage && (
+            <MemberManage
+              member={{
+                id: volunteer.id,
+                name: volunteer.name,
+                chapterName: volunteer.chapter?.name ?? null,
+              }}
+              manage={volunteer.manage}
+              hasPicture={Boolean(person?.picture)}
+            />
+          )}
 
           {endorsements.length > 0 && (
             <div

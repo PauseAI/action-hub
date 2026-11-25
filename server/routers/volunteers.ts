@@ -28,26 +28,61 @@ import {
 } from '@/generated/prisma/enums'
 
 /**
- * Whether the viewer may make this person a deputy of their chapter, or stand them down: a chapter
- * lead for their own members, or a global admin. Null when neither applies.
+ * What the viewer may do to this member from their profile, each key present only when they may;
+ * null when nothing. The endpoints each control calls check again. A chapter's staff (or a global
+ * admin) see it for the members they run, never for themselves.
  */
-async function deputyControl(
+async function manageControls(
   viewerId: number,
   access: ChapterAccess,
-  vol: { id: number; nationalChapterId: number | null; duplicateOfId: number | null },
-): Promise<{ chapterId: number; isDeputy: boolean } | null> {
+  vol: {
+    id: number
+    nationalChapterId: number | null
+    duplicateOfId: number | null
+    approvalStatus: ApprovalStatus | null
+    emailConfirmed: boolean | null
+  },
+) {
   const chapterId = vol.nationalChapterId
-  if (vol.id === viewerId || chapterId === null || !canAppointDeputies(access, chapterId)) {
-    return null
+  if (vol.id === viewerId || !canAdminChapter(access, chapterId)) return null
+  const [chapter, coordinator] = await Promise.all([
+    chapterId === null
+      ? null
+      : prisma.nationalChapter.findUniqueOrThrow({
+          where: { id: chapterId },
+          select: {
+            lead: { select: { id: true, name: true } },
+            deputies: { where: { volunteerId: vol.id }, select: { id: true } },
+          },
+        }),
+    access.globalAdmin
+      ? prisma.coordinator.findUnique({ where: { volunteerId: vol.id }, select: { remit: true } })
+      : null,
+  ])
+  const isLead = chapter?.lead?.id === vol.id
+  const isDeputy = Boolean(chapter?.deputies.length)
+  const duplicate = vol.duplicateOfId !== null
+  const canCoordinate =
+    !duplicate && vol.approvalStatus === ApprovalStatus.approved && Boolean(vol.emailConfirmed)
+
+  return {
+    chapterDeputy:
+      chapterId !== null &&
+      canAppointDeputies(access, chapterId) &&
+      !isLead &&
+      (isDeputy || !duplicate)
+        ? { chapterId, isDeputy }
+        : null,
+    chapterLead:
+      chapterId !== null && access.globalAdmin && (isLead || !duplicate)
+        ? { chapterId, isLead, currentLead: isLead ? null : (chapter?.lead ?? null) }
+        : null,
+    coordinator:
+      access.globalAdmin && (coordinator || canCoordinate)
+        ? { isCoordinator: Boolean(coordinator), remit: coordinator?.remit ?? null }
+        : null,
+    moveChapter: access.globalAdmin ? { chapterId } : null,
   }
-  const chapter = await prisma.nationalChapter.findUniqueOrThrow({
-    where: { id: chapterId },
-    select: { leadId: true, deputies: { where: { volunteerId: vol.id }, select: { id: true } } },
-  })
-  if (chapter.leadId === vol.id) return null
-  const isDeputy = chapter.deputies.length > 0
-  if (!isDeputy && vol.duplicateOfId !== null) return null
-  return { chapterId, isDeputy }
 }
 
 export const volunteersRouter = {
@@ -228,7 +263,7 @@ export const volunteersRouter = {
       // Contact details go only to people who work with the volunteer, or whom they have
       // accepted a contact request from; their chapter's staff and coordinators see them too
       // (lib/contact.ts).
-      const [relations, incoming, deputy] = await Promise.all([
+      const [relations, incoming, manage] = await Promise.all([
         contactRelations(currentVolunteer, context.access, [vol.id]),
         prisma.contactRequest.findFirst({
           where: {
@@ -238,7 +273,7 @@ export const volunteersRouter = {
           },
           select: { id: true, message: true },
         }),
-        deputyControl(currentVolunteer.id, context.access, vol),
+        manageControls(currentVolunteer.id, context.access, vol),
       ])
       const showContact = isAdmin || relations.reachable.has(vol.id)
 
@@ -316,8 +351,6 @@ export const volunteersRouter = {
         ...profile,
         ...(context.access.globalAdmin ? { email, duplicateOf: vol.duplicateOf } : {}),
         canMessage: vol.id !== currentVolunteer.id && showContact,
-        /** Their chapter's staff, or a global admin, may take down someone's picture. */
-        canRemovePicture: isAdmin && vol.id !== currentVolunteer.id,
         contactRequested: relations.requested.has(vol.id),
         incomingContactRequest: incoming,
         canRequestContact:
@@ -326,7 +359,7 @@ export const volunteersRouter = {
           Boolean(vol.consentMakeProfileVisibleInDirectory),
         activeRecently: isActiveRecently(vol.lastActiveAt),
         chapter: vol.chapter,
-        deputy,
+        manage,
         projects: projectHistory(projects, input.id),
         completedTasks: completedTasks.map((t) => ({
           title: t.title,
