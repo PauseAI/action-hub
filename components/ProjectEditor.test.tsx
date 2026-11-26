@@ -186,10 +186,10 @@ describe('ProjectEditor — new volunteer proposal', () => {
     await waitFor(() => expect(localStorage.getItem('authToken')).toBeTruthy())
     await userEvent.type(screen.getByLabelText('Project title'), 'Go')
     await userEvent.type(screen.getByLabelText('Outline item'), 'Step')
-    // The create is sent on the click; the ownership and seeking-help changes come before it lands.
+    // The create is sent on the click; the title and seeking-help changes come before it lands.
     act(() => {
       fireEvent.click(screen.getByRole('button', { name: 'Add to outline' }))
-      fireEvent.click(screen.getByLabelText(/I want to lead this project/))
+      fireEvent.change(screen.getByLabelText('Project title'), { target: { value: 'Go far' } })
       fireEvent.click(screen.getByLabelText('Help / contributors'))
     })
     await waitFor(
@@ -197,7 +197,7 @@ describe('ProjectEditor — new volunteer proposal', () => {
         const draft = await prisma.workItem.findFirstOrThrow({
           where: { creatorId: me.id, type: 'PROJECT' },
         })
-        expect(draft.assigneeId).toBe(me.id)
+        expect(draft.title).toBe('Go far')
         expect(draft.isSeekingHelp).toBe(false)
       },
       { timeout: 20_000 },
@@ -266,8 +266,8 @@ describe('ProjectEditor — new volunteer proposal', () => {
       await screen.findByRole('button', { name: 'Add to outline' }, { timeout: 20_000 }),
     )
     // Submit before the task's save lands would read the draft before the task is in it.
-    // Delete task only renders for a saved task.
-    await screen.findByRole('button', { name: 'Delete task' }, { timeout: 20_000 })
+    // Remove only renders for a saved outline item.
+    await screen.findByRole('button', { name: 'Remove' }, { timeout: 20_000 })
     const submit = await screen.findByRole('button', { name: 'Submit' })
     await waitFor(() => expect(submit).toBeEnabled())
     await userEvent.click(submit)
@@ -651,10 +651,10 @@ describe('ProjectEditor — editing an existing project', () => {
     await waitFor(() => expect(requestsTo('projects/getById').length).toBeGreaterThan(1))
     // The new task's save cancels every in-flight read of the project, Submit's among them.
     await userEvent.type(
-      screen.getByLabelText('Task title', { selector: '#new-task-title' }),
+      screen.getByLabelText('Outline item', { selector: '#new-task-title' }),
       'More',
     )
-    await userEvent.click(screen.getByRole('button', { name: 'Add task' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Add to outline' }))
     expect(await screen.findByText('Submit draft for review?')).toBeInTheDocument()
     expect(screen.queryByText('CancelledError')).toBeNull()
     release()
