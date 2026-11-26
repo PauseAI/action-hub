@@ -4,7 +4,7 @@ Size: M. Kind: tools.
 
 ## Problem
 
-A test that races only under full-suite load fails one `check-all` run, passes 8/8 when run alone, and the next race shows only on the next run of up to ten minutes. The causes repeat: a `getBy…` or `getByText` read before a refetch or query lands (a textarea's value mirrored into its text counts as "on screen"), a `vi.waitFor` or `findBy…` default outlasted under load, an element looked up once and then replaced by a refetch, and a wait for any alert satisfied by an earlier toast.
+A test that races only under full-suite load fails one `check-all` run, passes 8/8 when run alone, and the next race shows only on the next run of up to ten minutes. The causes repeat: a `getBy…` or `getByText` read before a refetch or query lands (a textarea's value mirrored into its text counts as "on screen"), a `vi.waitFor` or `findBy…` default outlasted under load, an element looked up once and then replaced by a refetch, and a wait for any alert satisfied by an earlier toast. The access matrix's timeouts were each commit waiting on fsync, which test connections now skip (`withoutCommitSync` in `test/pg.ts`); its hits are kept as the record of that cost.
 
 ## Fix
 

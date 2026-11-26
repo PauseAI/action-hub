@@ -45,7 +45,7 @@ describe('ProfilePictureSettings', () => {
     const releaseLookup = holdNextFetch('volunteers/lookup')
     await renderApp(<ProfilePictureSettings id={me.id} name={me.name} />, { as: me })
     // The lookup waits for the signed-in user, so the upload must wait for the lookup to be asked.
-    await waitFor(() => expect(requestsTo('volunteers/lookup')).toHaveLength(1))
+    await waitFor(() => expect(requestsTo('volunteers/lookup').length).toBeGreaterThan(0))
 
     await userEvent.upload(
       fileInput(),

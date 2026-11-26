@@ -63,11 +63,20 @@ export function resetRpcFetch(): void {
 }
 
 const inFlight = new Set<Promise<Response>>()
+// Taken before any test can install fake timers, which would never fire it.
+const realSetTimeout = globalThis.setTimeout
+const nextMacrotask = () => new Promise((resolve) => realSetTimeout(resolve, 0))
 
-/** Lets any held request go, and resolves once none is in flight, counting any they start. */
+/**
+ * Lets any held request go, and resolves once none is in flight, including any that the client
+ * starts once a response has been read.
+ */
 export async function settleRpcFetch(): Promise<void> {
   held?.release()
-  while (inFlight.size > 0) await Promise.allSettled(inFlight)
+  do {
+    await Promise.allSettled(inFlight)
+    await nextMacrotask()
+  } while (inFlight.size > 0)
 }
 
 export function rpcFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -97,7 +106,7 @@ async function answer(input: RequestInfo | URL, init?: RequestInit): Promise<Res
   // `TEST_RPC_JITTER_MS` delays each request by up to that long at random, so requests are
   // answered out of order as on a loaded machine: a race that needs CI's load shows up locally.
   const jitter = Number(process.env.TEST_RPC_JITTER_MS)
-  if (jitter > 0) await new Promise((resolve) => setTimeout(resolve, Math.random() * jitter))
+  if (jitter > 0) await new Promise((resolve) => realSetTimeout(resolve, Math.random() * jitter))
   const { response } = await rpc.handle(request, {
     prefix: '/api/rpc',
     context: (await createContext(request)) as Record<never, never>,

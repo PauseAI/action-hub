@@ -4,8 +4,7 @@ import userEvent from '@testing-library/user-event'
 
 /**
  * Waits for the toast saying `text`, dismisses it and waits for it to go, so a later step that
- * shows the same words waits for a toast of its own. Counting them instead races the four-second
- * auto-dismiss: on a slow run the first is gone before the second arrives.
+ * shows the same words waits for a toast of its own, not one about to dismiss itself.
  */
 export async function dismissToast(text: string | RegExp): Promise<void> {
   const toast = (await screen.findByText(text)).closest<HTMLElement>('[role=alert]')

@@ -672,7 +672,9 @@ describe('task detail page — past plan', () => {
     await prisma.workItem.update({ where: { id: late.id }, data: { status: 'in_progress' } })
 
     // Unassigned, the task is nobody's to be late with, so there is no decision left to make.
-    await userEvent.click(await within(box()).findByRole('button', { name: 'Unassign' }))
+    await userEvent.click(
+      await waitFor(() => within(box()).getByRole('button', { name: 'Unassign' })),
+    )
     await waitFor(async () => expect((await row(late.id)).assigneeId).toBeNull())
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Past plan' })).toBeNull())
 

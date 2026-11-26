@@ -37,12 +37,15 @@ if (typeof window !== 'undefined') {
 
   afterEach(async () => {
     cleanup()
-    // A request still in flight would answer in the next test, and a 401 there, once this
-    // test's session is cleared below, would sign that test's page out.
-    await settleRpcFetch()
-    queryClient.clear()
-    localStorage.clear()
-    navigation.reset()
-    resetRpcFetch()
+    try {
+      // A request still in flight would answer in the next test, and a 401 there, once this
+      // test's session is cleared below, would sign that test's page out.
+      await settleRpcFetch()
+    } finally {
+      queryClient.clear()
+      localStorage.clear()
+      navigation.reset()
+      resetRpcFetch()
+    }
   })
 }

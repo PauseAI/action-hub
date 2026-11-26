@@ -88,7 +88,8 @@ export function testUrl(name: string): string {
  * Readers still see each commit at once; only a server crash could lose the last few.
  */
 export function withoutCommitSync(url: URL): void {
-  url.searchParams.set('options', '-c synchronous_commit=off')
+  const options = [url.searchParams.get('options'), '-c synchronous_commit=off']
+  url.searchParams.set('options', options.filter(Boolean).join(' '))
 }
 
 async function connect(connectionString: string): Promise<Client> {
