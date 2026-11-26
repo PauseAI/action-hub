@@ -61,6 +61,7 @@ export default function PersonName({
         <span className={twMerge('min-w-0 truncate', className)}>{name}</span>
       )}
       <RoleBadge person={person} />
+      {person?.inactive && <span className="shrink-0 text-xs text-text-light">(inactive)</span>}
     </span>
   )
 }

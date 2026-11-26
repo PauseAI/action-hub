@@ -123,7 +123,7 @@ export async function notifyUser(
 /** How a notification would be delivered, and to which address. */
 export type Route = {
   delivery: Delivery
-  /** Who an email would go to; null for someone gone or without an address. */
+  /** Who an email would go to; null for someone gone, suspended or without an address. */
   to: { name: string; email: string } | null
 }
 
@@ -142,7 +142,7 @@ export async function routeFor(
     SELECT v.name, v.email, coalesce(v.is_technical_admin, false) AS technical, p.delivery::text AS delivery
     FROM volunteers v
     LEFT JOIN notification_preferences p ON p.volunteer_id = v.id AND p.type = ${type}
-    WHERE v.id = ${volunteerId} AND v.deleted_at IS NULL
+    WHERE v.id = ${volunteerId} AND v.deleted_at IS NULL AND v.suspended_at IS NULL
   `
     .then(([vol]): Route => {
       if (!vol) return { delivery: 'in_app', to: null }

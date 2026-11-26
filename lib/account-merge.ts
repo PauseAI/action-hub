@@ -84,6 +84,7 @@ export const MERGE_REFERENCES = {
   'volunteers.duplicate_of_id': 'move',
   'volunteers.merged_into_id': 'move',
   'volunteers.reviewer_id': 'move',
+  'volunteers.suspended_by_id': 'move',
   'work_item_comments.author_id': 'move',
   'work_item_dependencies.created_by_id': 'move',
   'work_item_events.actor_id': 'move',
@@ -166,6 +167,7 @@ const ACCOUNT_SELECT = {
   passwordHash: true,
   emailConfirmed: true,
   deletedAt: true,
+  suspendedAt: true,
   country: true,
   nationalChapterId: true,
   localGroupId: true,
@@ -278,6 +280,10 @@ export async function mergeAccounts(
       )
       if (!kept || kept.deletedAt || !merged || merged.deletedAt) {
         throw new ORPCError('NOT_FOUND', { message: 'Account not found' })
+      }
+      // A merge would carry neither the suspension nor its record; lift it first.
+      if (kept.suspendedAt || merged.suspendedAt) {
+        throw refused('One of these accounts is suspended. Lift the suspension before merging.')
       }
 
       const references = await volunteerReferences(tx)

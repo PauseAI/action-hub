@@ -76,6 +76,23 @@ describe('runDeadlineRemindersJob', () => {
     void task
   })
 
+  it('tells a suspended assignee in the app, with no email', async () => {
+    const owner = await createVolunteer({ email: 'owner-s@example.org' })
+    const paused = await createVolunteer({ email: 'paused-s@example.org', suspendedAt: now })
+    const project = await createProject({ status: 'in_progress', assigneeId: owner.id })
+    await createTask(project.id, {
+      title: 'Print flyers',
+      status: 'in_progress',
+      assigneeId: paused.id,
+      deadline: today,
+      startedAt: addDays(today, -5),
+    })
+    await runDeadlineRemindersJob(now)
+    expect((await notes(paused.id, 'finish_by_today'))[0].title).toBe('“Print flyers” is due today')
+    expect(emails.to('paused-s@example.org')).toEqual([])
+    expect(emails.lastTo('owner-s@example.org')?.html).toContain('“Print flyers” is due today')
+  })
+
   it('gives a helper the day-before reminder only, while the lead gets the rest', async () => {
     const lead = await createVolunteer({ email: 'lead@example.org' })
     const helper = await createVolunteer({ email: 'helper@example.org' })

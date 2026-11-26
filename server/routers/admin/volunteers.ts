@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { ORPCError } from '@orpc/server'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 import { dismissDuplicatePair, findDuplicatePairs } from '@/lib/duplicate-accounts'
 import { adminProcedure, staffProcedure } from '../../procedures'
 import { canAdminChapter, type ChapterAccess } from '@/lib/chapter-access'
@@ -11,9 +12,10 @@ import {
   WorkItemType,
 } from '@/generated/prisma/enums'
 import { audit } from '@/lib/chapter-roles'
-import { outranks } from '@/lib/chapter-access-server'
+import { chapterCarers, globalAdminWhere, outranks, staffRoleOf } from '@/lib/chapter-access-server'
 import { notifyUser } from '@/lib/notify'
-import { redactVolunteer, revokeAccess } from '@/lib/auth'
+import { isSuperAdmin, redactVolunteer, revokeAccess } from '@/lib/auth'
+import { sendSuspensionEmail } from '@/lib/email'
 import { checkRateLimit } from '@/lib/rate-limit'
 
 const MAX_DETAIL_ROWS = 100
@@ -48,17 +50,6 @@ async function liveVolunteer(id: number) {
   })
   if (!volunteer) throw new ORPCError('NOT_FOUND', { message: 'Volunteer not found' })
   return volunteer
-}
-
-/** The chapter role a volunteer holds, said as a sentence, or null. */
-async function staffRole(volunteerId: number): Promise<string | null> {
-  const led = await prisma.nationalChapter.findUnique({ where: { leadId: volunteerId } })
-  if (led) return `leads the ${led.name} chapter`
-  const deputy = await prisma.chapterDeputy.findUnique({
-    where: { volunteerId },
-    include: { chapter: { select: { name: true } } },
-  })
-  return deputy ? `is a deputy of the ${deputy.chapter.name} chapter` : null
 }
 
 const sameAs = (v: { name: string; email: string | null }) =>
@@ -349,6 +340,132 @@ export const adminVolunteersRouter = {
     }),
 
   /**
+   * Suspends a member, or lifts it, for their chapter's lead or deputies or a global admin. Only
+   * someone who runs nothing: a lead, deputy or coordinator gives up the role first, so no work
+   * for the role waits on someone who cannot sign in. A suspended account cannot
+   * sign in and is left out of the directory, pickers, calls and email; nothing is deleted. The
+   * member is emailed (never the reason), and the chapter's staff and global admins are told.
+   */
+  setSuspended: staffProcedure
+    .input(
+      z.object({
+        volunteerId: z.number().int(),
+        suspended: z.boolean(),
+        reason: z.string().trim().max(1000).optional(),
+      }),
+    )
+    .handler(async ({ input, context }) => {
+      const { access } = context
+      const actor = context.volunteer
+      const target = await prisma.volunteer.findFirst({
+        where: { id: input.volunteerId, deletedAt: null },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          emailConfirmed: true,
+          nationalChapterId: true,
+          coordinatorRole: { select: { id: true } },
+        },
+      })
+      if (!target || !canAdminChapter(access, target.nationalChapterId)) {
+        throw new ORPCError('NOT_FOUND', { message: 'Volunteer not found' })
+      }
+      if (target.id === actor.id) {
+        throw new ORPCError('BAD_REQUEST', { message: 'You cannot suspend yourself' })
+      }
+      if (isSuperAdmin(target)) {
+        throw new ORPCError('FORBIDDEN', { message: 'A global admin cannot be suspended here' })
+      }
+      const role = target.coordinatorRole ? 'is a coordinator' : await staffRoleOf(target.id)
+      if (role) {
+        throw new ORPCError('FORBIDDEN', {
+          message: `${target.name} ${role}. Take the role away before suspending them.`,
+        })
+      }
+      if (input.suspended && (input.reason ?? '').length < 3) {
+        throw new ORPCError('BAD_REQUEST', { message: 'Say why, for the record' })
+      }
+      // Counted once the request is a sensible one; the limit is this server's, per member.
+      const { allowed } = checkRateLimit(context.request, `suspend:${target.id}`, {
+        limit: 5,
+        windowMs: 60 * 60 * 1000,
+      })
+      if (!allowed) {
+        throw new ORPCError('TOO_MANY_REQUESTS', {
+          message: `${target.name}'s suspension has changed several times this hour; try later`,
+        })
+      }
+      await prisma.$transaction(async (tx) => {
+        // Changed only from the state it is in, so of two staff acting at once one is refused.
+        const { count } = await tx.volunteer.updateMany({
+          where: {
+            id: target.id,
+            suspendedAt: input.suspended ? null : { not: null },
+          },
+          data: input.suspended
+            ? { suspendedAt: new Date(), suspendedById: actor.id, suspensionReason: input.reason }
+            : { suspendedAt: null, suspendedById: null, suspensionReason: null },
+        })
+        if (!count) {
+          throw new ORPCError('BAD_REQUEST', {
+            message: input.suspended
+              ? `${target.name} is already suspended`
+              : `${target.name} is not suspended`,
+          })
+        }
+        if (input.suspended) await revokeAccess(target.id, { db: tx })
+        await audit(
+          tx,
+          input.suspended
+            ? ChapterAuditAction.MEMBER_SUSPENDED
+            : ChapterAuditAction.MEMBER_UNSUSPENDED,
+          {
+            actorId: actor.id,
+            chapterId: target.nationalChapterId,
+            targetVolunteerId: target.id,
+            ...(input.suspended && { details: { reason: input.reason } }),
+          },
+        )
+      })
+
+      // Only to an address they proved is theirs; a failed send is logged, the change stands.
+      if (target.email && target.emailConfirmed) {
+        await sendSuspensionEmail({
+          to: target.email,
+          name: target.name,
+          lifted: !input.suspended,
+        }).catch((e) => logger.error(e, '[SUSPENSION] Email to the member failed'))
+      }
+      const title = input.suspended
+        ? `${actor.name} suspended ${target.name}`
+        : `${actor.name} lifted ${target.name}'s suspension`
+      const told = new Set([
+        ...(await chapterCarers(target.nationalChapterId)),
+        ...(
+          await prisma.volunteer.findMany({ where: globalAdminWhere(), select: { id: true } })
+        ).map((a) => a.id),
+      ])
+      told.delete(actor.id)
+      await Promise.all(
+        [...told].map((id) =>
+          notifyUser(
+            id,
+            'member_suspended',
+            title,
+            input.reason ?? null,
+            `/volunteers/${target.id}`,
+          ),
+        ),
+      )
+      return {
+        message: input.suspended
+          ? `${target.name} is suspended`
+          : `${target.name} is no longer suspended`,
+      }
+    }),
+
+  /**
    * What has been done to the member, newest first, from the chapter audit log: their roles,
    * moves, and anything staff did to their account. For their chapter's staff or a global admin.
    */
@@ -486,7 +603,7 @@ export const adminVolunteersRouter = {
           message: `${keeper.name} is itself marked as a duplicate`,
         })
       }
-      const role = await staffRole(account.id)
+      const role = await staffRoleOf(account.id)
       if (role) {
         throw new ORPCError('BAD_REQUEST', {
           message: `${account.name} ${role}. Give the role to the account you are keeping first.`,

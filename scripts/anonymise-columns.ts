@@ -110,6 +110,7 @@ export const COLUMN_TREATMENT: Record<string, Record<string, Treatment>> = {
     email_digest: 'keep',
     application_message: 'redact',
     application_admin_notes: 'redact',
+    suspension_reason: 'redact',
     application_applicant_notes: 'redact',
   },
   work_item_comments: { content: 'redact', call_url: 'null' },

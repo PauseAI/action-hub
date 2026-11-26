@@ -29,6 +29,7 @@ type Person = {
   name: string
   email: string | null
   dailySummary: DailySummaryPreference
+  suspendedAt: Date | null
 }
 
 type ReminderTask = {
@@ -68,7 +69,7 @@ export async function runDeadlineRemindersJob(now: Date = new Date()) {
         id,
         await prisma.volunteer.findFirst({
           where: { id, deletedAt: null },
-          select: { name: true, email: true, dailySummary: true },
+          select: { name: true, email: true, dailySummary: true, suspendedAt: true },
         }),
       )
     }
@@ -108,7 +109,8 @@ export async function runDeadlineRemindersJob(now: Date = new Date()) {
     const who = await person(recipientId)
     if (!who) return
     if (!(await record(key.workItemId, key.stage, key.finishBy, recipientId))) return
-    lines.set(recipientId, [...(lines.get(recipientId) ?? []), line])
+    // The day's summary is email, which a suspended account does not get; the notification stays.
+    if (!who.suspendedAt) lines.set(recipientId, [...(lines.get(recipientId) ?? []), line])
     // "Off" stops the reminders; it never hides a decision that is waiting.
     if (!note || (who.dailySummary === DailySummaryPreference.off && !note.always)) return
     if (note.refresh) {

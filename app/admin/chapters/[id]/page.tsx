@@ -42,6 +42,8 @@ const ACTION_LABELS: Record<ChapterAuditAction, string> = {
   APPLICATION_INFO_REQUESTED: 'asked an applicant for more:',
   APPLICATION_REOPENED: 'reopened an application:',
   SESSIONS_REVOKED: 'signed a member out on every device:',
+  MEMBER_SUSPENDED: 'suspended:',
+  MEMBER_UNSUSPENDED: 'lifted the suspension of:',
   TRANSFER_REQUESTED: 'asked to move a member:',
 }
 
@@ -134,7 +136,7 @@ export default function AdminChapterPage({ params }: { params: Promise<{ id: str
   const lead = chapter.members.find((m) => m.role === 'LEAD')
   const deputies = chapter.members.filter((m) => m.role === 'DEPUTY')
   const memberOptions = chapter.members
-    .filter((m) => m.role === null && !m.duplicateOf)
+    .filter((m) => m.role === null && !m.duplicateOf && !m.suspendedAt)
     .map((m) => ({ value: String(m.id), label: m.name, description: m.email ?? undefined }))
   const moveOptions = [
     { value: NONE, label: 'Move to…' },
@@ -311,7 +313,13 @@ export default function AdminChapterPage({ params }: { params: Promise<{ id: str
             >
               <span>
                 <PersonName id={m.id} name={m.name} />
-                <Muted parts={[m.email, m.duplicateOf && `duplicate of ${m.duplicateOf.name}`]} />
+                <Muted
+                  parts={[
+                    m.email,
+                    m.duplicateOf && `duplicate of ${m.duplicateOf.name}`,
+                    m.suspendedAt && 'suspended',
+                  ]}
+                />
               </span>
               {isGlobal && (
                 <FilterDropdown

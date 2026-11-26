@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { ORPCError } from '@orpc/server'
 import { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
+import { assertActive, assertActiveById } from '@/lib/suspension'
 import { assertNotStanding } from '@/lib/requests'
 import {
   withProjectExtras,
@@ -377,12 +378,14 @@ async function prepareToBringOn(
   volunteerId: number,
   viewer: { id: number; access: ChapterAccess },
 ): Promise<((actorId: number) => Promise<void>) | null> {
-  if (volunteerId === project.assigneeId) return null
-  if (await resolveProjectMembership(project.teamId, project.id, volunteerId)) return null
   const person = await prisma.volunteer.findFirst({
     where: { id: volunteerId, deletedAt: null },
-    select: { nationalChapterId: true, approvalStatus: true },
+    select: { name: true, nationalChapterId: true, approvalStatus: true, suspendedAt: true },
   })
+  // Checked first: being on the project already is no way round a suspension.
+  if (person) assertActive(person)
+  if (volunteerId === project.assigneeId) return null
+  if (await resolveProjectMembership(project.teamId, project.id, volunteerId)) return null
   if (!person) throw new ORPCError('BAD_REQUEST', { message: 'Volunteer not found' })
   if (person.approvalStatus !== ApprovalStatus.approved) {
     throw new ORPCError('BAD_REQUEST', {
@@ -2102,7 +2105,12 @@ export const projectsRouter = {
         if (body.assigneeId !== null) {
           const newOwner = await prisma.volunteer.findFirst({
             where: { id: body.assigneeId, deletedAt: null },
-            select: { approvalStatus: true, nationalChapterId: true },
+            select: {
+              name: true,
+              approvalStatus: true,
+              nationalChapterId: true,
+              suspendedAt: true,
+            },
           })
           if (!newOwner) throw new ORPCError('BAD_REQUEST', { message: 'Volunteer not found' })
           assertInProjectChapter(context.access, newOwner, {
@@ -2116,6 +2124,7 @@ export const projectsRouter = {
               message: 'Cannot assign a project to a volunteer who is not yet approved',
             })
           }
+          assertActive(newOwner)
         }
         data.assigneeId = body.assigneeId
       }
@@ -2467,7 +2476,7 @@ export const projectsRouter = {
       })
       const interest = await prisma.workItemInterest.findFirst({
         where: { id: input.interestId, workItemId: input.projectId },
-        include: { volunteer: { select: { approvalStatus: true, name: true } } },
+        include: { volunteer: { select: { approvalStatus: true, name: true, suspendedAt: true } } },
       })
       // Deputies answer the requests that come with a task (`task.answerRequests`); the rest
       // of recruiting is the owner's.
@@ -2492,6 +2501,7 @@ export const projectsRouter = {
           message: 'Cannot accept interest from a volunteer who is not yet approved',
         })
       }
+      if (input.status === InterestStatus.accepted) assertActive(interest.volunteer)
 
       // Turning down someone already on the project is a removal, not a decline.
       const status =
@@ -2633,6 +2643,7 @@ export const projectsRouter = {
           message: 'Cannot invite a volunteer who is not yet approved',
         })
       }
+      assertActive(target)
       assertInProjectChapter(context.access, target, project)
 
       const existing = await prisma.workItemInterest.findFirst({
@@ -2816,6 +2827,7 @@ export const projectsRouter = {
           message: 'Cannot assign a project to a volunteer who is not yet approved',
         })
       }
+      assertActive(targetVolunteer)
       assertInProjectChapter(context.access, targetVolunteer, project)
 
       // One row per person and project, whatever happened before.
@@ -4012,6 +4024,7 @@ export const projectsRouter = {
           message: 'Cannot assign a task to a volunteer who is not yet approved',
         })
       }
+      assertActive(assignee)
 
       const bringOn = await prepareToBringOn(project, input.assigneeId, viewerOf(context))
 
@@ -4220,6 +4233,7 @@ export const projectsRouter = {
       if (!helper || input.volunteerId === project.assigneeId) {
         throw new ORPCError('BAD_REQUEST', { message: 'Only an accepted helper can be a deputy' })
       }
+      await assertActiveById(input.volunteerId)
       const existing = await prisma.projectDeputy.findFirst({
         where: { projectId: input.projectId, volunteerId: input.volunteerId },
       })

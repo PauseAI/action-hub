@@ -37,7 +37,7 @@ export async function authenticateApiToken(
     where: { tokenHash: hashToken(token) },
     include: { volunteer: true },
   })
-  if (!row || row.volunteer.deletedAt) return null
+  if (!row || row.volunteer.deletedAt || row.volunteer.suspendedAt) return null
   if (row.expiresAt && row.expiresAt <= new Date()) return null
 
   // Fire-and-forget: a failed touch shouldn't fail the request it came with.

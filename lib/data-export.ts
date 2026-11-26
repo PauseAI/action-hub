@@ -131,6 +131,7 @@ export const OMITTED_LINKS: Readonly<Record<string, string>> = {
   'Volunteer.duplicateOf':
     "an admin's guess at the same person, until both accounts confirm a merge",
   'Volunteer.reviewer': 'applications reviewed for other people',
+  'Volunteer.suspendedBy': STAFF_ACTION,
   'ProfilePicture.volunteer': 'exported as `profilePicture`, the image as a data URL',
   'VolunteerSkill.volunteer': 'exported as `skills`',
   'WorkItem.reviewedBy': STAFF_ACTION,

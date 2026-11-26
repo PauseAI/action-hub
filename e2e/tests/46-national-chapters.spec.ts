@@ -280,6 +280,47 @@ test.describe('National chapters', () => {
     }
   })
 
+  test('A chapter lead suspends a member, who is signed out and cannot sign back in', async ({
+    browser,
+    baseUrl,
+    snap,
+  }) => {
+    const chapterId = await ensureChapter(baseUrl, COUNTRY)
+    const lead = await createApprovedVolunteer(baseUrl, { country: COUNTRY })
+    await makeChapterStaff(baseUrl, lead.id, chapterId, 'LEAD')
+    const member = await createApprovedVolunteer(baseUrl, { country: COUNTRY })
+
+    const memberPage = await signedInPage(browser, member.token)
+    const leadPage = await signedInPage(browser, lead.token)
+    try {
+      await memberPage.goto(`${baseUrl}/dashboard`)
+      await leadPage.goto(`${baseUrl}/volunteers/${member.id}`)
+      await leadPage.getByRole('button', { name: 'Suspend' }).click({ timeout: 10_000 })
+      const dialog = leadPage.getByRole('dialog', { name: `Suspend ${member.name}?` })
+      await dialog.getByLabel(/Why/).fill('Repeated spam in messages')
+      await snap(leadPage, 'suspend dialog')
+      await dialog.getByRole('button', { name: 'Suspend' }).click()
+      await expect(getAlert(leadPage)).toContainText(`${member.name} is suspended`, {
+        timeout: 10_000,
+      })
+      await expect(leadPage.getByText(/Repeated spam in messages/)).toBeVisible({
+        timeout: 10_000,
+      })
+
+      await memberPage.reload()
+      await expect(memberPage).toHaveURL(/\/login/, { timeout: 10_000 })
+      await memberPage.getByLabel('Email', { exact: true }).fill(member.email)
+      await memberPage.getByLabel('Password').fill('testpassword1')
+      await memberPage.getByRole('button', { name: 'Login' }).click()
+      await expect(memberPage.getByText(/This account is suspended/)).toBeVisible({
+        timeout: 10_000,
+      })
+    } finally {
+      await memberPage.context().close()
+      await leadPage.context().close()
+    }
+  })
+
   test('A chapter lead asks another chapter to take a member, and its lead accepts', async ({
     browser,
     baseUrl,

@@ -13,6 +13,8 @@ import { AccountMergeEmail } from './emails/AccountMergeEmail'
 import { OutreachLoginEmail } from './emails/OutreachLoginEmail'
 import { AdminInviteEmail, type ChapterRoleInvite, roleTitle } from './emails/AdminInviteEmail'
 import { WelcomeEmail } from './emails/WelcomeEmail'
+import { SuspensionEmail } from './emails/SuspensionEmail'
+import { SUPPORT_EMAIL } from './support-email'
 import { ChapterMemberInviteEmail } from './emails/ChapterMemberInviteEmail'
 import { ProjectNotificationEmail } from './emails/ProjectNotificationEmail'
 import { AdminAlertEmail } from './emails/AdminAlertEmail'
@@ -367,6 +369,33 @@ export async function sendAdminInviteEmail({
     chapterInviteSubject(invitedBy, invite),
     await buildAdminInviteHtml(inviteUrl, invitedBy, invite),
   )
+}
+
+export const suspensionSubject = (lifted: boolean) =>
+  lifted ? 'Your Action Hub account is no longer suspended' : 'Your Action Hub account is suspended'
+
+export function buildSuspensionHtml(name: string, lifted: boolean): Promise<string> {
+  return render(
+    <SuspensionEmail
+      name={name}
+      lifted={lifted}
+      supportEmail={SUPPORT_EMAIL}
+      appUrl={env.APP_URL}
+    />,
+  )
+}
+
+/** Sent outside the notification system, which sends nothing to a suspended account. */
+export async function sendSuspensionEmail({
+  to,
+  name,
+  lifted,
+}: {
+  to: string
+  name: string
+  lifted: boolean
+}): Promise<boolean> {
+  return sendEmail(to, suspensionSubject(lifted), await buildSuspensionHtml(name, lifted))
 }
 
 export const chapterMemberInviteSubject = (invitedBy: string, chapterName: string) =>

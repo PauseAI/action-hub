@@ -50,9 +50,9 @@ async function sendDigest(volunteerId: number, now: Date): Promise<number> {
     const day = digestDueOn(now, schedule)
     const vol = await tx.volunteer.findUniqueOrThrow({
       where: { id: volunteerId },
-      select: { name: true, email: true, deletedAt: true },
+      select: { name: true, email: true, deletedAt: true, suspendedAt: true },
     })
-    if (!day || !vol.email || vol.deletedAt) return null
+    if (!day || !vol.email || vol.deletedAt || vol.suspendedAt) return null
     const sentOn = new Date(`${day}T00:00:00Z`)
     const { count: created } = await tx.notificationDigest.createMany({
       data: { volunteerId, sentOn },

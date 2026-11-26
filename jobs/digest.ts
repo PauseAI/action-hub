@@ -61,7 +61,7 @@ export async function runDigestJob(): Promise<Record<string, unknown>> {
   }))
 
   const volunteers = await prisma.volunteer.findMany({
-    where: { emailDigest: 'fortnightly', email: { not: null }, deletedAt: null },
+    where: { emailDigest: 'fortnightly', email: { not: null }, deletedAt: null, suspendedAt: null },
     include: { skills: true },
   })
 

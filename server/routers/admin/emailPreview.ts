@@ -10,6 +10,8 @@ import {
   buildAccountMergeHtml,
   ACCOUNT_MERGE_SUBJECT,
   buildAdminInviteHtml,
+  buildSuspensionHtml,
+  suspensionSubject,
   buildChapterMemberInviteHtml,
   chapterMemberInviteSubject,
   chapterSignupUrl,
@@ -151,6 +153,14 @@ const EMAIL_PREVIEW_REGISTRY: Record<string, { subject: string; build: () => Pro
         'Jamie Smith',
         SAMPLE_CHAPTER_INVITE,
       ),
+  },
+  'member-suspended': {
+    subject: suspensionSubject(false),
+    build: () => buildSuspensionHtml('Alex', false),
+  },
+  'member-unsuspended': {
+    subject: suspensionSubject(true),
+    build: () => buildSuspensionHtml('Alex', true),
   },
   'chapter-member-invite': {
     subject: chapterMemberInviteSubject('Jamie Smith', 'United Kingdom'),

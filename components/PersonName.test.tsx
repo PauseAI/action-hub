@@ -35,6 +35,18 @@ describe('PersonName', () => {
     expect(screen.queryByRole('link')).toBeNull()
   })
 
+  it("marks a suspended member's name as inactive, and no longer links it", async () => {
+    const chapter = await createChapter()
+    const viewer = await createMember(chapter)
+    const paused = await createMember(chapter, {
+      consentMakeProfileVisibleInDirectory: true,
+      suspendedAt: new Date(),
+    })
+    await renderApp(<PersonName id={paused.id} name="Pat Paused" />, { as: viewer })
+    expect(await screen.findByText('(inactive)')).toBeInTheDocument()
+    expect(screen.queryByRole('link')).toBeNull()
+  })
+
   it('looks up every name on the page in one request', async () => {
     const viewer = await createVolunteer()
     const [a, b, c] = [await createVolunteer(), await createVolunteer(), await createVolunteer()]
