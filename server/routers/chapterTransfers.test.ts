@@ -9,6 +9,7 @@ import {
   createMember,
   createProject,
   createSuperAdmin,
+  createVolunteer,
 } from '@/test/factories'
 import { clientAs } from '@/test/rpc'
 
@@ -130,5 +131,258 @@ describe('chapter transfers', () => {
     await expect(
       clientAs(admin).chapterTransfers.decide({ id: 999_999, approve: true }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+  })
+})
+
+describe('chapter moves staff ask for', () => {
+  /** Puts `member` on a project `staff` owns, so `staff` can see them from another chapter. */
+  const share = async (staff: { id: number }, member: { id: number }) =>
+    prisma.workItemInterest.create({
+      data: {
+        workItemId: (await createProject({ nationalChapterId: null, assigneeId: staff.id })).id,
+        volunteerId: member.id,
+        status: 'accepted',
+        interestType: 'want_to_contribute',
+      },
+    })
+  const notices = (volunteerId: number, type: string) =>
+    prisma.notification.findMany({ where: { volunteerId, type }, select: { title: true } })
+
+  it("lets a lead send a member on; the other chapter's staff accept, and both are told", async () => {
+    const [from, to] = [await createChapter(), await createChapter()]
+    const lead = await createChapterLead(from, { name: 'Sending Lead' })
+    const member = await createMember(from, { name: 'Moving On' })
+    const destination = await createChapterLead(to)
+
+    expect(
+      await clientAs(lead).chapterTransfers.requestFor({
+        volunteerId: member.id,
+        toChapterId: to.id,
+        reason: 'Moved house',
+      }),
+    ).toEqual({ message: `Asked: ${to.name}'s move for Moving On is waiting for an answer` })
+    expect(await notices(destination.id, 'chapter_transfer_request')).toEqual([
+      { title: `Sending Lead asks you to take Moving On into ${to.name}` },
+    ])
+    expect(
+      await prisma.chapterAuditEvent.findFirst({
+        where: { action: 'TRANSFER_REQUESTED', targetVolunteerId: member.id },
+      }),
+    ).toMatchObject({ actorId: lead.id, nationalChapterId: from.id })
+    // A second request waits for the first.
+    await expect(
+      clientAs(lead).chapterTransfers.requestFor({ volunteerId: member.id, toChapterId: to.id }),
+    ).rejects.toMatchObject({ message: 'Moving On already has a move waiting for an answer' })
+
+    // The asking side does not answer it; the other side does.
+    expect(await clientAs(lead).chapterTransfers.list()).toEqual([])
+    const [listed] = await clientAs(destination).chapterTransfers.list()
+    expect(listed).toMatchObject({
+      kind: 'SEND',
+      requestedBy: { id: lead.id, name: 'Sending Lead' },
+    })
+    await expect(
+      clientAs(lead).chapterTransfers.decide({ id: listed.id, approve: true }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    expect(
+      await clientAs(destination).chapterTransfers.decide({ id: listed.id, approve: true }),
+    ).toEqual({ message: 'Moved' })
+    expect(await prisma.volunteer.findUnique({ where: { id: member.id } })).toMatchObject({
+      nationalChapterId: to.id,
+    })
+    expect((await notices(member.id, 'chapter_transfer_decided'))[0].title).toMatch(/^Moved: /)
+    expect((await notices(lead.id, 'chapter_transfer_decided'))[0].title).toMatch(
+      /^Moved: Moving On is now in /,
+    )
+  })
+
+  it("lets another chapter's staff ask to bring a member in; a refusal is not the member's news", async () => {
+    const [home, other] = [await createChapter(), await createChapter()]
+    const member = await createMember(home, { name: 'Wanted Elsewhere' })
+    const homeDeputy = await createChapterDeputy(home)
+    const asker = await createChapterDeputy(other, { name: 'Recruiting Deputy' })
+    // Someone they cannot see is not found, however their id is guessed.
+    await expect(
+      clientAs(asker).chapterTransfers.requestFor({
+        volunteerId: member.id,
+        toChapterId: other.id,
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    await share(asker, member)
+
+    await clientAs(asker).chapterTransfers.requestFor({
+      volunteerId: member.id,
+      toChapterId: other.id,
+    })
+    expect(await notices(homeDeputy.id, 'chapter_transfer_request')).toEqual([
+      { title: `Recruiting Deputy asks to bring Wanted Elsewhere into ${other.name}` },
+    ])
+    const [listed] = await clientAs(homeDeputy).chapterTransfers.list()
+    expect(listed).toMatchObject({ kind: 'BRING', volunteer: { id: member.id } })
+    expect(await clientAs(asker).chapterTransfers.list()).toEqual([])
+    await clientAs(homeDeputy).chapterTransfers.decide({ id: listed.id, approve: false })
+    expect(await prisma.volunteer.findUnique({ where: { id: member.id } })).toMatchObject({
+      nationalChapterId: home.id,
+    })
+    expect(await notices(member.id, 'chapter_transfer_decided')).toEqual([])
+    expect((await notices(asker.id, 'chapter_transfer_decided'))[0].title).toMatch(
+      /^Declined: moving Wanted Elsewhere/,
+    )
+  })
+
+  it('asks the global admins to let someone in the pool be brought in', async () => {
+    const chapter = await createChapter()
+    const pooled = await createVolunteer({ name: 'Pool Swimmer' })
+    const admin = await createAdmin()
+    const asker = await createChapterLead(chapter)
+    await share(asker, pooled)
+    await clientAs(asker).chapterTransfers.requestFor({
+      volunteerId: pooled.id,
+      toChapterId: chapter.id,
+    })
+    const [listed] = await clientAs(admin).chapterTransfers.list({ chapter: 'pool' })
+    expect(listed).toMatchObject({ kind: 'BRING', volunteer: { id: pooled.id } })
+    await clientAs(admin).chapterTransfers.decide({ id: listed.id, approve: true })
+    expect(await prisma.volunteer.findUnique({ where: { id: pooled.id } })).toMatchObject({
+      nationalChapterId: chapter.id,
+    })
+  })
+
+  it("moves a chapter's own member to the pool at once, and tells them", async () => {
+    const chapter = await createChapter()
+    const member = await createMember(chapter, { name: 'Out To Pool' })
+    expect(
+      await clientAs(await createChapterDeputy(chapter)).chapterTransfers.requestFor({
+        volunteerId: member.id,
+        toChapterId: null,
+      }),
+    ).toEqual({ message: 'Out To Pool is in the holding pool' })
+    expect(await prisma.volunteer.findUnique({ where: { id: member.id } })).toMatchObject({
+      nationalChapterId: null,
+    })
+    expect(await notices(member.id, 'chapter_transfer_decided')).toEqual([
+      { title: "Moved: you're now in the holding pool" },
+    ])
+  })
+
+  it('refuses anyone else, and requests that make no sense', async () => {
+    const [a, b, c] = [await createChapter(), await createChapter(), await createChapter()]
+    const lead = await createChapterLead(a)
+    const member = await createMember(a)
+    const ask = (who: Parameters<typeof clientAs>[0], toChapterId: number | null, id = member.id) =>
+      clientAs(who).chapterTransfers.requestFor({ volunteerId: id, toChapterId })
+
+    await expect(ask(await createMember(a), b.id)).rejects.toMatchObject({ code: 'FORBIDDEN' })
+    // A third chapter's staff can neither send A's member nor bring them anywhere but their own.
+    await expect(ask(await createChapterLead(c), b.id)).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    await expect(ask(await createChapterLead(c), null)).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    await expect(ask(lead, b.id, lead.id)).rejects.toMatchObject({
+      message: 'Ask to move yourself from your settings',
+    })
+    await expect(ask(lead, a.id)).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    await expect(ask(lead, 999_999)).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    await expect(ask(lead, b.id, 999_999)).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    const applicant = await createMember(a, { approvalStatus: 'pending' })
+    await expect(ask(lead, b.id, applicant.id)).rejects.toMatchObject({
+      message: 'Only an approved member can be moved',
+    })
+    const duplicate = await createMember(a, { duplicateOfId: member.id })
+    await expect(ask(lead, b.id, duplicate.id)).rejects.toMatchObject({
+      message: 'Only an approved member can be moved',
+    })
+  })
+
+  it('leaves a lead or deputy to whoever appoints them', async () => {
+    const [a, b] = [await createChapter(), await createChapter()]
+    const lead = await createChapterLead(a, { name: 'The Lead' })
+    const [deputy, other] = [await createChapterDeputy(a), await createChapterDeputy(a)]
+    const ask = (who: Parameters<typeof clientAs>[0], id: number, toChapterId: number | null) =>
+      clientAs(who).chapterTransfers.requestFor({ volunteerId: id, toChapterId })
+
+    // A deputy can neither move the lead nor a fellow deputy, to the pool or elsewhere.
+    for (const [id, to] of [
+      [lead.id, null],
+      [lead.id, b.id],
+      [other.id, null],
+    ] as const) {
+      await expect(ask(deputy, id, to)).rejects.toMatchObject({ code: 'FORBIDDEN' })
+    }
+    // The lead may move a deputy; only a global admin moves the lead.
+    expect(await ask(lead, other.id, null)).toMatchObject({ message: expect.any(String) })
+    await expect(ask(lead, lead.id, null)).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+
+    // Bringing in another chapter's lead needs a global admin's yes, not a deputy's.
+    const asker = await createChapterLead(b)
+    await share(asker, lead)
+    await ask(asker, lead.id, b.id)
+    const [request] = await clientAs(deputy).chapterTransfers.list()
+    await expect(
+      clientAs(deputy).chapterTransfers.decide({ id: request.id, approve: true }),
+    ).rejects.toMatchObject({
+      message: 'The Lead helps run the chapter; whoever appoints them must agree',
+    })
+    // Declining is anyone's, and lands in the declining chapter's log.
+    await clientAs(deputy).chapterTransfers.decide({ id: request.id, approve: false })
+    expect(
+      await prisma.chapterAuditEvent.findFirst({
+        where: { action: 'TRANSFER_DECLINED', targetVolunteerId: lead.id },
+      }),
+    ).toMatchObject({ nationalChapterId: a.id })
+  })
+
+  it("keeps staff's requests out of the member's own, and clears them when the member moves", async () => {
+    const [a, b] = [await createChapter(), await createChapter()]
+    const lead = await createChapterLead(a)
+    const member = await createMember(a)
+    const destination = await createChapterLead(b)
+    await clientAs(lead).chapterTransfers.requestFor({ volunteerId: member.id, toChapterId: b.id })
+
+    const own = clientAs(member).chapterTransfers
+    expect(await own.mine()).toBeNull()
+    await expect(own.cancel()).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    await expect(own.request({ country: b.country })).rejects.toMatchObject({
+      message: "Your chapter's organisers are already arranging a move for you",
+    })
+
+    // Moving them to the pool cancels the request, and its notice to the other chapter.
+    await clientAs(lead).chapterTransfers.requestFor({ volunteerId: member.id, toChapterId: null })
+    expect(await notices(destination.id, 'chapter_transfer_request')).toEqual([])
+    expect(await clientAs(destination).chapterTransfers.list()).toEqual([])
+
+    // A global admin's direct move clears them too.
+    const again = await createMember(a)
+    await clientAs(lead).chapterTransfers.requestFor({ volunteerId: again.id, toChapterId: b.id })
+    await clientAs(await createAdmin()).admin.chapters.reassign({
+      volunteerId: again.id,
+      chapterId: b.id,
+    })
+    expect(await notices(destination.id, 'chapter_transfer_request')).toEqual([])
+  })
+
+  it('lets the asking side withdraw a move nobody has answered', async () => {
+    const [a, b] = [await createChapter(), await createChapter()]
+    const lead = await createChapterLead(a)
+    const member = await createMember(a)
+    const other = await createChapterLead(b)
+    await clientAs(lead).chapterTransfers.requestFor({ volunteerId: member.id, toChapterId: b.id })
+    const [request] = await clientAs(other).chapterTransfers.list()
+
+    await expect(
+      clientAs(other).chapterTransfers.withdraw({ id: request.id }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    expect(await clientAs(lead).chapterTransfers.withdraw({ id: request.id })).toEqual({
+      message: 'Request withdrawn',
+    })
+    await expect(
+      clientAs(lead).chapterTransfers.withdraw({ id: request.id }),
+    ).rejects.toMatchObject({ message: 'This request has already been answered' })
+    // A member's own request is theirs to cancel, not staff's.
+    await clientAs(member).chapterTransfers.request({ country: b.country })
+    const own = await prisma.chapterTransferRequest.findFirstOrThrow({
+      where: { volunteerId: member.id, status: 'pending' },
+    })
+    await expect(clientAs(lead).chapterTransfers.withdraw({ id: own.id })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    })
   })
 })

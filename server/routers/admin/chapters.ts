@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { z } from 'zod'
 import { ORPCError } from '@orpc/server'
 import { prisma } from '@/lib/prisma'
+import { clearNotifications } from '@/lib/notify'
 import { env } from '@/lib/env'
 import { listCountries } from '@/lib/countries-server'
 import { canAdminChapter, canAppointDeputies, type ChapterAccess } from '@/lib/chapter-access'
@@ -15,7 +16,12 @@ import {
 } from '@/lib/chapter-roles'
 import { sendAdminInviteEmail } from '@/lib/email'
 import { InviteChapterStaffSchema } from '@/lib/schemas'
-import { ChapterAuditAction, ChapterRoleKind, InviteStatus } from '@/generated/prisma/enums'
+import {
+  ChapterAuditAction,
+  ChapterRoleKind,
+  ChapterTransferStatus,
+  InviteStatus,
+} from '@/generated/prisma/enums'
 import { APPLICATION_STEPS } from './applications'
 import { adminProcedure, staffProcedure } from '../../procedures'
 
@@ -215,9 +221,15 @@ export const adminChaptersRouter = {
   reassign: adminProcedure
     .input(z.object({ volunteerId: z.number().int(), chapterId: z.number().int().nullable() }))
     .handler(async ({ input, context }) => {
+      const waiting = await prisma.chapterTransferRequest.findMany({
+        where: { volunteerId: input.volunteerId, status: ChapterTransferStatus.pending },
+        select: { id: true },
+      })
       await prisma.$transaction((tx) =>
         moveToChapter(tx, input.volunteerId, input.chapterId, context.volunteer.id),
       )
+      // The move cancels any request waiting, so nobody is left asked to answer it.
+      for (const { id } of waiting) await clearNotifications('chapter_transfer_request', id)
       return { message: 'Moved' }
     }),
 

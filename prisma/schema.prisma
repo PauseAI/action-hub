@@ -58,6 +58,14 @@ enum ChapterRoleKind {
   DEPUTY
 }
 
+/// Who asked for a chapter move: the member, staff of their chapter sending them on, or staff
+/// of another chapter bringing them in. The other side's staff answer it.
+enum ChapterTransferKind {
+  SELF
+  SEND
+  BRING
+}
+
 enum ChapterTransferStatus {
   pending
   approved
@@ -88,6 +96,7 @@ enum ChapterAuditAction {
   APPLICATION_REJECTED
   APPLICATION_INFO_REQUESTED
   APPLICATION_REOPENED
+  TRANSFER_REQUESTED
 }
 
 /// One country's members and the people who run it. A volunteer with no chapter is in the
@@ -205,12 +214,16 @@ model ChapterTransferRequest {
   decidedById   Int?                  @map("decided_by_id")
   decidedAt     DateTime?             @map("decided_at")
   decisionNote  String?               @map("decision_note")
+  kind          ChapterTransferKind   @default(SELF)
+  /// The staff member who asked, for a SEND or BRING; null for the member's own request.
+  requestedById Int?                  @map("requested_by_id")
   createdAt     DateTime              @default(now()) @map("created_at")
 
   volunteer   Volunteer        @relation("TransferVolunteer", fields: [volunteerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   fromChapter NationalChapter? @relation("TransferFrom", fields: [fromChapterId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   toChapter   NationalChapter? @relation("TransferTo", fields: [toChapterId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   decidedBy   Volunteer?       @relation("TransferDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  requestedBy Volunteer?       @relation("TransferRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([toChapterId, status], map: "idx_chapter_transfers_to_status")
   @@index([volunteerId, status], map: "idx_chapter_transfers_volunteer_status")
@@ -1245,6 +1258,7 @@ model Volunteer {
   chapterDeputiesAppointed                ChapterDeputy[]          @relation("ChapterDeputyAppointedBy")
   chapterTransferRequests                 ChapterTransferRequest[] @relation("TransferVolunteer")
   chapterTransfersDecided                 ChapterTransferRequest[] @relation("TransferDecidedBy")
+  chapterTransfersRequested               ChapterTransferRequest[] @relation("TransferRequestedBy")
   chapterAuditActions                     ChapterAuditEvent[]      @relation("ChapterAuditActor")
   chapterAuditTargeted                    ChapterAuditEvent[]      @relation("ChapterAuditTarget")
   locationConfirmedAt                     DateTime?                @map("location_confirmed_at")
