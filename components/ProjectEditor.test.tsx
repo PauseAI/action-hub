@@ -621,6 +621,7 @@ describe('ProjectEditor — editing an existing project', () => {
     await screen.findByDisplayValue('Busy')
     const release = holdNextFetch('projects/getById')
     await userEvent.click(screen.getByRole('button', { name: 'Submit' }))
+    // Nothing on screen changes while Submit reads, so its request is the only sign it has.
     await waitFor(() => expect(requestsTo('projects/getById').length).toBeGreaterThan(1))
     // The new task's save cancels every in-flight read of the project, Submit's among them.
     await userEvent.type(

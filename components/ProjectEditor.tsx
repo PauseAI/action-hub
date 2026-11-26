@@ -29,6 +29,7 @@ import type { AppRouter } from '@/server/router'
 const AUTOSAVE_MIN_TITLE = 3
 const AUTOSAVE_MIN_DESCRIPTION = 20
 const AUTOSAVE_DELAY_MS = 1500
+const READ_ATTEMPTS = 3
 
 interface SelectedSkill {
   skillId: number
@@ -428,26 +429,26 @@ export default function ProjectEditor(props: ProjectEditorProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readyToAutosave, creatingDraft, autosaveError, autosavePayloadKey])
 
-  // An org-proposed (or template-originated) draft still needs at least one task before it
-  // publishes straight live — see the self-publish gate in server/routers/projects.ts. A
-  // volunteer's own proposal has no such gate: tasks come later, once it's approved. The count
-  // is read fresh: just after a first task is added, the cached project can still be the copy
-  // loaded before it existed.
   // Adding a task cancels in-flight reads of the project, this one among them, so a cancelled
-  // read is made again.
+  // read is made again; a few times only, as leaving the page cancels it too.
   async function readFresh(id: number) {
-    for (;;) {
+    for (let attempt = 1; ; attempt++) {
       try {
         return await queryClient.fetchQuery({
           ...orpc.projects.getById.queryOptions({ input: { id } }),
           staleTime: 0,
         })
       } catch (err: unknown) {
-        if (!isCancelledError(err)) throw err
+        if (!isCancelledError(err) || attempt === READ_ATTEMPTS) throw err
       }
     }
   }
 
+  // An org-proposed (or template-originated) draft still needs at least one task before it
+  // publishes straight live — see the self-publish gate in server/routers/projects.ts. A
+  // volunteer's own proposal has no such gate: tasks come later, once it's approved. The count
+  // is read fresh: just after a first task is added, the cached project can still be the copy
+  // loaded before it existed.
   async function handleOpenPublishModal() {
     if (projectId === undefined && !title.trim()) {
       toast('A title is required, even for a draft.', 'error')
