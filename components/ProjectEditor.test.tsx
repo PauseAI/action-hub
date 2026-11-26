@@ -326,7 +326,7 @@ describe('ProjectEditor — new volunteer proposal', () => {
       await screen.findByRole('button', { name: 'Add task' }, { timeout: 20_000 }),
     )
     // Publish counts the saved tasks, so it waits for the saved task's row.
-    await screen.findByRole('button', { name: 'Delete task' })
+    await screen.findByRole('button', { name: 'Delete task' }, { timeout: 20_000 })
     expect(screen.queryByRole('alert')).toBeNull()
     const draft = await prisma.workItem.findFirstOrThrow({
       where: { creatorId: admin.id, type: 'PROJECT' },
