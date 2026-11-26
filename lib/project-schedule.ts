@@ -288,7 +288,7 @@ export async function pastPlanTasks(
       )
       if (days === null || t.assigneeId === null || t.assignee === null) continue
       const lastUpdate = await prisma.workItemComment.findFirst({
-        where: { workItemId: t.id, authorId: t.assigneeId, deletedAt: null },
+        where: { workItemId: t.id, authorId: t.assigneeId, deletedAt: null, callUrl: null },
         orderBy: { createdAt: 'desc' },
         select: { createdAt: true },
       })

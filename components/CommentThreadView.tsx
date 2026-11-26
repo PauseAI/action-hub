@@ -10,6 +10,8 @@ import { useToast } from '@/lib/toast'
 import { P } from '@/components/Text'
 import Avatar from '@/components/Avatar'
 import PersonName from '@/components/PersonName'
+import TextLink from '@/components/TextLink'
+import { isCallUrl } from '@/lib/video-call'
 
 export interface CommentItem {
   id: number
@@ -22,6 +24,8 @@ export interface CommentItem {
   deleted?: boolean
   canEdit?: boolean
   canDelete?: boolean
+  /** The video call this comment announces (lib/video-call.ts). */
+  callUrl?: string | null
   replies?: CommentItem[]
   /** Set only when this reply answers another reply, not the thread's own top-level comment. */
   repliedTo?: {
@@ -71,7 +75,17 @@ export async function succeeded(run: () => Promise<unknown>): Promise<boolean> {
   }
 }
 
-function CommentBody({ content }: { content: string }) {
+function CommentBody({ content, callUrl }: { content: string; callUrl?: string | null }) {
+  if (isCallUrl(callUrl)) {
+    return (
+      <P className="m-0 mb-1">
+        Started a call ·{' '}
+        <TextLink href={callUrl} target="_blank" rel="noopener noreferrer">
+          Join
+        </TextLink>
+      </P>
+    )
+  }
   return (
     <P className="m-0 mb-1 whitespace-pre-wrap">
       {splitMentions(content).map((part, i) =>
@@ -298,7 +312,7 @@ export default function CommentThreadView({
             }}
           />
         ) : (
-          <CommentBody content={c.content} />
+          <CommentBody content={c.content} callUrl={c.callUrl} />
         )}
         <div className="flex flex-wrap items-center gap-3 text-xs text-text-light">
           <button
