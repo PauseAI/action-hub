@@ -13,6 +13,7 @@ import {
 import { renderApp } from '@/test/render'
 import { navigation } from '@/test/next-navigation'
 import QuickTasksPage from './page'
+import { dismissToast } from '@/test/toast'
 
 const row = (id: number) => prisma.workItem.findUniqueOrThrow({ where: { id } })
 
@@ -496,33 +497,24 @@ describe('quick tasks — admin view', () => {
     )
     await userEvent.click(await screen.findByRole('option', { name: 'Xena Helper' }))
     await prisma.workItem.delete({ where: { id: openQt.id } })
-    // Each failure is dismissed once seen, so the next step waits for a toast of its own;
-    // counting toasts instead races their auto-dismiss when the suite runs slowly.
-    const expectNotFound = async () => {
-      const toast = (await screen.findByText('Task not found', {}, { timeout: 5000 })).closest(
-        '[role=alert]',
-      ) as HTMLElement
-      await userEvent.click(within(toast).getByLabelText('Dismiss'))
-      await waitFor(() => expect(screen.queryByText('Task not found')).toBeNull())
-    }
     await userEvent.click(within(openCard()).getByRole('button', { name: 'Assign' }))
-    await expectNotFound()
+    await dismissToast('Task not found')
     await userEvent.click(within(card()).getByRole('button', { name: 'Edit' }))
     await prisma.workItem.delete({ where: { id: qt.id } })
     fireEvent.submit(screen.getByLabelText('Title').closest('form')!)
-    await expectNotFound()
+    await dismissToast('Task not found')
     fireEvent.click(screen.getByRole('dialog').parentElement!)
     await userEvent.click(within(card()).getByRole('button', { name: 'Unassign' }))
-    await expectNotFound()
+    await dismissToast('Task not found')
     await userEvent.click(within(card()).getByRole('button', { name: 'Review' }))
     fireEvent.submit(screen.getByLabelText('Internal notes (admin only)').closest('form')!)
-    await expectNotFound()
+    await dismissToast('Task not found')
     fireEvent.click(screen.getByRole('dialog').parentElement!)
     await userEvent.click(within(card()).getByRole('button', { name: 'Delete' }))
     await userEvent.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete task' }),
     )
-    await expectNotFound()
+    await dismissToast('Task not found')
     await userEvent.click(screen.getByRole('button', { name: 'Create task' }))
     localStorage.setItem('authToken', 'stale')
     await userEvent.type(screen.getByLabelText('Title'), 'x')

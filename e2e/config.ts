@@ -1,6 +1,6 @@
 import path from 'path'
 import os from 'os'
-import { resolveTestDbUrl } from '../test/pg'
+import { resolveTestDbUrl, withoutCommitSync } from '../test/pg'
 
 const _remoteBaseUrl = process.env.BASE_URL
 export const IS_LOCAL = !_remoteBaseUrl || _remoteBaseUrl.startsWith('http://localhost')
@@ -51,6 +51,7 @@ export function workerDbUrl(parallelIndex: number, serverCount = WORKER_COUNT): 
   // Each server gets its own pool, sized so the sum stays inside the budget.
   const limit = Math.max(2, Math.min(10, Math.floor(POOL_BUDGET / serverCount)))
   url.searchParams.set('connection_limit', String(limit))
+  withoutCommitSync(url)
   return url.toString()
 }
 
