@@ -161,7 +161,9 @@ export async function heldRoles(
       ) AS team_lead,
       EXISTS (
         SELECT 1 FROM work_items w
-        WHERE w.type = 'QUICK_TASK' AND w.creator_id = ${volunteerId} AND w.status <> 'completed'
+        WHERE w.creator_id = ${volunteerId} AND w.status <> 'completed'
+          AND (w.type = 'QUICK_TASK' OR EXISTS (
+            SELECT 1 FROM work_items p WHERE p.id = w.parent_id AND p.standing_requests))
       ) AS quick_task_poster,
       EXISTS (SELECT 1 FROM coordinators c WHERE c.volunteer_id = ${volunteerId}) AS coordinator
   `

@@ -31,6 +31,7 @@ type ProjectRow = {
   status: string
   teamId: number | null
   nationalChapterId: number | null
+  standingRequests: boolean
 }
 
 async function loadState(
@@ -86,6 +87,7 @@ async function loadState(
       status: project.status,
       teamId: project.teamId,
       nationalChapterId: project.nationalChapterId,
+      standingRequests: project.standingRequests,
     },
     state,
   }

@@ -77,8 +77,11 @@ export const PERMISSIONS = {
   },
   'task.manage': {
     scope: 'project',
-    summary:
-      'Edit, reorder, link and reschedule its tasks, review and reopen them, add helpers, and see a hidden timeline',
+    summary: 'Edit, reorder, link and reschedule its tasks, add helpers, and see a hidden timeline',
+  },
+  'task.review': {
+    scope: 'task',
+    summary: 'Accept the work handed in on it, ask for changes, or reopen it once done',
   },
   'task.assign': {
     scope: 'project',
@@ -115,6 +118,7 @@ const PROJECT_ADMIN: readonly Permission[] = [
   'task.create',
   'task.answerRequests',
   'task.manage',
+  'task.review',
   'task.assign',
   'task.delete',
   'task.removeHelper',
@@ -161,6 +165,7 @@ export const ROLES = {
       'task.create',
       'task.answerRequests',
       'task.manage',
+      'task.review',
       'task.assign',
       'task.delete',
       'task.removeHelper',
@@ -178,6 +183,7 @@ export const ROLES = {
       'project.seeChangeRequests',
       'task.create',
       'task.manage',
+      'task.review',
       'task.delete',
       'task.removeHelper',
     ],
@@ -196,6 +202,7 @@ export const ROLES = {
       'task.create',
       'task.answerRequests',
       'task.manage',
+      'task.review',
       'task.assign',
       'task.delete',
       'task.removeHelper',
@@ -219,6 +226,12 @@ export const ROLES = {
     heldBy: 'Whoever added the task',
     grants: ['task.delete'],
   },
+  requester: {
+    scope: 'task',
+    name: 'Requester',
+    heldBy: 'Whoever asked for help, on their request in a Requests for help project',
+    grants: ['task.review', 'task.delete', 'task.removeHelper'],
+  },
 } as const satisfies Record<string, RoleInfo>
 
 export type Role = keyof typeof ROLES
@@ -231,6 +244,8 @@ export type ProjectFacts = {
   assigneeId: number | null
   creatorId: number | null
   status: string
+  /** A Requests for help project (lib/requests.ts). */
+  standingRequests: boolean
 }
 
 /** What the database says about the viewer on a project; `loadStanding` reads it. */
@@ -290,7 +305,9 @@ export function rolesOn(viewer: Viewer, resource: Resource): Role[] {
     case 'task': {
       const roles = projectRoles(viewer, resource.project, resource.standing)
       if (resource.task.assigneeId === viewer.id) roles.push('taskHolder')
-      if (resource.task.creatorId === viewer.id) roles.push('taskCreator')
+      if (resource.task.creatorId === viewer.id) {
+        roles.push(resource.project.standingRequests ? 'requester' : 'taskCreator')
+      }
       return roles
     }
   }

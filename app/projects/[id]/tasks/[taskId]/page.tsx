@@ -301,7 +301,7 @@ export default function TaskDetailPage({
     task.assignedToId === user.id &&
     task.status === TaskStatus.not_started
   // Whoever sees Accept on work in review is the one it waits on.
-  const viewer = { isAssignee: task.assignedToId === user.id, canReview: task.canManage }
+  const viewer = { isAssignee: task.assignedToId === user.id, canReview: task.canReview }
 
   return (
     <main className="container py-5 pb-15">
@@ -330,14 +330,19 @@ export default function TaskDetailPage({
           underTitle={
             // The form below holds the same dates, so the summary steps aside while it is open.
             !isEditing && (
-              <TaskDatesSummary
-                className=""
-                estimatedHours={task.estimatedHours}
-                deadline={task.deadline}
-                openStart={task.startDate === null && task.waitsOn.length === 0}
-                placement={task.placement}
-                handedIn={handedIn(task.status)}
-              />
+              <>
+                {task.isRequest && task.createdByName && (
+                  <P className="text-sm m-0 mb-1">Asked by {task.createdByName}</P>
+                )}
+                <TaskDatesSummary
+                  className=""
+                  estimatedHours={task.estimatedHours}
+                  deadline={task.deadline}
+                  openStart={task.startDate === null && task.waitsOn.length === 0}
+                  placement={task.placement}
+                  handedIn={handedIn(task.status)}
+                />
+              </>
             )
           }
           person={
@@ -438,7 +443,7 @@ export default function TaskDetailPage({
                   Edit
                 </Button>
               )}
-              {isDone && task.canManage && (
+              {isDone && task.canReview && (
                 <Button variant="secondary" size="sm" onClick={() => setReopening(true)}>
                   Reopen
                 </Button>
@@ -585,7 +590,7 @@ export default function TaskDetailPage({
 
         <SubmittedWork submission={task.submission} changesRequested={task.changesRequested} />
 
-        {task.status === TaskStatus.under_review && task.canManage && (
+        {task.status === TaskStatus.under_review && task.canReview && (
           <div className="flex flex-wrap gap-2 mt-4">
             <Button
               disabled={acceptMutation.isPending}
@@ -606,10 +611,12 @@ export default function TaskDetailPage({
             ask={task}
             reviewer={
               awaitsOwnerReview(
-                { autoAcceptTasks: task.autoAcceptTasks, ownerId: task.projectOwnerId },
-                task.canManage,
+                { autoAcceptTasks: task.autoAcceptTasks, ownerId: task.reviewerId },
+                task.canReview,
               )
-                ? 'The project owner'
+                ? task.isRequest
+                  ? (task.createdByName ?? 'Whoever asked')
+                  : 'The project owner'
                 : null
             }
           />

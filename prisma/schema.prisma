@@ -595,6 +595,9 @@ model WorkItem {
   alwaysAskToJoin            Boolean   @default(false) @map("always_ask_to_join")
   // Whether the project page offers its Timeline tab; the owner turns it on once there's a plan.
   showTimeline               Boolean   @default(false) @map("show_timeline")
+  // A chapter's standing 'Requests for help' project (the holding pool's is 'Global requests'):
+  // never finishes, has no owner, and is left out of project lists. See lib/requests.ts.
+  standingRequests           Boolean   @default(false) @map("standing_requests")
   outcome                    String? // TODO: enum — successful, partial, not_completed, ongoing
   outcomeNotes               String?   @map("outcome_notes")
   completedAt                DateTime? @map("completed_at")
