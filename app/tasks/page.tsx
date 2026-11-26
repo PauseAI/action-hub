@@ -112,13 +112,18 @@ function TasksFeed({ userId, chapterName }: { userId: number; chapterName: strin
   const router = useRouter()
 
   const { data: feed = [], isLoading: loadingFeed } = useQuery(orpc.requests.feed.queryOptions())
-  const { data: myRequests = [] } = useQuery(orpc.requests.mine.queryOptions())
-  const { data: held = [] } = useQuery(orpc.my.projectTasks.queryOptions())
+  const { data: myRequests = [], isPending: loadingRequests } = useQuery(
+    orpc.requests.mine.queryOptions(),
+  )
+  const { data: held = [], isPending: loadingHeld } = useQuery(orpc.my.projectTasks.queryOptions())
 
-  // Requests already done stay listed, but don't count as something on your plate.
-  const mineCount = held.length + myRequests.filter((r) => r.status !== TaskStatus.completed).length
+  // Work already done stays listed, but doesn't count as something on your plate.
+  const active = (t: { status: string }) => t.status !== TaskStatus.completed
+  const mineCount = held.filter(active).length + myRequests.filter(active).length
   const [chosenTab, setChosenTab] = useState<'mine' | 'open' | null>(null)
-  const tab = chosenTab ?? (mineCount > 0 ? 'mine' : 'open')
+  // Opens on Mine when something there is yours to do; chosen once both lists are in, so the
+  // page does not switch under someone already reading Open.
+  const tab = chosenTab ?? (loadingRequests || loadingHeld ? null : mineCount > 0 ? 'mine' : 'open')
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: orpc.requests.key() })
@@ -175,9 +180,11 @@ function TasksFeed({ userId, chapterName }: { userId: number; chapterName: strin
           { key: 'open', label: `Open${feed.length ? ` (${feed.length})` : ''}` },
           { key: 'mine', label: `Mine${mineCount ? ` (${mineCount})` : ''}` },
         ]}
-        activeTab={tab}
+        activeTab={tab ?? 'open'}
         onChange={setChosenTab}
       />
+
+      {tab === null && <Skeleton label="Loading tasks…" />}
 
       {tab === 'open' && (
         <section aria-labelledby="open-tasks">
@@ -358,7 +365,13 @@ function HeldTasks({ held, onBrowse }: { held: HeldTask[]; onBrowse: () => void 
                 {t.role} · {t.projectTitle}
               </span>,
             ]}
-          />
+          >
+            {t.status === TaskStatus.in_progress && t.changesRequested && (
+              <P className="text-sm m-0">
+                <strong>Changes requested:</strong> {t.changesRequested}
+              </P>
+            )}
+          </TaskCard>
         ))
       )}
     </section>

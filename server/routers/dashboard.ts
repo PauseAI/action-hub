@@ -1,6 +1,5 @@
-import { NOT_STANDING } from '@/lib/requests'
+import { NOT_STANDING, openRequests } from '@/lib/requests'
 import { openHelperPlaces } from '@/lib/open-helper-places'
-import { openRequests } from '@/lib/requests'
 import { askingFor, offeredSummary } from '@/lib/helper-summary'
 import { prisma } from '@/lib/prisma'
 import { isStaff, type ChapterAccess } from '@/lib/chapter-access'

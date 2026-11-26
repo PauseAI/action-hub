@@ -140,6 +140,34 @@ describe('the Tasks page', () => {
     expect(await screen.findByText('Long done')).toBeInTheDocument()
   })
 
+  it('keeps work under Mine once handed in, with any changes asked for', async () => {
+    const chapter = await createChapter()
+    const asker = await createMember(chapter)
+    const taker = await createMember(chapter)
+    const take = async (title: string) => {
+      const asked = await clientAs(asker).requests.ask({ title })
+      const ids = { projectId: asked.projectId, taskId: asked.id }
+      await clientAs(taker).projects.updateTask({ ...ids, data: { assigneeId: taker.id } })
+      await clientAs(taker).projects.submitTask({ ...ids, note: 'Done' })
+      return ids
+    }
+    await take('Waiting on review')
+    const sentBack = await take('Sent back')
+    await clientAs(asker).projects.requestTaskChanges({ ...sentBack, message: 'Add the date' })
+    const done = await take('Accepted')
+    await clientAs(asker).projects.acceptTask(done)
+
+    await renderApp(<TasksPage />, { as: taker })
+    // Done work stays listed but is not counted as on their plate.
+    expect(await screen.findByRole('tab', { name: 'Mine (2)' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    expect((await card('Waiting on review')).getByRole('status')).toHaveTextContent('In review')
+    expect((await card('Sent back')).getByText('Add the date')).toBeInTheDocument()
+    expect((await card('Accepted')).getByRole('status')).toHaveTextContent('Done')
+  })
+
   it('lists featured tasks and helper places, and says when one went meanwhile', async () => {
     const me = await createVolunteer()
     const owner = await createVolunteer({ name: 'Olive Owner' })

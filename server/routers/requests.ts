@@ -9,7 +9,7 @@ import {
   resolveClaimViewers,
 } from '@/lib/work-item'
 import { openHelperPlaces } from '@/lib/open-helper-places'
-import { TERMINAL_STATUSES } from '@/lib/project-status'
+import { TERMINAL_STATUSES, UNAPPROVED_STATUSES } from '@/lib/project-status'
 import { approvedProcedure } from '../procedures'
 import { TaskStatus, TaskTiming, WorkItemType } from '@/generated/prisma/enums'
 
@@ -41,7 +41,7 @@ export const requestsRouter = {
           parentId: { not: null, notIn: blocked.map((b) => b.workItemId) },
           parent: {
             standingRequests: false,
-            status: { notIn: TERMINAL_STATUSES },
+            status: { notIn: [...TERMINAL_STATUSES, ...UNAPPROVED_STATUSES] },
             AND: [projectScopeWhere({ ...viewer, isAdmin: false })],
           },
         },

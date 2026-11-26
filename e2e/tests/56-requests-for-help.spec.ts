@@ -1,4 +1,5 @@
-import { test, expect, getAlert, createApprovedVolunteer } from '../fixtures'
+import { test, expect, getAlert, createApprovedVolunteer, readAdminToken } from '../fixtures'
+import { adminCreateProjectViaApi } from '../actions/projects'
 import { createApiClient } from '../client'
 import { fake } from '../fake'
 
@@ -61,5 +62,51 @@ test.describe('Requests for help', () => {
     await volunteer.page.goto(`${baseUrl}/quick-tasks/${id}`)
     await volunteer.page.waitForURL(`**/projects/${projectId}/tasks/${id}`)
     await expect(volunteer.page.getByRole('heading', { name: title, level: 1 })).toBeVisible()
+  })
+
+  test('A volunteer takes a request, and asks to take a featured task, from the Tasks page', async ({
+    volunteer,
+    baseUrl,
+    snap,
+  }) => {
+    const asker = await createApprovedVolunteer(baseUrl)
+    const request = fake.quickTaskTitle()
+    await createApiClient(baseUrl, asker.token).requests.ask({
+      body: { title: request, global: true },
+    })
+    const adminApi = createApiClient(baseUrl, readAdminToken(baseUrl))
+    const projectId = await adminCreateProjectViaApi(
+      baseUrl,
+      fake.projectTitle(),
+      'Featured task e2e project',
+    )
+    const featured = fake.quickTaskTitle()
+    await adminApi.projects.createTask({
+      body: { projectId, title: featured, featuredAsQuickTask: true },
+    })
+
+    const page = volunteer.page
+    await page.goto(`${baseUrl}/tasks`)
+    const open = page.getByRole('region', { name: 'Open to take' })
+    const featuredCard = open.getByRole('article').filter({ hasText: featured })
+    await expect(featuredCard).toContainText('Part of:', { timeout: 10_000 })
+    const requestCard = open.getByRole('article').filter({ hasText: request })
+    await expect(requestCard).toContainText(`Asked by ${asker.name}`)
+    await snap(page, 'open to take')
+
+    await featuredCard.getByRole('button', { name: 'Ask to take this' }).click()
+    await expect(getAlert(page)).toContainText('Requested. The task is held for you', {
+      timeout: 10_000,
+    })
+    await page.goto(`${baseUrl}/tasks`)
+    await open
+      .getByRole('article')
+      .filter({ hasText: request })
+      .getByRole('button', { name: 'Claim task' })
+      .click()
+    await expect(page.getByRole('heading', { name: request, level: 1 })).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(page.getByText(`${asker.name} will look at it`)).toBeVisible()
   })
 })
