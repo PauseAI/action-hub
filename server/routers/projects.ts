@@ -1400,6 +1400,9 @@ export const projectsRouter = {
 
     return {
       id: project.id,
+      // Who made it: an editor that started the create before its session loaded learns here
+      // who "I want to lead this" means.
+      creatorId: volunteer.id,
       message: saveAsDraft ? 'Draft saved' : 'Project submitted for review',
     }
   }),

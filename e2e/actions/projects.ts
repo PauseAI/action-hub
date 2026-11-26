@@ -46,7 +46,7 @@ export async function openNewProjectForm(page: Page): Promise<void> {
 // moves to the edit page without a navigation, so wait for it, and for the task to appear.
 async function addFirstTask(page: Page, taskTitle: string): Promise<number> {
   await page.locator('#new-task-title').fill(taskTitle)
-  await page.getByRole('button', { name: 'Add task' }).click()
+  await page.getByRole('button', { name: /^Add (task|to outline)$/ }).click()
   await page.waitForURL(/\/projects\/\d+\/edit/, { timeout: 15_000 })
   await expect(page.locator(`input[id^="task-title-"][value="${taskTitle}"]`)).toBeVisible({
     timeout: 10_000,
@@ -74,7 +74,6 @@ export async function proposeProject(
   page: Page,
   title: string,
   description: string,
-  skillName?: string,
   snap?: Snap,
 ): Promise<number> {
   await page.goto(`${baseUrl}/suggest`)
@@ -82,12 +81,6 @@ export async function proposeProject(
 
   await page.getByLabel('Project title').fill(title)
   await page.getByLabel('Description').fill(description)
-  if (skillName) {
-    await page
-      .locator('label.skill-option')
-      .filter({ hasText: new RegExp(`^\\s*${skillName}\\s*$`) })
-      .click()
-  }
   // A project has no tasks yet, so the add-task form is the only task input on the page.
   const id = await addFirstTask(page, 'Initial task')
   await snap?.(page, 'draft with a task')
@@ -198,9 +191,9 @@ export async function addTaskFromEditPage(
   await expect(page.getByRole('heading', { name: 'Edit Project' })).toBeVisible({
     timeout: 10_000,
   })
-  // Existing tasks are also labeled "Task title" — target the add-task form's stable id.
+  // Existing tasks are also labelled like it — target the add-task form's stable id.
   await page.locator('#new-task-title').fill(taskTitle)
-  await page.getByRole('button', { name: 'Add task' }).click()
+  await page.getByRole('button', { name: /^Add (task|to outline)$/ }).click()
   // Existing tasks render as editable inputs, so the title is a value, not a text node. The
   // add-task form still holds the title until the create succeeds, so exclude it.
   await expect(page.locator(`input[id^="task-title-"][value="${taskTitle}"]`)).toBeVisible({

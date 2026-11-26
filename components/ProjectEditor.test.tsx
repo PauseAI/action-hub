@@ -45,24 +45,32 @@ describe('ProjectEditor — new volunteer proposal', () => {
     const sawSpinner = screen.findByText('Autosaving', {}, { timeout: 20_000 })
     await userEvent.type(screen.getByLabelText('Project title'), 'My idea')
     await userEvent.type(screen.getByLabelText('Description'), 'Some words')
-    const skill = await prisma.skill.findFirstOrThrow()
-    await userEvent.click(await screen.findByLabelText(skill.name))
+    // A proposal is a skeleton: effort, dates and skills wait for Planning.
+    for (const later of [
+      'Hours per week',
+      'Start date',
+      'Duration (days)',
+      'Total hours (estimate)',
+    ])
+      expect(screen.queryByLabelText(later)).toBeNull()
+    expect(screen.queryByText('Skills needed')).toBeNull()
+    await userEvent.click(screen.getByLabelText(/I want to lead this project/))
     // The address moving to the edit page is the sign the draft was created.
     await waitFor(() => expect(window.location.pathname).toMatch(/^\/projects\/\d+\/edit$/), {
       timeout: 20_000,
     })
+    // Still a skeleton while the new draft loads: the Planning fields never flash in.
+    expect(screen.queryByLabelText('Hours per week')).toBeNull()
     await sawSpinner
     expect(await prisma.workItem.count({ where: { creatorId: me.id } })).toBe(1)
     const draft = await prisma.workItem.findFirstOrThrow({ where: { creatorId: me.id } })
     expect(draft).toMatchObject({ status: 'draft', isOrgProposed: false })
-    // Under load the draft can be created before the last keystrokes or the skill click,
+    // Under load the draft can be created before the last keystrokes or the ownership click,
     // which then save onto it.
     await waitFor(
       async () => {
         expect((await row(draft.id)).title).toBe('My idea')
-        expect(
-          await prisma.workItemSkill.count({ where: { workItemId: draft.id, skillId: skill.id } }),
-        ).toBe(1)
+        expect((await row(draft.id)).assigneeId).toBe(me.id)
       },
       { timeout: 20_000 },
     )
@@ -71,10 +79,12 @@ describe('ProjectEditor — new volunteer proposal', () => {
     expect(navigation.replace).not.toHaveBeenCalled()
     expect(screen.getByLabelText('Project title')).toHaveValue('My idea')
     // Once the draft exists, fields commit on blur.
-    const hours = await screen.findByLabelText('Hours per week')
-    fireEvent.change(hours, { target: { value: '4' } })
-    blur(hours)
-    await waitFor(async () => expect((await row(draft.id)).timeCommitmentHoursPerWeek).toBe(4))
+    const link = await screen.findByLabelText('Collaboration doc / link (optional)')
+    fireEvent.change(link, { target: { value: 'https://example.com/plan' } })
+    blur(link)
+    await waitFor(async () =>
+      expect((await row(draft.id)).collaborationLink).toBe('https://example.com/plan'),
+    )
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/Last saved/))
     // Delete draft follows the refetched project, not the save itself.
     expect(
@@ -115,21 +125,17 @@ describe('ProjectEditor — new volunteer proposal', () => {
     const onCancel = vi.fn()
     await mount({ variant: 'volunteer', onCancel }, me)
     await waitFor(() => expect(localStorage.getItem('authToken')).toBeTruthy())
-    expect(screen.getByRole('button', { name: 'Add task' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Add to outline' })).toBeDisabled()
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(onCancel).toHaveBeenCalled()
-    await userEvent.type(screen.getByLabelText('Task title'), 'First task')
-    await userEvent.click(screen.getByRole('button', { name: 'Add task' }))
+    await userEvent.type(screen.getByLabelText('Outline item'), 'First task')
+    await userEvent.click(screen.getByRole('button', { name: 'Add to outline' }))
     expect(await screen.findByText('A title is required, even for a draft.')).toBeInTheDocument()
-    // Too short to autosave, so the timer cannot start a create under the Add task click.
+    // Too short to autosave, so the timer cannot start a create under the Add to outline click.
     await userEvent.type(screen.getByLabelText('Project title'), 'Go')
-    await userEvent.click(screen.getByRole('button', { name: 'More details' }))
-    await userEvent.type(screen.getByLabelText('Details (optional)'), 'detail')
-    await userEvent.type(screen.getByLabelText('Helpers wanted (optional)'), '3')
-    await userEvent.type(screen.getByLabelText('What to submit (optional)'), 'A link')
-    // An unapproved proposal's tasks can't go on the quick tasks page.
-    expect(screen.queryByRole('checkbox', { name: /quick task/i })).toBeNull()
-    await userEvent.click(screen.getByRole('button', { name: 'Add task' }))
+    // An outline item is a title: dates, helpers and what to submit wait for Planning.
+    expect(screen.queryByRole('button', { name: 'More details' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Add to outline' }))
     const draft = await waitFor(async () =>
       prisma.workItem.findFirstOrThrow({ where: { creatorId: me.id, type: 'PROJECT' } }),
     )
@@ -139,16 +145,11 @@ describe('ProjectEditor — new volunteer proposal', () => {
     // The just-created draft's first load may have raced the task insert; the editor must still show it.
     await waitFor(() => expect(screen.getByDisplayValue('First task')).toBeInTheDocument())
     expect(await prisma.workItem.findFirstOrThrow({ where: { parentId: draft.id } })).toMatchObject(
-      {
-        description: 'detail',
-        helpersWanted: 3,
-        submissionPrompt: 'A link',
-        featuredAsQuickTask: false,
-      },
+      { title: 'First task', isOutline: true, helpersWanted: null, featuredAsQuickTask: false },
     )
-    // The form empties and folds its details away for the next task.
-    expect(screen.getByLabelText('Task title', { selector: '#new-task-title' })).toHaveValue('')
-    expect(screen.queryByLabelText('Helpers wanted (optional)')).toBeNull()
+    expect(screen.getByLabelText('Outline item', { selector: '#new-task-title' })).toHaveValue('')
+    // Each item can carry a note.
+    expect(screen.getByLabelText('Note (optional)')).toBeInTheDocument()
   })
 
   it('makes one draft when Add task lands while a create is already in flight', async () => {
@@ -157,8 +158,8 @@ describe('ProjectEditor — new volunteer proposal', () => {
     await waitFor(() => expect(localStorage.getItem('authToken')).toBeTruthy())
     // A title too short to autosave, so the clicks below make the only create.
     await userEvent.type(screen.getByLabelText('Project title'), 'Go')
-    await userEvent.type(screen.getByLabelText('Task title'), 'Step')
-    const add = screen.getByRole('button', { name: 'Add task' })
+    await userEvent.type(screen.getByLabelText('Outline item'), 'Step')
+    const add = screen.getByRole('button', { name: 'Add to outline' })
     // Two clicks before either has re-rendered, so the button is still enabled for the second:
     // both reach the create together.
     act(() => {
@@ -184,23 +185,23 @@ describe('ProjectEditor — new volunteer proposal', () => {
     await mount({ variant: 'volunteer' }, me)
     await waitFor(() => expect(localStorage.getItem('authToken')).toBeTruthy())
     await userEvent.type(screen.getByLabelText('Project title'), 'Go')
-    await userEvent.type(screen.getByLabelText('Task title'), 'Step')
-    const skill = await prisma.skill.findFirstOrThrow()
-    const skillBox = await screen.findByLabelText(skill.name)
-    // The create is sent on the click; the skill and ownership change before it lands.
+    await userEvent.type(screen.getByLabelText('Outline item'), 'Step')
+    // The create is sent on the click; the title, ownership and seeking-help changes come
+    // before it lands, perhaps before the session has loaded too.
     act(() => {
-      fireEvent.click(screen.getByRole('button', { name: 'Add task' }))
-      fireEvent.click(skillBox)
+      fireEvent.click(screen.getByRole('button', { name: 'Add to outline' }))
+      fireEvent.change(screen.getByLabelText('Project title'), { target: { value: 'Go far' } })
       fireEvent.click(screen.getByLabelText(/I want to lead this project/))
+      fireEvent.click(screen.getByLabelText('Help / contributors'))
     })
     await waitFor(
       async () => {
         const draft = await prisma.workItem.findFirstOrThrow({
           where: { creatorId: me.id, type: 'PROJECT' },
-          include: { skills: true },
         })
+        expect(draft.title).toBe('Go far')
         expect(draft.assigneeId).toBe(me.id)
-        expect(draft.skills.map((s) => s.skillId)).toEqual([skill.id])
+        expect(draft.isSeekingHelp).toBe(false)
       },
       { timeout: 20_000 },
     )
@@ -213,10 +214,10 @@ describe('ProjectEditor — new volunteer proposal', () => {
     await mount({ variant: 'volunteer' }, me)
     await waitFor(() => expect(localStorage.getItem('authToken')).toBeTruthy())
     await userEvent.type(screen.getByLabelText('Project title'), 'One too many')
-    await userEvent.type(screen.getByLabelText('Task title'), 'Orphan')
+    await userEvent.type(screen.getByLabelText('Outline item'), 'Orphan')
     // On a slow run the autosave's own draft create is in flight here, and the button reads
     // "Adding…" until it fails.
-    await userEvent.click(await screen.findByRole('button', { name: 'Add task' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Add to outline' }))
     expect(await screen.findByText(/already have 2 drafts/)).toBeInTheDocument()
     expect(await prisma.workItem.count({ where: { title: 'Orphan' } })).toBe(0)
   })
@@ -262,14 +263,14 @@ describe('ProjectEditor — new volunteer proposal', () => {
     await mount({ variant: 'volunteer' }, me)
     await waitFor(() => expect(localStorage.getItem('authToken')).toBeTruthy())
     await userEvent.type(screen.getByLabelText('Project title'), 'One click')
-    await userEvent.type(screen.getByLabelText('Task title'), 'First step')
+    await userEvent.type(screen.getByLabelText('Outline item'), 'First step')
     // The title's autosave creates the draft, and the button reads "Adding…" until it has.
     await userEvent.click(
-      await screen.findByRole('button', { name: 'Add task' }, { timeout: 20_000 }),
+      await screen.findByRole('button', { name: 'Add to outline' }, { timeout: 20_000 }),
     )
     // Submit before the task's save lands would read the draft before the task is in it.
-    // Delete task only renders for a saved task.
-    await screen.findByRole('button', { name: 'Delete task' }, { timeout: 20_000 })
+    // Remove only renders for a saved outline item.
+    await screen.findByRole('button', { name: 'Remove' }, { timeout: 20_000 })
     const submit = await screen.findByRole('button', { name: 'Submit' })
     await waitFor(() => expect(submit).toBeEnabled())
     await userEvent.click(submit)
@@ -283,9 +284,9 @@ describe('ProjectEditor — new volunteer proposal', () => {
     expect(draft.status).toBe('pending_review')
   })
 
-  it('keeps a start date and duration typed before the draft is first saved', async () => {
-    const me = await createVolunteer()
-    await mount({ variant: 'volunteer' }, me)
+  it('keeps a start date and duration typed before an org draft is first saved', async () => {
+    const me = await createAdmin()
+    await mount({ variant: 'admin' }, me)
     await waitFor(() => expect(localStorage.getItem('authToken')).toBeTruthy())
     await userEvent.type(screen.getByLabelText('Project title'), 'Dated')
     fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-07-01' } })
@@ -315,15 +316,39 @@ describe('ProjectEditor — new volunteer proposal', () => {
     )
     expect(screen.queryByText('Publish this project?')).toBeNull()
 
+    // An org draft's tasks are real from the start, details and all.
     await userEvent.type(screen.getByLabelText('Task title'), 'T1')
-    await userEvent.click(screen.getByRole('button', { name: 'Add task' }))
+    await userEvent.click(screen.getByRole('button', { name: 'More details' }))
+    await userEvent.type(screen.getByLabelText('Details (optional)'), 'detail')
+    await userEvent.type(screen.getByLabelText('Helpers wanted (optional)'), '3')
+    await userEvent.type(screen.getByLabelText('What to submit (optional)'), 'A link')
+    // Not yet live, so its tasks can't go on the quick tasks page.
+    expect(screen.queryByRole('checkbox', { name: /quick task/i })).toBeNull()
+    // The button reads "Adding…" while the title's autosave creates the draft.
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Add task' }, { timeout: 20_000 }),
+    )
     // Publish counts the saved tasks, so it waits for the saved task's row.
-    await screen.findByRole('button', { name: 'Delete task' })
+    await screen.findByRole('button', { name: 'Delete task' }, { timeout: 20_000 })
     expect(screen.queryByRole('alert')).toBeNull()
     const draft = await prisma.workItem.findFirstOrThrow({
       where: { creatorId: admin.id, type: 'PROJECT' },
     })
     expect(draft.isOrgProposed).toBe(true)
+    await waitFor(
+      async () =>
+        expect(
+          await prisma.workItem.findFirst({ where: { title: 'T1', creatorId: admin.id } }),
+        ).toMatchObject({
+          description: 'detail',
+          helpersWanted: 3,
+          submissionPrompt: 'A link',
+          isOutline: false,
+        }),
+      { timeout: 20_000 },
+    )
+    // The form folds its details away for the next task.
+    expect(screen.queryByLabelText('Helpers wanted (optional)')).toBeNull()
     await userEvent.click(await screen.findByRole('button', { name: 'Publish' }))
     // The dialog opens only once a fresh copy of the project has been fetched.
     expect(await screen.findByText('Publish this project?')).toBeInTheDocument()
@@ -346,8 +371,8 @@ describe('ProjectEditor — autosave line', () => {
     expect(line()).toHaveTextContent('Changes save automatically.')
     expect(line()).not.toHaveTextContent('Last saved')
 
-    await userEvent.type(screen.getByLabelText('Task title'), 'New task')
-    await userEvent.click(screen.getByRole('button', { name: 'Add task' }))
+    await userEvent.type(screen.getByLabelText('Outline item'), 'New task')
+    await userEvent.click(screen.getByRole('button', { name: 'Add to outline' }))
     await waitFor(() => expect(line()).toHaveTextContent(/Last saved \d/))
 
     // A save that fails says so and can be retried once the cause is gone.
@@ -376,9 +401,11 @@ describe('ProjectEditor — editing an existing project', () => {
     const me = await createMember(chapter)
     const team = await createTeam({ nationalChapterId: chapter.id })
     const skill = await createSkill()
+    // An org draft has the whole form: it skips review and Planning.
     const project = await createProject({
       creatorId: me.id,
       status: 'draft',
+      isOrgProposed: true,
       title: 'Draft',
       description: 'D',
       skills: { create: [{ skillId: (await createSkill()).id }] },
@@ -528,7 +555,7 @@ describe('ProjectEditor — editing an existing project', () => {
     await userEvent.keyboard('{Escape}')
     await userEvent.click(screen.getByRole('button', { name: 'Delete draft' }))
     await userEvent.click(screen.getAllByRole('button', { name: 'Delete draft' })[1])
-    await waitFor(() => expect(navigation.push).toHaveBeenCalledWith('/suggest'))
+    await waitFor(() => expect(navigation.push).toHaveBeenCalledWith('/admin/projects'))
   })
 
   it('shows the permission notice to a stranger and refuses their edits', async () => {
@@ -592,13 +619,16 @@ describe('ProjectEditor — editing an existing project', () => {
     fireEvent.change(taskTitle, { target: { value: 'T2' } })
     blur(taskTitle)
     expect(await screen.findByText('Project or task not found')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Delete task' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Remove' }))
     await userEvent.click(
-      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete task' }),
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Remove' }),
     )
     expect(await screen.findByText('Project not found')).toBeInTheDocument()
-    await userEvent.type(screen.getByLabelText('Task title', { selector: '#new-task-title' }), 'N')
-    await userEvent.click(screen.getByRole('button', { name: 'Add task' }))
+    await userEvent.type(
+      screen.getByLabelText('Outline item', { selector: '#new-task-title' }),
+      'N',
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Add to outline' }))
     await waitFor(() => expect(screen.getAllByText('Project not found').length).toBeGreaterThan(1))
     await userEvent.click(screen.getByRole('button', { name: 'Delete draft' }))
     await userEvent.click(screen.getAllByRole('button', { name: 'Delete draft' })[1])
@@ -624,10 +654,10 @@ describe('ProjectEditor — editing an existing project', () => {
     await waitFor(() => expect(requestsTo('projects/getById').length).toBeGreaterThan(1))
     // The new task's save cancels every in-flight read of the project, Submit's among them.
     await userEvent.type(
-      screen.getByLabelText('Task title', { selector: '#new-task-title' }),
+      screen.getByLabelText('Outline item', { selector: '#new-task-title' }),
       'More',
     )
-    await userEvent.click(screen.getByRole('button', { name: 'Add task' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Add to outline' }))
     expect(await screen.findByText('Submit draft for review?')).toBeInTheDocument()
     expect(screen.queryByText('CancelledError')).toBeNull()
     release()
@@ -703,5 +733,45 @@ describe('ProjectEditor — a global admin', () => {
     // The pool has no local groups to be local in.
     await userEvent.click(screen.getByRole('button', { name: 'Select where the project happens' }))
     expect(screen.queryByRole('option', { name: 'In a local group' })).toBeNull()
+  })
+})
+
+describe('ProjectEditor — an approved project in Planning', () => {
+  it('asks for the whole form, total hours included', async () => {
+    const me = await createVolunteer()
+    const project = await createProject({
+      assigneeId: me.id,
+      creatorId: me.id,
+      status: 'ready',
+      plannedAt: null,
+      title: 'Planning it',
+    })
+    await mount({ projectId: project.id }, me)
+    await screen.findByDisplayValue('Planning it')
+    expect(screen.getByLabelText('Start date')).toBeInTheDocument()
+    expect(screen.getByText('Skills needed')).toBeInTheDocument()
+    const total = screen.getByLabelText('Total hours (estimate)')
+    blur(total)
+    fireEvent.change(total, { target: { value: '40' } })
+    blur(total)
+    await waitFor(async () => expect((await row(project.id)).estimatedTotalHours).toBe(40))
+  })
+})
+
+describe('ProjectEditor — a planned project sent back for changes', () => {
+  it('keeps the whole form, and its tasks are tasks', async () => {
+    const me = await createVolunteer()
+    const project = await createProject({
+      assigneeId: me.id,
+      creatorId: me.id,
+      status: 'draft',
+      plannedAt: new Date(),
+      title: 'Planned before',
+    })
+    await createTask(project.id, { title: 'Real task' })
+    await mount({ projectId: project.id }, me)
+    await screen.findByDisplayValue('Planned before')
+    expect(screen.getByLabelText('Start date')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Delete task' })).toBeInTheDocument()
   })
 })

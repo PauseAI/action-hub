@@ -128,7 +128,11 @@ export const adminProjectsRouter = {
       }
     }
 
-    return { id: project.id, message: saveAsDraft ? 'Draft saved' : 'Org project created' }
+    return {
+      id: project.id,
+      creatorId: admin.id,
+      message: saveAsDraft ? 'Draft saved' : 'Org project created',
+    }
   }),
 
   review: staffProcedure

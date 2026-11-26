@@ -30,7 +30,7 @@ async function setupOwnedProject(
 }
 
 test.describe('Project Management (Owner)', () => {
-  test('Project owner edits project details', async ({ adminPage, volunteer, baseUrl }) => {
+  test('Project owner edits project details', async ({ adminPage, volunteer, baseUrl, snap }) => {
     const projectId = await setupOwnedProject(baseUrl, adminPage, volunteer)
 
     const newTitle = fake.projectTitle()
@@ -48,6 +48,8 @@ test.describe('Project Management (Owner)', () => {
       ['Project title', newTitle],
       ['Description', newDescription],
       ['Collaboration doc / link', collaborationLink],
+      // Approved, so the effort questions a proposal skips are asked here.
+      ['Total hours (estimate)', '40'],
     ] as const) {
       const field = volunteer.page.getByLabel(label)
       await field.fill(value)
@@ -56,6 +58,7 @@ test.describe('Project Management (Owner)', () => {
         field.blur(),
       ])
     }
+    await snap(volunteer.page, 'approved project editor')
 
     await volunteer.page.goto(`${baseUrl}/projects/${projectId}`)
     await expect(volunteer.page.getByRole('heading', { level: 1 })).toContainText(newTitle, {

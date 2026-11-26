@@ -25,7 +25,6 @@ test.describe('Project Lifecycle', () => {
       volunteer.page,
       title,
       'Test proposal description',
-      undefined,
       snap,
     )
     await adminApproveProject(baseUrl, adminPage, title)
@@ -200,13 +199,11 @@ test.describe('Project Lifecycle', () => {
     const title = fake.projectTitle()
     const outcomeNotes = fake.outcomeNotes()
 
-    // Create project with a required skill
     const projectId = await proposeProject(
       baseUrl,
       volunteer.page,
       title,
       'Project for outcome recording',
-      'Fundraising',
     )
     await adminApproveProject(baseUrl, adminPage, title)
 

@@ -66,7 +66,7 @@ type FieldPatch = Partial<Omit<UpdateProjectInput, 'id'>>
 function changedSince(
   sent: CreateProjectInput,
   now: CreateProjectInput,
-  userId: number | undefined,
+  userId: number,
 ): FieldPatch | null {
   const { tasks: _tasks, saveAsDraft: _saveAsDraft, wantToOwn, ...fields } = now
   const patch: Record<string, unknown> = {}
@@ -74,7 +74,7 @@ function changedSince(
     const before = sent[key as keyof CreateProjectInput]
     if (JSON.stringify(value) !== JSON.stringify(before)) patch[key] = value
   }
-  if (wantToOwn !== sent.wantToOwn) patch.assigneeId = wantToOwn ? (userId ?? null) : null
+  if (wantToOwn !== sent.wantToOwn) patch.assigneeId = wantToOwn ? userId : null
   return Object.keys(patch).length > 0 ? (patch as FieldPatch) : null
 }
 
@@ -115,6 +115,7 @@ export default function ProjectEditor(props: ProjectEditorProps) {
   const [description, setDescription] = useState('')
   const [projectType, setProjectType] = useState('')
   const [hoursPerWeek, setHoursPerWeek] = useState('')
+  const [totalHours, setTotalHours] = useState('')
   const [urgency, setUrgency] = useState('medium')
   const [reach, setReach] = useState<Reach>('COUNTRY_WIDE')
   const [localGroupId, setLocalGroupId] = useState('')
@@ -176,6 +177,15 @@ export default function ProjectEditor(props: ProjectEditorProps) {
     projectId === undefined
       ? initialVariant === 'admin'
       : projectData?.isOrgProposed === true || (projectData?.templateOriginId ?? null) !== null
+  // A volunteer's proposal is a skeleton: the idea, why, and a rough outline. Effort, dates and
+  // skills wait for Planning, once it is approved. Org and template drafts skip Planning.
+  // Until a lazily created draft has loaded, the variant that opened the screen decides. A
+  // planned project sent back for changes keeps its plan, as the server does (addsOutlineTasks).
+  const isSkeleton =
+    !isOrgDraft &&
+    (projectData
+      ? projectData.stage === 'proposal' && projectData.plannedAt === null
+      : initialVariant !== 'admin')
 
   useEffect(() => {
     if (!projectData || initialized) return
@@ -188,6 +198,7 @@ export default function ProjectEditor(props: ProjectEditorProps) {
     setSkills((data.skills ?? []).map((s) => ({ skillId: s.id, proficiencyLevel: 'intermediate' })))
     setProjectType(data.projectType ?? '')
     setHoursPerWeek(data.timeCommitmentHoursPerWeek?.toString() ?? '')
+    setTotalHours(data.estimatedTotalHours?.toString() ?? '')
     setUrgency(data.urgency ?? 'medium')
     setReach(data.reach)
     setLocalGroupId(data.localGroupId ? String(data.localGroupId) : '')
@@ -389,7 +400,7 @@ export default function ProjectEditor(props: ProjectEditorProps) {
         const patch = changedSince(
           sent,
           latestPayload.current as CreateProjectInput,
-          latestUserId.current,
+          latestUserId.current ?? result.creatorId,
         )
         if (patch) updateMutation.mutate({ id: result.id, ...patch })
         return result.id
@@ -665,29 +676,54 @@ export default function ProjectEditor(props: ProjectEditorProps) {
         </div>
 
         <div className="grid grid-cols-2 gap-5 mb-5 max-[600px]:grid-cols-1">
-          <div>
-            <FormLabel htmlFor="hours-per-week">Hours per week</FormLabel>
-            <Input
-              id="hours-per-week"
-              type="number"
-              min={1}
-              max={40}
-              placeholder="e.g., 5"
-              value={hoursPerWeek}
-              onChange={(e) => {
-                setHoursPerWeek(e.target.value)
-              }}
-              onBlur={() => {
-                const next = hoursPerWeek ? Number(hoursPerWeek) : null
-                if (next === (projectData?.timeCommitmentHoursPerWeek ?? null)) return
-                commitField({ timeCommitmentHoursPerWeek: next })
-              }}
-              disabled={!canEdit}
-            />
-            <P className="text-sm text-text-light mt-1">
-              Minimum time commitment for project members
-            </P>
-          </div>
+          {!isSkeleton && (
+            <div>
+              <FormLabel htmlFor="total-hours">Total hours (estimate)</FormLabel>
+              <Input
+                id="total-hours"
+                type="number"
+                min={1}
+                placeholder="e.g., 40"
+                value={totalHours}
+                onChange={(e) => setTotalHours(e.target.value)}
+                onBlur={() => {
+                  const next = totalHours ? Number(totalHours) : null
+                  if (next === (projectData?.estimatedTotalHours ?? null)) return
+                  commitField({ estimatedTotalHours: next })
+                }}
+                disabled={!canEdit}
+              />
+              <P className="text-sm text-text-light mt-1">
+                Roughly how many hours the whole project will take, across everyone
+              </P>
+            </div>
+          )}
+
+          {!isSkeleton && (
+            <div>
+              <FormLabel htmlFor="hours-per-week">Hours per week</FormLabel>
+              <Input
+                id="hours-per-week"
+                type="number"
+                min={1}
+                max={40}
+                placeholder="e.g., 5"
+                value={hoursPerWeek}
+                onChange={(e) => {
+                  setHoursPerWeek(e.target.value)
+                }}
+                onBlur={() => {
+                  const next = hoursPerWeek ? Number(hoursPerWeek) : null
+                  if (next === (projectData?.timeCommitmentHoursPerWeek ?? null)) return
+                  commitField({ timeCommitmentHoursPerWeek: next })
+                }}
+                disabled={!canEdit}
+              />
+              <P className="text-sm text-text-light mt-1">
+                Minimum time commitment for project members
+              </P>
+            </div>
+          )}
 
           <div>
             <FilterDropdown
@@ -704,7 +740,7 @@ export default function ProjectEditor(props: ProjectEditorProps) {
           </div>
         </div>
 
-        {['sprint', 'container'].includes(projectType) && (
+        {!isSkeleton && ['sprint', 'container'].includes(projectType) && (
           <div className="mb-5">
             <FormLabel htmlFor="duration">Estimated duration</FormLabel>
             <Input
@@ -813,84 +849,92 @@ export default function ProjectEditor(props: ProjectEditorProps) {
           </P>
         </div>
 
-        {/* Timeline fields, offered for every project type — unlike the free-text estimate
-            above, which is only asked for sprints and containers. */}
-        <div className="mb-5 flex flex-wrap gap-3">
-          <div>
-            <FormLabel htmlFor="project-start-date">Start date</FormLabel>
-            <Input
-              id="project-start-date"
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              onBlur={() => {
-                if (toDateInputValue(projectData?.startDate) === startDate) return
-                commitField({ startDate: fromDateInputValue(startDate) })
-              }}
-              disabled={!canEdit}
-            />
-          </div>
-          <div>
-            <FormLabel htmlFor="project-duration-days">Duration (days)</FormLabel>
-            <Input
-              id="project-duration-days"
-              type="number"
-              min="1"
-              step="1"
-              placeholder="from tasks"
-              value={durationDays}
-              onChange={(e) => setDurationDays(e.target.value)}
-              onBlur={() => {
-                const next = durationDays ? parseInt(durationDays, 10) : null
-                if (next === (projectData?.durationDays ?? null)) return
-                commitField({ durationDays: next })
-              }}
-              disabled={!canEdit}
-              className="w-30"
-            />
-          </div>
-          {/* The deadline is the owner's promise, so it waits until the project exists and is
+        {/* Timeline fields, for every project type once it is past being a proposal; a proposal
+            is asked only for its deadline. */}
+        {(!isSkeleton || projectId !== undefined) && (
+          <div className="mb-5 flex flex-wrap gap-3">
+            {!isSkeleton && (
+              <>
+                <div>
+                  <FormLabel htmlFor="project-start-date">Start date</FormLabel>
+                  <Input
+                    id="project-start-date"
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    onBlur={() => {
+                      if (toDateInputValue(projectData?.startDate) === startDate) return
+                      commitField({ startDate: fromDateInputValue(startDate) })
+                    }}
+                    disabled={!canEdit}
+                  />
+                </div>
+                <div>
+                  <FormLabel htmlFor="project-duration-days">Duration (days)</FormLabel>
+                  <Input
+                    id="project-duration-days"
+                    type="number"
+                    min="1"
+                    step="1"
+                    placeholder="from tasks"
+                    value={durationDays}
+                    onChange={(e) => setDurationDays(e.target.value)}
+                    onBlur={() => {
+                      const next = durationDays ? parseInt(durationDays, 10) : null
+                      if (next === (projectData?.durationDays ?? null)) return
+                      commitField({ durationDays: next })
+                    }}
+                    disabled={!canEdit}
+                    className="w-30"
+                  />
+                </div>
+              </>
+            )}
+            {/* The deadline is the owner's promise, so it waits until the project exists and is
               set by its owner or an admin; the server holds the same line. */}
-          {projectId !== undefined && (
-            <div>
-              <FormLabel htmlFor="project-deadline">Deadline (optional)</FormLabel>
-              <Input
-                id="project-deadline"
-                type="date"
-                value={projectDeadline}
-                onChange={(e) => setProjectDeadline(e.target.value)}
-                onBlur={() => {
-                  if (toDateInputValue(projectData?.deadline) === projectDeadline) return
-                  commitField({ deadline: fromDateInputValue(projectDeadline) })
-                }}
-                disabled={!canEditOwnerFields}
-              />
-            </div>
-          )}
-          <P className="text-text-light basis-full text-sm">
-            Used by the timeline view. Leave the duration empty to have the project span its own
-            tasks. The deadline is the date the whole project should be done by; the timeline shows
-            how far the plan lands from it.
-          </P>
-          {projectId !== undefined && (
-            <div className="basis-full">
-              <Checkbox
-                checked={showTimeline}
-                onChange={(e) => {
-                  setShowTimeline(e.target.checked)
-                  commitField({ showTimeline: e.target.checked })
-                }}
-                disabled={!canEditOwnerFields}
-              >
-                Show timeline
-              </Checkbox>
-              <P className="text-sm text-text-light mt-1 mb-0">
-                Adds a Timeline tab to the project page, where anyone who can see the project can
-                follow the plan.
+            {projectId !== undefined && (
+              <div>
+                <FormLabel htmlFor="project-deadline">Deadline (optional)</FormLabel>
+                <Input
+                  id="project-deadline"
+                  type="date"
+                  value={projectDeadline}
+                  onChange={(e) => setProjectDeadline(e.target.value)}
+                  onBlur={() => {
+                    if (toDateInputValue(projectData?.deadline) === projectDeadline) return
+                    commitField({ deadline: fromDateInputValue(projectDeadline) })
+                  }}
+                  disabled={!canEditOwnerFields}
+                />
+              </div>
+            )}
+            {!isSkeleton && (
+              <P className="text-text-light basis-full text-sm">
+                Used by the timeline view. Leave the duration empty to have the project span its own
+                tasks. The deadline is the date the whole project should be done by; the timeline
+                shows how far the plan lands from it.
               </P>
-            </div>
-          )}
-        </div>
+            )}
+            {!isSkeleton && projectId !== undefined && (
+              <div className="basis-full">
+                <Checkbox
+                  checked={showTimeline}
+                  onChange={(e) => {
+                    setShowTimeline(e.target.checked)
+                    commitField({ showTimeline: e.target.checked })
+                  }}
+                  disabled={!canEditOwnerFields}
+                >
+                  Show timeline
+                </Checkbox>
+                <P className="text-sm text-text-light mt-1 mb-0">
+                  Adds a Timeline tab to the project page, where anyone who can see the project can
+                  follow the plan.
+                </P>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="mb-5">
           <FormLabel htmlFor="collaboration-link">Collaboration doc / link (optional)</FormLabel>
@@ -914,26 +958,28 @@ export default function ProjectEditor(props: ProjectEditorProps) {
           </P>
         </div>
 
-        <div className="mb-5">
-          <FormLabel>Skills needed</FormLabel>
-          <P className="text-sm text-text-light mt-0 mb-2">
-            What skills would be helpful for this project?
-          </P>
-          <SkillPicker
-            value={skills}
-            onChange={
-              canEdit
-                ? (next) => {
-                    setSkills(next)
-                    commitField({
-                      skillIds: next.map((s) => s.skillId),
-                      skillRequiredMap: Object.fromEntries(next.map((s) => [s.skillId, true])),
-                    })
-                  }
-                : () => {}
-            }
-          />
-        </div>
+        {!isSkeleton && (
+          <div className="mb-5">
+            <FormLabel>Skills needed</FormLabel>
+            <P className="text-sm text-text-light mt-0 mb-2">
+              What skills would be helpful for this project?
+            </P>
+            <SkillPicker
+              value={skills}
+              onChange={
+                canEdit
+                  ? (next) => {
+                      setSkills(next)
+                      commitField({
+                        skillIds: next.map((s) => s.skillId),
+                        skillRequiredMap: Object.fromEntries(next.map((s) => [s.skillId, true])),
+                      })
+                    }
+                  : () => {}
+              }
+            />
+          </div>
+        )}
 
         <div className="mb-5">
           <P className="font-medium mb-2">This project needs:</P>
@@ -1023,13 +1069,23 @@ export default function ProjectEditor(props: ProjectEditorProps) {
 
         {isDraft && canEdit && (
           <div className="mb-5">
-            <FormLabel required={isOrgDraft}>Tasks</FormLabel>
-            <P className="text-sm text-text-light mt-0 mb-2">
-              Break the project into concrete tasks. This helps contributors understand the scope
-              and gives them something to pick up.{' '}
-              {!isOrgDraft &&
-                'Optional at this stage — add some now or once the project is approved.'}
-            </P>
+            {isSkeleton ? (
+              <>
+                <FormLabel>Rough outline (optional)</FormLabel>
+                <P className="text-sm text-text-light mt-0 mb-2">
+                  If you have the main steps in mind, list them as short titles. Once the project is
+                  approved, you turn them into tasks with dates, effort and helpers.
+                </P>
+              </>
+            ) : (
+              <>
+                <FormLabel required={isOrgDraft}>Tasks</FormLabel>
+                <P className="text-sm text-text-light mt-0 mb-2">
+                  Break the project into concrete tasks. This helps contributors understand the
+                  scope and gives them something to pick up.
+                </P>
+              </>
+            )}
             {submitWithoutTasks && taskCount === 0 && (
               <P role="alert" className="text-sm text-error mt-0 mb-2">
                 Add at least one task before submitting.
@@ -1048,7 +1104,7 @@ export default function ProjectEditor(props: ProjectEditorProps) {
                   >
                     <div className="mb-3">
                       <FormLabel htmlFor={`task-title-${task.id}`} className="text-sm" required>
-                        Task title
+                        {isSkeleton ? 'Outline item' : 'Task title'}
                       </FormLabel>
                       <Input
                         id={`task-title-${task.id}`}
@@ -1066,7 +1122,7 @@ export default function ProjectEditor(props: ProjectEditorProps) {
                     </div>
                     <div className="mb-2">
                       <FormLabel htmlFor={`task-desc-${task.id}`} className="text-sm">
-                        Details (optional)
+                        {isSkeleton ? 'Note (optional)' : 'Details (optional)'}
                       </FormLabel>
                       <Textarea
                         id={`task-desc-${task.id}`}
@@ -1090,7 +1146,7 @@ export default function ProjectEditor(props: ProjectEditorProps) {
                         onClick={() => setDeleteTaskTarget({ projectId, taskId: task.id })}
                         disabled={deleteTaskMutation.isPending}
                       >
-                        Delete task
+                        {isSkeleton ? 'Remove' : 'Delete task'}
                       </Button>
                     </div>
                   </div>
@@ -1099,9 +1155,10 @@ export default function ProjectEditor(props: ProjectEditorProps) {
             <NewTaskForm
               onCreate={handleAddTask}
               pending={creatingDraft || createTaskMutation.isPending}
-              submitLabel="Add task"
+              submitLabel={isSkeleton ? 'Add to outline' : 'Add task'}
               pendingLabel="Adding…"
               allowQuickTask={false}
+              outline={isSkeleton}
             />
           </div>
         )}
@@ -1259,10 +1316,10 @@ export default function ProjectEditor(props: ProjectEditorProps) {
       {deleteTaskTarget && (
         <ConfirmDialog
           id="confirm-delete-editor-task"
-          title="Delete this task?"
+          title={isSkeleton ? 'Remove this outline item?' : 'Delete this task?'}
           isOpen
           body="The task and anything posted on it are removed. This cannot be undone."
-          confirmLabel="Delete task"
+          confirmLabel={isSkeleton ? 'Remove' : 'Delete task'}
           busyLabel="Deleting…"
           danger
           busy={deleteTaskMutation.isPending}
