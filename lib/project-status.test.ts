@@ -9,6 +9,7 @@ import {
   SEEKING_OWNER_SQL,
   ADVERTISABLE_STATUSES_SQL,
   ORG_PROPOSER_NAME,
+  projectStage,
 } from './project-status'
 
 describe('projectStatusLabel', () => {
@@ -74,5 +75,17 @@ describe('proposerDisplay', () => {
   })
   it('returns null with nobody to attribute to', () => {
     expect(proposerDisplay({ proposedBy: null })).toBeNull()
+  })
+})
+
+describe('projectStage', () => {
+  it('is a Proposal until approved, then Planning until planned, then Running', () => {
+    const planned = new Date('2026-11-25T00:00:00Z')
+    expect(projectStage({ status: 'draft', plannedAt: null })).toBe('proposal')
+    expect(projectStage({ status: 'needs_discussion', plannedAt: null })).toBe('proposal')
+    expect(projectStage({ status: 'ready', plannedAt: null })).toBe('planning')
+    expect(projectStage({ status: 'in_progress', plannedAt: null })).toBe('planning')
+    expect(projectStage({ status: 'in_progress', plannedAt: planned })).toBe('running')
+    expect(projectStage({ status: 'completed', plannedAt: planned.toISOString() })).toBe('running')
   })
 })

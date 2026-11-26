@@ -235,6 +235,13 @@ export const UpdateProjectSchema = WorkItemSchema.pick({
   .extend({
     ...PROJECT_CHAPTER_FIELD,
     collaborationLink: HttpUrlSchema.nullable().optional(),
+    estimatedTotalHours: z
+      .number()
+      .int({ message: 'Give the total hours as a whole number' })
+      .min(1, { message: 'Total hours must be at least 1' })
+      .max(100000)
+      .nullable()
+      .optional(),
     skillIds: z.array(z.number().int()).optional(),
     skillRequiredMap: z.record(z.string(), z.boolean()).optional(),
   })
@@ -327,6 +334,8 @@ export const UpdateProjectTaskSchema = WorkItemSchema.pick({
     status: TaskStatusSchema.optional(),
     durationDays: TaskDurationSchema,
     helpersWanted: HelpersWantedSchema,
+    // An outline item becomes a real task; a real task never goes back to being an outline.
+    isOutline: z.literal(false).optional(),
     ...SUBMISSION_ASK_FIELDS,
   })
 

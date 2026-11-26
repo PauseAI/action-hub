@@ -1,5 +1,10 @@
 import { test, expect, getAlert } from '../fixtures'
-import { proposeProject, adminApproveProject, transferProjectOwnership } from '../actions/projects'
+import {
+  proposeProject,
+  adminApproveProject,
+  planOutlineViaApi,
+  transferProjectOwnership,
+} from '../actions/projects'
 import { Page } from '@playwright/test'
 import { fake } from '../fake'
 
@@ -19,6 +24,7 @@ async function setupOwnedProject(
     'Setup description for edit regression tests',
   )
   await adminApproveProject(baseUrl, adminPage, title)
+  await planOutlineViaApi(baseUrl, projectId)
   await transferProjectOwnership(baseUrl, adminPage, projectId, volunteer.name)
   return projectId
 }

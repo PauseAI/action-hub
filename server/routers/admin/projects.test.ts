@@ -42,6 +42,9 @@ describe('admin.projects.create / myDrafts', () => {
 
     const draft = await c.admin.projects.create({ ...base, saveAsDraft: true })
     expect(draft.message).toBe('Draft saved')
+    expect(
+      (await prisma.workItem.findUniqueOrThrow({ where: { id: draft.id } })).plannedAt,
+    ).toBeNull()
     expect(await c.admin.projects.myDrafts()).toEqual([
       expect.objectContaining({ id: draft.id, title: 'Org project' }),
     ])
@@ -67,6 +70,9 @@ describe('admin.projects.create / myDrafts', () => {
       where: { id: live.id },
       include: { skills: true, children: true },
     })
+    // An org project skips review and Planning: its plan arrives whole.
+    expect(row.plannedAt).not.toBeNull()
+    expect(row.children.every((t) => !t.isOutline)).toBe(true)
     expect(row).toMatchObject({
       status: 'in_progress',
       assigneeId: admin.id,

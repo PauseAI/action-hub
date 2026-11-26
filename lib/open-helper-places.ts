@@ -55,6 +55,7 @@ export async function openHelperPlaces(
     where: {
       type: WorkItemType.TASK,
       helpersWanted: { not: null },
+      isOutline: false,
       status: { in: [TaskStatus.not_started, TaskStatus.in_progress] },
       parentId: { not: null, notIn: blocked.map((b) => b.workItemId) },
       // Spelled out with nulls, since `NOT` of a comparison with NULL matches nothing.

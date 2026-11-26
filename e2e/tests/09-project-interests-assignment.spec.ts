@@ -5,6 +5,7 @@ import { fake } from '../fake'
 import {
   proposeProject,
   adminApproveProject,
+  planOutlineViaApi,
   adminCreateProjectViaApi,
   transferProjectOwnership,
   askToTakeTask,
@@ -411,6 +412,7 @@ test.describe('Project Interests and Assignment', () => {
       'Project owned by the volunteer',
     )
     await adminApproveProject(baseUrl, adminPage, title)
+    await planOutlineViaApi(baseUrl, projectId)
     await transferProjectOwnership(baseUrl, adminPage, projectId, volunteer.name)
 
     await volunteer.page.goto(`${baseUrl}/projects/${projectId}`)

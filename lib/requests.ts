@@ -59,6 +59,8 @@ export async function requestsProjectFor(tx: Tx, chapterId: number | null) {
       isOrgProposed: true,
       autoAcceptTasks: false,
       reviewedAt: new Date(),
+      // Never planned or proposed: its tasks are asks, each whole when made.
+      plannedAt: new Date(),
     },
   })
 }

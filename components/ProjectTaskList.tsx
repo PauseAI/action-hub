@@ -18,7 +18,8 @@ export function isTaskOpenToClaim(task: ProjectTask): boolean {
   return (
     task.status === TaskStatus.not_started &&
     task.assignedToId === null &&
-    task.requestedById === null
+    task.requestedById === null &&
+    !task.isOutline
   )
 }
 

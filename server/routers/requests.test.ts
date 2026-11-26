@@ -45,6 +45,9 @@ describe('asking for help', () => {
 
     const shown = await clientAs(taker).projects.getById({ id: project.id })
     expect(shown.isSeekingOwner).toBe(false)
+    // Never proposed or planned: its asks are whole tasks from the start.
+    expect(shown.stage).toBe('running')
+    expect(task.isOutline).toBe(false)
     await expect(
       clientAs(taker).projects.expressInterest({
         projectId: project.id,

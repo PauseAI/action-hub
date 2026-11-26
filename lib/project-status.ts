@@ -137,3 +137,43 @@ export function proposerDisplay(p: {
   const name = typeof p.proposedBy === 'string' ? p.proposedBy : p.proposedBy.name
   return { name, volunteerId: p.proposedById ?? null }
 }
+
+/**
+ * Where a project is in being planned, apart from its status. A Proposal is the skeleton sent
+ * for review: the idea, why and a rough outline. Planning is an approved project whose owner is
+ * still turning that outline into real tasks. Running is everything after Finish planning.
+ * Work may start during Planning, so the stage says nothing about progress.
+ */
+export type ProjectStage = 'proposal' | 'planning' | 'running'
+
+export function projectStage(p: { status: string; plannedAt: Date | string | null }): ProjectStage {
+  if (UNAPPROVED_STATUSES.includes(p.status)) return 'proposal'
+  // A project finished or archived mid-plan is past planning: it can no longer be planned.
+  if (p.plannedAt === null && !TERMINAL_STATUSES.includes(p.status)) return 'planning'
+  return 'running'
+}
+
+/**
+ * Whether a task added now is an outline item: only on a volunteer's proposal that has never
+ * been planned. Org and template drafts skip review and Planning, and a planned project sent
+ * back for changes keeps its plan.
+ */
+export function addsOutlineTasks(p: {
+  status: string
+  plannedAt: Date | null
+  isOrgProposed: boolean | null
+  templateOriginId: number | null
+}): boolean {
+  return (
+    projectStage(p) === 'proposal' &&
+    p.plannedAt === null &&
+    !p.isOrgProposed &&
+    p.templateOriginId === null
+  )
+}
+
+export const PROJECT_STAGE_LABELS: Record<ProjectStage, string> = {
+  proposal: 'Proposal',
+  planning: 'Planning',
+  running: 'Running',
+}

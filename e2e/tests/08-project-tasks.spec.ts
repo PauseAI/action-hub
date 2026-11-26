@@ -1,11 +1,16 @@
 import { test, expect, getAlert, readAdminToken, createApprovedVolunteer } from '../fixtures'
 import { fake } from '../fake'
-import { proposeProject, adminCreateProjectViaApi, adminApproveProject } from '../actions/projects'
+import {
+  proposeProject,
+  adminCreateProjectViaApi,
+  adminApproveProject,
+  planOutlineViaApi,
+} from '../actions/projects'
 import { Page } from '@playwright/test'
 import { createApiClient } from '../client'
 import { selectFilterDropdown } from '../actions/ui'
 
-// Produces an in_progress project with one open task ("Initial task") proposed by the volunteer
+// Produces an approved project with one open task ("Initial task") proposed by the volunteer
 async function setupInProgressProject(
   baseUrl: string,
   adminPage: Page,
@@ -14,6 +19,7 @@ async function setupInProgressProject(
   const title = fake.projectTitle()
   const id = await proposeProject(baseUrl, volunteer.page, title, 'Setup for task scenarios')
   await adminApproveProject(baseUrl, adminPage, title)
+  await planOutlineViaApi(baseUrl, id)
   return id
 }
 

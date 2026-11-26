@@ -1,7 +1,7 @@
 import { Prisma } from '@/generated/prisma/client'
 import { prisma } from './prisma'
 import { calculateMatchScore } from './matching'
-import { isSeekingOwner, UNAPPROVED_STATUSES } from './project-status'
+import { isSeekingOwner, projectStage, UNAPPROVED_STATUSES } from './project-status'
 import {
   InterestOrigin,
   InterestStatus,
@@ -416,6 +416,8 @@ export type EnrichedProject = ScheduleFieldsLike & {
   projectType: string | null
   estimatedDuration: string | null
   timeCommitmentHoursPerWeek: number | null
+  estimatedTotalHours: number | null
+  plannedAt: Date | null
   urgency: string | null
   reviewNotes: string | null
   reviewedById: number | null
@@ -471,6 +473,9 @@ export function withProjectExtras(
     projectType: p.projectType,
     estimatedDuration: p.estimatedDuration,
     timeCommitmentHoursPerWeek: p.timeCommitmentHoursPerWeek,
+    estimatedTotalHours: p.estimatedTotalHours,
+    plannedAt: p.plannedAt,
+    stage: projectStage(p),
     urgency: p.urgency,
     reviewNotes: p.reviewNotes,
     reviewedById: p.reviewedById,
@@ -592,6 +597,7 @@ export type TaskLike = ScheduleFieldsLike & {
   createdAt: Date | null
   updatedAt: Date | null
   helpersWanted: number | null
+  isOutline: boolean
 } & SubmissionLike &
   SubmissionAskLike
 
@@ -700,6 +706,7 @@ export function serializeTask(t: TaskLike) {
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
     helpersWanted: t.helpersWanted,
+    isOutline: t.isOutline,
     submission: serializeSubmission(t),
     ...serializeSubmissionAsk(t),
     ...serializeScheduleFields(t),
