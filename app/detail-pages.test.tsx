@@ -1,23 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import { screen, waitFor, cleanup, within } from '@testing-library/react'
+import { screen, waitFor, cleanup } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { prisma } from '@/lib/prisma'
-import {
-  createVolunteer,
-  createAdmin,
-  createProject,
-  createQuickTask,
-  createSkill,
-} from '@/test/factories'
+import { createVolunteer, createAdmin } from '@/test/factories'
 import { fullText, renderApp } from '@/test/render'
 import { clientAs } from '@/test/rpc'
 import { navigation } from '@/test/next-navigation'
 import QuickTaskDetailPage from './quick-tasks/[id]/page'
 import BugReportDetailPage from './bugs/[id]/page'
 
-const row = (id: number) => prisma.workItem.findUniqueOrThrow({ where: { id } })
-
-describe('quick task detail', () => {
+describe('an old quick-task link', () => {
   it('sends an old link to the request the quick task became', async () => {
     const me = await createVolunteer()
     const asked = await clientAs(me).requests.ask({ title: 'Was a quick task', global: true })
@@ -32,7 +24,7 @@ describe('quick task detail', () => {
     expect(screen.queryByText('Task not found.')).toBeNull()
   })
 
-  it('shows the page as before when it cannot find out where a link leads', async () => {
+  it('says so when it cannot find out where a link leads', async () => {
     const me = await createVolunteer()
     // An id past Postgres's integer range fails the lookup outright.
     await renderApp(<QuickTaskDetailPage params={Promise.resolve({ id: '2147483648' })} />, {
@@ -40,151 +32,15 @@ describe('quick task detail', () => {
     })
     await screen.findByText('Task not found.')
     expect(navigation.replace).not.toHaveBeenCalled()
-  })
-
-  it('walks a task from open through claim, submit and review', async () => {
-    const me = await createVolunteer()
-    const skill = await createSkill()
-    const project = await createProject({ title: 'Ctx project' })
-    const task = await createQuickTask({
-      title: 'Detail task',
-      skillId: skill.id,
-      estimatedHours: 2,
-      contextProjectId: project.id,
-      deadline: new Date('2099-03-04T00:00:00Z'),
-      submissionAsksLink: true,
-    })
-    const page = () =>
-      renderApp(<QuickTaskDetailPage params={Promise.resolve({ id: String(task.id) })} />, {
-        as: me,
-      })
-    await page()
-    await screen.findByRole('heading', { name: 'Detail task' })
-    expect(screen.getByText(skill.name)).toBeInTheDocument()
-    expect(screen.getByText('~2h estimated')).toBeInTheDocument()
-    expect(screen.getByText('Due 4 Mar 2099')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Related project: Ctx project' })).toHaveAttribute(
-      'href',
-      `/projects/${project.id}`,
-    )
-    expect(screen.getByRole('link', { name: '← Back to quick tasks' })).toHaveAttribute(
-      'href',
-      '/quick-tasks#browse-quick-tasks',
-    )
-    await userEvent.click(screen.getByRole('button', { name: 'Claim task' }))
-    await screen.findByText(/Task claimed\. Submit it for review/)
-    expect(await screen.findByRole('link', { name: '← Back to my quick tasks' })).toHaveAttribute(
-      'href',
-      '/quick-tasks',
-    )
-    // Submitting asks what was done, and backing out leaves the task in progress.
-    await userEvent.click(await screen.findByRole('button', { name: 'Submit work' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Submit your work' })
-    expect(dialog).toHaveTextContent('An admin will look at it, then accept it or ask for changes.')
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    expect((await row(task.id)).status).toBe('in_progress')
-    await userEvent.click(screen.getByRole('button', { name: 'Submit work' }))
-    const again = await screen.findByRole('dialog', { name: 'Submit your work' })
-    await userEvent.type(
-      within(again).getByLabelText('Link to your work (optional)'),
-      'https://example.org/mine',
-    )
-    await userEvent.click(within(again).getByRole('button', { name: 'Submit work' }))
-    await screen.findByText(/Submitted\. An admin will review it/)
-    await waitFor(async () => expect((await row(task.id)).status).toBe('under_review'))
-    await screen.findByText('Your submission is awaiting review.')
-    expect(screen.getByRole('link', { name: 'https://example.org/mine' })).toBeInTheDocument()
-
-    // An admin sends it back; the volunteer sees why and submits again.
-    const admin = await createAdmin({ name: 'Ada Admin' })
-    const asAdmin = () =>
-      renderApp(<QuickTaskDetailPage params={Promise.resolve({ id: String(task.id) })} />, {
-        as: admin,
-      })
     cleanup()
-    await asAdmin()
-    await userEvent.click(await screen.findByRole('button', { name: 'Ask for changes' }))
-    const ask = await screen.findByRole('dialog', { name: 'Ask for changes' })
-    await userEvent.type(within(ask).getByLabelText('What needs changing?'), 'Add a caption')
-    await userEvent.click(within(ask).getByRole('button', { name: 'Send back' }))
-    await screen.findByText('Sent back to the assignee with your message.')
-    cleanup()
-    await page()
-    await screen.findByRole('heading', { name: 'Changes requested by Ada Admin' })
-    expect(screen.getByText('Add a caption')).toBeInTheDocument()
-    await userEvent.click(await screen.findByRole('button', { name: 'Submit work' }))
-    const third = await screen.findByRole('dialog', { name: 'Submit your work' })
-    await userEvent.type(within(third).getByLabelText('What did you do?'), 'Captioned')
-    await userEvent.click(within(third).getByRole('button', { name: 'Submit work' }))
-    await screen.findByText(/Submitted\. An admin will review it/)
-
-    cleanup()
-    await asAdmin()
-    await userEvent.click(await screen.findByRole('button', { name: 'Accept…' }))
-    await userEvent.click(
-      within(screen.getByRole('dialog', { name: 'Review task' })).getByRole('button', {
-        name: 'Cancel',
-      }),
-    )
-    await userEvent.click(screen.getByRole('button', { name: 'Accept…' }))
-    const review = screen.getByRole('dialog', { name: 'Review task' })
-    await userEvent.click(within(review).getByLabelText(/Excellent/))
-    await userEvent.click(within(review).getByRole('button', { name: 'Accept' }))
-    await screen.findByText('Accepted. The task is done.')
-    await waitFor(async () => expect((await row(task.id)).status).toBe('completed'))
-    cleanup()
-    await page()
-    await screen.findByText('Excellent')
-  })
-
-  it('reports claim/submit failures and unknown tasks', async () => {
-    const me = await createVolunteer()
-    const rival = await createVolunteer()
-    const task = await createQuickTask({ title: 'Contested', description: null })
-    await renderApp(<QuickTaskDetailPage params={Promise.resolve({ id: String(task.id) })} />, {
-      as: me,
-    })
-    await screen.findByRole('button', { name: 'Claim task' })
-    await prisma.workItem.update({
-      where: { id: task.id },
-      data: { assigneeId: rival.id, status: 'in_progress' },
-    })
-    await userEvent.click(screen.getByRole('button', { name: 'Claim task' }))
-    await screen.findByText('This task has already been claimed')
-    cleanup()
-    const mine = await createQuickTask({ title: 'Mine', assigneeId: me.id, status: 'in_progress' })
-    await renderApp(<QuickTaskDetailPage params={Promise.resolve({ id: String(mine.id) })} />, {
-      as: me,
-    })
-    await screen.findByRole('button', { name: 'Submit work' })
-    await prisma.workItem.update({ where: { id: mine.id }, data: { assigneeId: rival.id } })
-    await userEvent.click(screen.getByRole('button', { name: 'Submit work' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Submit your work' })
-    await userEvent.type(within(dialog).getByLabelText('What did you do?'), 'Done')
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Submit work' }))
-    await screen.findByText('Task not found or not assigned to you')
-    cleanup()
-    // An admin looking at someone else's task has nothing to submit and no "your" wording.
-    const admin = await createAdmin()
-    await renderApp(<QuickTaskDetailPage params={Promise.resolve({ id: String(mine.id) })} />, {
-      as: admin,
-    })
-    await screen.findByRole('link', { name: '← Back to quick tasks' })
-    expect(screen.queryByRole('button', { name: 'Submit work' })).toBeNull()
-    cleanup()
-    await prisma.workItem.update({ where: { id: mine.id }, data: { status: 'under_review' } })
-    await renderApp(<QuickTaskDetailPage params={Promise.resolve({ id: String(mine.id) })} />, {
-      as: admin,
-    })
-    await screen.findByRole('link', { name: '← Back to quick tasks' })
-    expect(screen.queryByText('Your submission is awaiting review.')).toBeNull()
-    cleanup()
-    await renderApp(<QuickTaskDetailPage params={Promise.resolve({ id: '999999' })} />, { as: me })
-    await screen.findByRole('link', { name: 'Back to quick tasks' })
-    cleanup()
-    await renderApp(<QuickTaskDetailPage params={Promise.resolve({ id: 'nope' })} />, { as: me })
-    await screen.findByRole('link', { name: 'Back to quick tasks' })
+    for (const id of ['999999', 'nonsense']) {
+      await renderApp(<QuickTaskDetailPage params={Promise.resolve({ id })} />, { as: me })
+      expect(await screen.findByRole('link', { name: 'See open tasks' })).toHaveAttribute(
+        'href',
+        '/tasks',
+      )
+      cleanup()
+    }
   })
 })
 

@@ -162,7 +162,7 @@ test.describe('Task helpers', () => {
     await expect(page.getByText("You've offered to help.")).toHaveCount(0)
   })
 
-  test('a task asking for helpers is listed on Quick Tasks, and offering from there opens it', async ({
+  test('a task asking for helpers is listed on Tasks, and offering from there opens it', async ({
     volunteer,
     baseUrl,
   }) => {
@@ -178,7 +178,7 @@ test.describe('Task helpers', () => {
     await adminApi.projects.updateTask({ body: { projectId, taskId, data: { helpersWanted: 2 } } })
 
     const page = volunteer.page
-    await page.goto(`${baseUrl}/quick-tasks`)
+    await page.goto(`${baseUrl}/tasks`)
     await page.getByRole('tab', { name: /^Open/ }).click()
     const card = page.getByRole('article').filter({ has: page.getByRole('link', { name: title }) })
     await expect(card).toContainText('2 helpers', { timeout: 10_000 })

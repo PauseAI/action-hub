@@ -7,7 +7,7 @@ import {
   createAdmin,
   createVolunteer,
   createProject,
-  createQuickTask,
+  createRequest,
   createSkill,
   createChapter,
   createChapterLead,
@@ -48,14 +48,14 @@ describe('admin volunteer detail', () => {
         category: 'skill_feedback',
       },
     })
-    await createQuickTask({
+    await createRequest(null, {
       title: 'Quick one',
       assigneeId: vol.id,
       skillId: skill.id,
       status: 'completed',
       reviewRating: 'great',
     })
-    await createQuickTask({ title: 'Quick two', assigneeId: vol.id })
+    await createRequest(null, { title: 'Quick two', assigneeId: vol.id })
     const owned = await createProject({
       title: 'Owned project',
       assigneeId: vol.id,
@@ -109,7 +109,7 @@ describe('admin volunteer detail', () => {
     )
     void note
 
-    await userEvent.click(screen.getByRole('tab', { name: 'Quick tasks' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Requests' }))
     expect(screen.getByText('Quick one (Juggling)')).toBeInTheDocument()
     expect(screen.getByText('completed · great')).toBeInTheDocument()
     expect(screen.getByText('Quick two')).toBeInTheDocument()
@@ -167,8 +167,8 @@ describe('admin volunteer detail', () => {
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancel' }),
     )
     expect(await prisma.adminNote.count({ where: { id: note.id } })).toBe(1)
-    await userEvent.click(screen.getByRole('tab', { name: 'Quick tasks' }))
-    expect(screen.getByText('No quick tasks assigned yet.')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('tab', { name: 'Requests' }))
+    expect(screen.getByText('No requests for help taken yet.')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('tab', { name: 'Project history' }))
     expect(screen.getByText('No project history.')).toBeInTheDocument()
 

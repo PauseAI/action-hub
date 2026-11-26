@@ -10,18 +10,12 @@ import { P } from '@/components/Text'
 import Input from '@/components/ui/Input'
 import Textarea from '@/components/ui/Textarea'
 import { DEFAULT_SUBMISSION_PROMPT, type SubmissionAsk } from '@/components/SubmissionAskFields'
-import {
-  QUICK_TASK_SUBMITTED_MESSAGE,
-  TASK_DONE_MESSAGE,
-  TASK_SUBMITTED_MESSAGE,
-} from '@/lib/action-messages'
+import { TASK_DONE_MESSAGE, TASK_SUBMITTED_MESSAGE } from '@/lib/action-messages'
 import { orpc } from '@/lib/orpc'
 import { useToast } from '@/lib/toast'
 import { TaskStatus } from '@/generated/prisma/enums'
 
-export type SubmitTarget =
-  | { kind: 'quick'; taskId: number }
-  | { kind: 'project'; projectId: number; taskId: number }
+export type SubmitTarget = { kind: 'project'; projectId: number; taskId: number }
 
 const emptyReason = (asksLink: boolean) =>
   asksLink ? 'Say what you did or add a link to it.' : 'Say what you did.'
@@ -74,8 +68,7 @@ function SubmitWorkFields({
     showToast(message, 'success')
     onDone?.()
     for (const key of [
-      orpc.quickTasks.get.key(),
-      orpc.my.quickTasks.key(),
+      orpc.requests.key(),
       orpc.projects.getTask.key(),
       orpc.projects.getById.key(),
       orpc.dashboard.get.key(),
@@ -86,18 +79,13 @@ function SubmitWorkFields({
   const failed = (err: unknown) =>
     showToast(err instanceof Error ? err.message : 'Failed to submit work', 'error')
 
-  const submitQuick = useMutation({
-    ...orpc.quickTasks.submit.mutationOptions(),
-    onSuccess: () => done(QUICK_TASK_SUBMITTED_MESSAGE),
-    onError: failed,
-  })
   const submitProject = useMutation({
     ...orpc.projects.submitTask.mutationOptions(),
     onSuccess: (data) =>
       done(data.status === TaskStatus.completed ? TASK_DONE_MESSAGE : TASK_SUBMITTED_MESSAGE),
     onError: failed,
   })
-  const busy = submitQuick.isPending || submitProject.isPending
+  const busy = submitProject.isPending
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -111,8 +99,7 @@ function SubmitWorkFields({
       return
     }
     const work = { note: note.trim() || null, url: url.trim() || null }
-    if (target.kind === 'quick') submitQuick.mutate({ id: target.taskId, ...work })
-    else submitProject.mutate({ projectId: target.projectId, taskId: target.taskId, ...work })
+    submitProject.mutate({ projectId: target.projectId, taskId: target.taskId, ...work })
   }
 
   return (

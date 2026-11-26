@@ -65,6 +65,8 @@ const nextConfig: NextConfig = {
 
   async redirects() {
     return [
+      // The Tasks page's old address. /quick-tasks/:id opens the request a quick task became.
+      { source: '/quick-tasks', destination: '/tasks', permanent: false },
       // Dynamic routes — id was a query param in the old HTML version
       {
         source: '/static/volunteer.html',

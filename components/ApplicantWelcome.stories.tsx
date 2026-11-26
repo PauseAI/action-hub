@@ -7,7 +7,7 @@ const meta: Meta<typeof ApplicantWelcome> = {
   args: {
     name: 'Ann Applicant',
     chapterName: 'PauseAI UK',
-    waiting: { projects: 12, matching: 3, quickTasks: 5 },
+    waiting: { projects: 12, matching: 3, requests: 5 },
     hasSkills: true,
   },
 }
@@ -18,9 +18,9 @@ type Story = StoryObj<typeof ApplicantWelcome>
 export const WorkWaiting: Story = {}
 
 export const NoSkillsYet: Story = {
-  args: { waiting: { projects: 4, matching: 0, quickTasks: 0 }, hasSkills: false },
+  args: { waiting: { projects: 4, matching: 0, requests: 0 }, hasSkills: false },
 }
 
 export const NothingOpen: Story = {
-  args: { chapterName: null, waiting: { projects: 0, matching: 0, quickTasks: 0 } },
+  args: { chapterName: null, waiting: { projects: 0, matching: 0, requests: 0 } },
 }

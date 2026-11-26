@@ -5,7 +5,7 @@ import {
   createAdmin,
   createProject,
   createTask,
-  createQuickTask,
+  createRequest,
   createSkill,
   createLocalGroup,
   createChapter,
@@ -148,17 +148,18 @@ describe('volunteers.getById', () => {
     })
     const proposed = await createProject({ creatorId: vol.id })
     await createProject({ creatorId: vol.id, status: 'pending_review' })
-    await createQuickTask({
+    await createRequest(null, {
       assigneeId: vol.id,
       status: 'completed',
       reviewRating: 'good',
       skillId: skill.id,
     })
-    await createQuickTask({
+    await createRequest(null, {
       assigneeId: vol.id,
       status: 'completed',
       reviewRating: 'needs_improvement',
     })
+    await createRequest(null, { assigneeId: vol.id, status: 'completed', title: 'Unrated' })
 
     const view = await clientAs(me).volunteers.getById({ id: vol.id })
     expect(view.discordHandle).toBe('vol#1')
@@ -180,9 +181,13 @@ describe('volunteers.getById', () => {
         [proposed.id, ['creator']],
       ].sort(),
     )
-    expect(view.completedTasks).toEqual([
-      expect.objectContaining({ reviewRating: 'good', skillName: skill.name }),
-    ])
+    expect(view.completedTasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ reviewRating: 'good', skillName: skill.name }),
+        expect.objectContaining({ reviewRating: null, title: 'Unrated' }),
+      ]),
+    )
+    expect(view.completedTasks).toHaveLength(2)
 
     const shy = await createVolunteer({
       consentShareContactInfoWithProjectOwner: false,

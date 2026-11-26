@@ -25,9 +25,9 @@ describe('procedure gates', () => {
   })
 
   it('authedProcedure needs a session', async () => {
-    await expect(anon().my.quickTasks()).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
+    await expect(anon().my.projectTasks()).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
     const vol = await createVolunteer({ approvalStatus: 'pending' })
-    expect(await clientAs(vol).my.quickTasks()).toEqual([])
+    expect(await clientAs(vol).my.projectTasks()).toEqual([])
   })
 
   it('approvedProcedure additionally needs approval, unless admin', async () => {
@@ -125,7 +125,7 @@ describe('maintenance mode', () => {
           availabilityHoursPerWeek: 2,
         }),
       ).rejects.toMatchObject(down)
-      await expect(clientAs(admin).my.quickTasks()).rejects.toMatchObject(down)
+      await expect(clientAs(admin).my.projectTasks()).rejects.toMatchObject(down)
       // The sign-in set still answers, so the client can learn who is asking.
       expect(await clientAs(admin).auth.me()).toMatchObject({ id: admin.id })
       expect(await anon().version.get()).toMatchObject({ sha: expect.any(String) })

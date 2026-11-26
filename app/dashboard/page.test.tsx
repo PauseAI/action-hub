@@ -10,7 +10,7 @@ import {
   createMember,
   createVolunteer,
   createProject,
-  createQuickTask,
+  createRequest,
   createSkill,
   createTask,
   createTeam,
@@ -79,7 +79,7 @@ describe('home', () => {
       isSeekingHelp: true,
       skills: { create: [{ skillId: skill.id }] },
     })
-    await createQuickTask({ nationalChapterId: chapter.id })
+    await createRequest(chapter.id)
     const applicant = await createMember(chapter, {
       name: 'Ann Applicant',
       approvalStatus: 'pending',
@@ -88,9 +88,12 @@ describe('home', () => {
     await renderApp(<HomePage />, { as: applicant, url: '/dashboard' })
     await screen.findByRole('heading', { name: 'Thanks for applying, Ann!' })
     expect(
-      screen.getByText(`1 project looking for volunteers (1 using your skills) and 1 quick task.`, {
-        exact: false,
-      }),
+      screen.getByText(
+        `1 project looking for volunteers (1 using your skills) and 1 request for help.`,
+        {
+          exact: false,
+        },
+      ),
     ).toBeInTheDocument()
     expect(screen.getByText(`Waiting for you in ${chapter.name}:`)).toBeInTheDocument()
     const actions = screen.getByRole('list', { name: 'Things you can do today' })
@@ -129,7 +132,7 @@ describe('home', () => {
 
   it('opens discovery for someone with nothing of their own yet', async () => {
     const fresh = await createVolunteer({ country: null })
-    await createQuickTask({ title: 'Open starter' })
+    await createRequest(null, { title: 'Open starter' })
     await renderApp(<HomePage />, { as: fresh, url: '/dashboard' })
     await screen.findByRole('link', { name: 'Propose a project' })
 
@@ -137,7 +140,7 @@ describe('home', () => {
     expect(within(checklist).getByText('Application approved')).toBeInTheDocument()
     expect(within(checklist).getByRole('link', { name: 'Pick a first task' })).toHaveAttribute(
       'href',
-      '/quick-tasks',
+      '/tasks',
     )
     // Nothing waiting, so no section saying so.
     expect(screen.queryByRole('region', { name: /Needs your attention/ })).toBeNull()
@@ -360,7 +363,7 @@ describe('home', () => {
       estimatedHours: 12,
     })
     await createTask(project.id, { ...mine, title: 'Soon', deadline: due(2) })
-    await createQuickTask({
+    await createRequest(null, {
       ...mine,
       title: 'Late quick',
       deadline: new Date('2020-01-02T00:00:00Z'),
@@ -492,19 +495,18 @@ describe('home', () => {
     await createVolunteer({ approvalStatus: 'pending', nationalChapterId: home.id })
     await createVolunteer({ approvalStatus: 'pending', nationalChapterId: away.id })
     await createProject({ status: 'pending_review', nationalChapterId: home.id })
-    const unset = await createQuickTask({
+    const unset = await createRequest(home.id, {
       title: 'Nobody set this',
       status: 'under_review',
       assigneeId: (await createMember(home)).id,
       creatorId: null,
-      nationalChapterId: home.id,
     })
 
     await renderApp(<HomePage />, { as: deputy, url: '/dashboard' })
     const admin = await screen.findByRole('region', { name: /^Admin/ })
     expect(within(admin).getByRole('link', { name: /^Review: "Nobody set this"/ })).toHaveAttribute(
       'href',
-      `/quick-tasks/${unset.id}`,
+      `/projects/${unset.parentId}/tasks/${unset.id}`,
     )
     // Their chapter's applications and proposals only, counted as on the admin page.
     const applications = await within(admin).findByRole('link', { name: 'Applications to review' })

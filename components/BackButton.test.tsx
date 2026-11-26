@@ -135,7 +135,7 @@ describe('parentPage', () => {
     ['/projects/7/import', '/projects/7'],
     ['/projects/7', '/projects'],
     ['/projects/gantt', '/projects'],
-    ['/quick-tasks/3', '/quick-tasks'],
+    ['/quick-tasks/3', '/tasks'],
     ['/volunteers/4', '/volunteers'],
     ['/teams/2', '/teams'],
     ['/inbox/messages/5', '/inbox'],

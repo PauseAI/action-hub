@@ -32,7 +32,7 @@ describe('handler', () => {
   })
 
   it('leaves an error that is not a schema rejection alone', async () => {
-    const { status, message } = await call('my/quickTasks', {})
+    const { status, message } = await call('my/projectTasks', {})
     expect(status).toBe(401)
     expect(message).not.toMatch(/validation/i)
   })
@@ -52,7 +52,7 @@ describe('handler', () => {
 
   it('does not log a refusal', async () => {
     const logged = vi.spyOn(logger, 'error')
-    expect((await call('my/quickTasks', {})).status).toBe(401)
+    expect((await call('my/projectTasks', {})).status).toBe(401)
     expect(logged).not.toHaveBeenCalled()
     logged.mockRestore()
   })

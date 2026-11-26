@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma'
 import {
   createAdmin,
   createProject,
-  createQuickTask,
+  createRequest,
   createSkill,
   createTask,
   createTeam,
@@ -63,7 +63,11 @@ describe('dashboard.get', () => {
     await prisma.workItem.create({
       data: { type: 'TASK', status: 'in_progress', title: 'Loose', assigneeId: me.id },
     })
-    const qt = await createQuickTask({ assigneeId: me.id, status: 'under_review', title: 'QT1' })
+    const qt = await createRequest(null, {
+      assigneeId: me.id,
+      status: 'under_review',
+      title: 'QT1',
+    })
     await createTask(lead.id, { assigneeId: me.id, status: 'under_review', title: 'T2' })
     // Claimed but not started is still my work, shown with what it waits on.
     const first = await createTask(lead.id, { title: 'Emergency thing' })
@@ -125,7 +129,7 @@ describe('dashboard.get', () => {
       href: '/dashboard',
     })
     expect(byTitle['QT1']).toMatchObject({
-      href: `/quick-tasks/${qt.id}`,
+      href: `/projects/${qt.parentId}/tasks/${qt.id}`,
       status: 'In review',
     })
     expect(byTitle['Comms']).toMatchObject({
@@ -232,7 +236,7 @@ describe('dashboard.get', () => {
       status: 'in_progress',
       title: 'Slow',
     })
-    const quietQt = await createQuickTask({
+    const quietQt = await createRequest(null, {
       assigneeId: me.id,
       status: 'in_progress',
       title: 'SlowQT',
@@ -258,7 +262,7 @@ describe('dashboard.get', () => {
     await prisma.notification.create({
       data: { volunteerId: other.id, type: 'mention', title: 'Not mine' },
     })
-    const submitted = await createQuickTask({
+    const submitted = await createRequest(null, {
       creatorId: me.id,
       status: 'under_review',
       title: 'Done QT',
@@ -284,7 +288,7 @@ describe('dashboard.get', () => {
         .sort(),
     ).toEqual([
       ['"Slow": no update for 10 days', `/projects/${mine.id}/tasks/${quiet.id}`],
-      ['"SlowQT": no update for 10 days', `/quick-tasks/${quietQt.id}`],
+      ['"SlowQT": no update for 10 days', `/projects/${quietQt.parentId}/tasks/${quietQt.id}`],
     ])
     expect(byKind('mention')).toEqual(
       expect.arrayContaining([
@@ -298,7 +302,10 @@ describe('dashboard.get', () => {
     )
     expect(byKind('mention')).toHaveLength(2)
     expect(byKind('submission')).toEqual([
-      expect.objectContaining({ href: `/quick-tasks/${submitted.id}`, action: 'Review' }),
+      expect.objectContaining({
+        href: `/projects/${submitted.parentId}/tasks/${submitted.id}`,
+        action: 'Review',
+      }),
     ])
     expect(attention.some((a) => a.title.includes('Theirs'))).toBe(false)
   })
@@ -360,13 +367,13 @@ describe('dashboard.get', () => {
       changesRequestedNote: 'Bigger font',
       updatedAt: new Date(Date.now() - 10 * DAY),
     })
-    const sentBackQt = await createQuickTask({
+    const sentBackQt = await createRequest(null, {
       assigneeId: me.id,
       status: 'in_progress',
       title: 'Tweet',
       changesRequestedNote: 'Shorter',
     })
-    const unset = await createQuickTask({ status: 'under_review', title: 'Claimed QT' })
+    const unset = await createRequest(null, { status: 'under_review', title: 'Claimed QT' })
 
     const mineNow = (await clientAs(me).dashboard.get()).attention
     expect(mineNow.filter((a) => a.kind === 'submission')).toEqual([
@@ -387,16 +394,23 @@ describe('dashboard.get', () => {
         'Bigger font',
         `/projects/${theirs.id}/tasks/${sentBack.id}`,
       ],
-      ['Changes requested on "Tweet"', 'Shorter', `/quick-tasks/${sentBackQt.id}`],
+      [
+        'Changes requested on "Tweet"',
+        'Shorter',
+        `/projects/${sentBackQt.parentId}/tasks/${sentBackQt.id}`,
+      ],
     ])
     expect(mineNow.some((a) => a.kind === 'quiet_task')).toBe(false)
 
     expect(mineNow.some((a) => a.asStaff)).toBe(false)
 
-    // A Quick Task nobody set is any admin's to review, as an admin.
+    // A request nobody asked for is any admin's to review, as an admin.
     const adminNow = (await clientAs(admin).dashboard.get()).attention
     expect(adminNow).toContainEqual(
-      expect.objectContaining({ href: `/quick-tasks/${unset.id}`, asStaff: true }),
+      expect.objectContaining({
+        href: `/projects/${unset.parentId}/tasks/${unset.id}`,
+        asStaff: true,
+      }),
     )
   })
 
@@ -487,9 +501,10 @@ describe('dashboard.get', () => {
       localGroupId: leeds.id,
       ...mine,
     })
-    const qt = await createQuickTask({ skillId: skill.id, title: 'Open QT', ...mine })
-    await createQuickTask({ title: 'Plain QT', ...mine })
-    await createQuickTask({ title: 'Abroad QT', nationalChapterId: away.id })
+    const asker = await createMember(chapter, { name: 'Ada Asker' })
+    const qt = await createRequest(chapter.id, { title: 'Open QT', creatorId: asker.id })
+    await createRequest(chapter.id, { title: 'Plain QT' })
+    await createRequest(away.id, { title: 'Abroad QT' })
 
     const { find, hasSkills } = await clientAs(me).dashboard.get()
     expect(hasSkills).toBe(true)
@@ -511,15 +526,16 @@ describe('dashboard.get', () => {
     expect(find?.nearYou.items.find((i) => i.title === 'Near 3')).toMatchObject({
       reason: `Remote, ${chapter.name}`,
     })
-    expect(find?.quickTasks.items.find((i) => i.id === qt.id)).toMatchObject({
-      reason: 'Skill: Design',
+    expect(find?.requests.items.find((i) => i.id === qt.id)).toMatchObject({
+      reason: 'Asked by Ada Asker',
+      href: `/projects/${qt.parentId}/tasks/${qt.id}`,
     })
-    expect(find?.quickTasks.items.find((i) => i.title === 'Plain QT')).toMatchObject({
+    expect(find?.requests.items.find((i) => i.title === 'Plain QT')).toMatchObject({
       reason: null,
     })
-    expect(find?.quickTasks.items.map((i) => i.title)).not.toContain('Abroad QT')
-    expect(find?.quickTasks.count).toBe(2)
-    expect(find?.quickTasks.items.length).toBeLessThanOrEqual(3)
+    expect(find?.requests.items.map((i) => i.title)).not.toContain('Abroad QT')
+    expect(find?.requests.count).toBe(2)
+    expect(find?.requests.items.length).toBeLessThanOrEqual(3)
 
     // No skills and the holding pool: those two rows are empty.
     const bare = await clientAs(await createVolunteer({ country: null })).dashboard.get()
@@ -540,7 +556,7 @@ describe('dashboard.get', () => {
       emailConfirmed: true,
       firstTask: false,
     })
-    await createQuickTask({ assigneeId: fresh.id, status: 'completed' })
+    await createRequest(null, { assigneeId: fresh.id, status: 'completed' })
     expect((await clientAs(fresh).dashboard.get()).gettingStarted).toBeNull()
 
     const admin = await createAdmin({ approvalStatus: 'pending' })
@@ -556,23 +572,23 @@ describe('dashboard.get', () => {
     await createProject({ ...inChapter, skills: { create: [{ skillId: skill.id }] } })
     await createProject(inChapter)
     await createProject({ ...inChapter, status: 'pending_review' })
-    await createQuickTask({ nationalChapterId: chapter.id })
+    await createRequest(chapter.id)
 
     const applicant = await createMember(chapter, {
       approvalStatus: 'pending',
       skills: { create: [{ skillId: skill.id }] },
     })
     const d = await clientAs(applicant).dashboard.get()
-    expect(d.waiting).toEqual({ projects: 2, matching: 1, quickTasks: 1 })
+    expect(d.waiting).toEqual({ projects: 2, matching: 1, requests: 1 })
     expect(d.find).toBeNull()
 
-    // The holding pool has no chapter's projects, and no skills match nothing, but its own
-    // quick tasks are open to whoever is in it.
-    await createQuickTask({ nationalChapterId: null })
+    // The holding pool has no chapter's projects, and no skills match nothing, but global
+    // requests are open to whoever is in it.
+    await createRequest(null)
     const pooled = await createVolunteer({ approvalStatus: 'needs_info', nationalChapterId: null })
     const pooledWaiting = (await clientAs(pooled).dashboard.get()).waiting
     expect(pooledWaiting).toMatchObject({ projects: 0, matching: 0 })
-    expect(pooledWaiting?.quickTasks).toBeGreaterThan(0)
+    expect(pooledWaiting?.requests).toBeGreaterThan(0)
 
     // Members see the work itself; a rejected applicant is not waiting for anything.
     expect((await clientAs(await createMember(chapter)).dashboard.get()).waiting).toBeNull()
