@@ -186,10 +186,12 @@ describe('ProjectEditor — new volunteer proposal', () => {
     await waitFor(() => expect(localStorage.getItem('authToken')).toBeTruthy())
     await userEvent.type(screen.getByLabelText('Project title'), 'Go')
     await userEvent.type(screen.getByLabelText('Outline item'), 'Step')
-    // The create is sent on the click; the title and seeking-help changes come before it lands.
+    // The create is sent on the click; the title, ownership and seeking-help changes come
+    // before it lands, perhaps before the session has loaded too.
     act(() => {
       fireEvent.click(screen.getByRole('button', { name: 'Add to outline' }))
       fireEvent.change(screen.getByLabelText('Project title'), { target: { value: 'Go far' } })
+      fireEvent.click(screen.getByLabelText(/I want to lead this project/))
       fireEvent.click(screen.getByLabelText('Help / contributors'))
     })
     await waitFor(
@@ -198,6 +200,7 @@ describe('ProjectEditor — new volunteer proposal', () => {
           where: { creatorId: me.id, type: 'PROJECT' },
         })
         expect(draft.title).toBe('Go far')
+        expect(draft.assigneeId).toBe(me.id)
         expect(draft.isSeekingHelp).toBe(false)
       },
       { timeout: 20_000 },

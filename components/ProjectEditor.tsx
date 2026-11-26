@@ -66,7 +66,7 @@ type FieldPatch = Partial<Omit<UpdateProjectInput, 'id'>>
 function changedSince(
   sent: CreateProjectInput,
   now: CreateProjectInput,
-  userId: number | undefined,
+  userId: number,
 ): FieldPatch | null {
   const { tasks: _tasks, saveAsDraft: _saveAsDraft, wantToOwn, ...fields } = now
   const patch: Record<string, unknown> = {}
@@ -74,7 +74,7 @@ function changedSince(
     const before = sent[key as keyof CreateProjectInput]
     if (JSON.stringify(value) !== JSON.stringify(before)) patch[key] = value
   }
-  if (wantToOwn !== sent.wantToOwn) patch.assigneeId = wantToOwn ? (userId ?? null) : null
+  if (wantToOwn !== sent.wantToOwn) patch.assigneeId = wantToOwn ? userId : null
   return Object.keys(patch).length > 0 ? (patch as FieldPatch) : null
 }
 
@@ -400,7 +400,7 @@ export default function ProjectEditor(props: ProjectEditorProps) {
         const patch = changedSince(
           sent,
           latestPayload.current as CreateProjectInput,
-          latestUserId.current,
+          latestUserId.current ?? result.creatorId,
         )
         if (patch) updateMutation.mutate({ id: result.id, ...patch })
         return result.id
