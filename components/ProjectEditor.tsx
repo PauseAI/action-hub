@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { isCancelledError, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { InferRouterInputs } from '@orpc/server'
 import { useRequireAuth } from '@/lib/hooks/auth'
 import Button from '@/components/Button'
@@ -433,6 +433,21 @@ export default function ProjectEditor(props: ProjectEditorProps) {
   // volunteer's own proposal has no such gate: tasks come later, once it's approved. The count
   // is read fresh: just after a first task is added, the cached project can still be the copy
   // loaded before it existed.
+  // Adding a task cancels in-flight reads of the project, this one among them, so a cancelled
+  // read is made again.
+  async function readFresh(id: number) {
+    for (;;) {
+      try {
+        return await queryClient.fetchQuery({
+          ...orpc.projects.getById.queryOptions({ input: { id } }),
+          staleTime: 0,
+        })
+      } catch (err: unknown) {
+        if (!isCancelledError(err)) throw err
+      }
+    }
+  }
+
   async function handleOpenPublishModal() {
     if (projectId === undefined && !title.trim()) {
       toast('A title is required, even for a draft.', 'error')
@@ -441,11 +456,7 @@ export default function ProjectEditor(props: ProjectEditorProps) {
     let tasks = 0
     if (projectId !== undefined) {
       try {
-        const fresh = await queryClient.fetchQuery({
-          ...orpc.projects.getById.queryOptions({ input: { id: projectId } }),
-          staleTime: 0,
-        })
-        tasks = fresh.tasks.length
+        tasks = (await readFresh(projectId)).tasks.length
       } catch (err: unknown) {
         toast(err instanceof Error ? err.message : 'Failed to load project', 'error')
         return

@@ -14,6 +14,7 @@ import {
   createLocalGroup,
 } from '@/test/factories'
 import { renderApp } from '@/test/render'
+import { holdNextFetch, requestsTo } from '@/test/rpc-fetch'
 import { navigation } from '@/test/next-navigation'
 import ProjectEditor from './ProjectEditor'
 
@@ -610,6 +611,26 @@ describe('ProjectEditor — editing an existing project', () => {
     expect(await screen.findByText('Project not found')).toBeInTheDocument()
     expect(screen.queryByText('Submit draft for review?')).toBeNull()
     void task
+  })
+
+  it('opens Submit even when adding a task cancels the read Submit was waiting on', async () => {
+    const me = await createVolunteer()
+    const draft = await createProject({ status: 'draft', creatorId: me.id, title: 'Busy' })
+    await createTask(draft.id)
+    await mount({ projectId: draft.id }, me)
+    await screen.findByDisplayValue('Busy')
+    const release = holdNextFetch('projects/getById')
+    await userEvent.click(screen.getByRole('button', { name: 'Submit' }))
+    await waitFor(() => expect(requestsTo('projects/getById').length).toBeGreaterThan(1))
+    // The new task's save cancels every in-flight read of the project, Submit's among them.
+    await userEvent.type(
+      screen.getByLabelText('Task title', { selector: '#new-task-title' }),
+      'More',
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Add task' }))
+    expect(await screen.findByText('Submit draft for review?')).toBeInTheDocument()
+    expect(screen.queryByText('CancelledError')).toBeNull()
+    release()
   })
 
   it('reports a submit the server refuses', async () => {
