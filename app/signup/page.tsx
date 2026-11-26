@@ -200,6 +200,12 @@ export default function SignupPage() {
         sessionStorage.removeItem(DRAFT_KEY)
       }
     }
+    // A chapter's invite links here with the address and the chapter's country.
+    if (!storedDraft) {
+      const invited = new URLSearchParams(window.location.search)
+      setEmail(invited.get('email') ?? '')
+      setCountryValue(invited.get('country') ?? '')
+    }
     setRestored(true)
     // setEmailDigest is stable for this purpose: the draft is read once, on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps

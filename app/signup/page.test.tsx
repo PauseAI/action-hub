@@ -54,6 +54,27 @@ describe('signup with email and password', () => {
     expect(contact).toHaveValue('ann.applicant@example.com')
   })
 
+  it("starts with the address and country a chapter's invite links with", async () => {
+    window.history.replaceState(null, '', '/signup?email=invited%40example.org&country=UK')
+    try {
+      await renderApp(<SignupPage />)
+      await onStep('Account')
+      expect(screen.getByLabelText('Email')).toHaveValue('invited@example.org')
+      await type('Your name', 'Ivy Invited')
+      await type('Password', 'a-long-password')
+      await type('Confirm password', 'a-long-password')
+      await userEvent.click(screen.getByRole('button', { name: 'Next: About you' }))
+      await onStep('About you')
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Select country' })).toHaveTextContent(
+          'United Kingdom',
+        ),
+      )
+    } finally {
+      window.history.replaceState(null, '', '/')
+    }
+  })
+
   it('validates each step before moving on, and keeps values going back', async () => {
     await renderApp(<SignupPage />)
     await onStep('Account')

@@ -10,6 +10,9 @@ import {
   buildAccountMergeHtml,
   ACCOUNT_MERGE_SUBJECT,
   buildAdminInviteHtml,
+  buildChapterMemberInviteHtml,
+  chapterMemberInviteSubject,
+  chapterSignupUrl,
   chapterInviteSubject,
   buildWelcomeHtml,
   buildProjectNotificationHtml,
@@ -147,6 +150,15 @@ const EMAIL_PREVIEW_REGISTRY: Record<string, { subject: string; build: () => Pro
         `${env.APP_URL}/accept-invite?token=sample-token-abc123`,
         'Jamie Smith',
         SAMPLE_CHAPTER_INVITE,
+      ),
+  },
+  'chapter-member-invite': {
+    subject: chapterMemberInviteSubject('Jamie Smith', 'United Kingdom'),
+    build: () =>
+      buildChapterMemberInviteHtml(
+        chapterSignupUrl('alex@example.com', 'UK'),
+        'Jamie Smith',
+        'United Kingdom',
       ),
   },
   'project-notification': {

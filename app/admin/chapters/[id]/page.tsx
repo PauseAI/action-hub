@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { use, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Button from '@/components/Button'
+import ChapterMemberInvite from '@/components/ChapterMemberInvite'
 import FilterDropdown from '@/components/FilterDropdown'
 import { useRequireStaff } from '@/lib/hooks/auth'
 import { orpc } from '@/lib/orpc'
@@ -296,6 +297,8 @@ export default function AdminChapterPage({ params }: { params: Promise<{ id: str
           )}
         </section>
       )}
+
+      <ChapterMemberInvite chapterId={chapter.id} chapterName={chapter.name} />
 
       <section className={`card ${SECTION_CARD} mb-5`}>
         <H2 className="mt-0">Members ({chapter.members.length})</H2>

@@ -9,6 +9,9 @@ import { assertKnownCountry } from '@/lib/chapter-placement'
 import { audit, moveToChapter } from '@/lib/chapter-roles'
 import { countryName } from '@/lib/countries-server'
 import { clearNotifications, notifyChapterStaff, notifyUser } from '@/lib/notify'
+import { sendChapterMemberInviteEmail } from '@/lib/email'
+import { checkRateLimit } from '@/lib/rate-limit'
+import { hashEmail } from '@/lib/auth'
 import {
   ApprovalStatus,
   ChapterAuditAction,
@@ -16,6 +19,74 @@ import {
   ChapterTransferStatus,
 } from '@/generated/prisma/enums'
 import { authedProcedure, staffProcedure } from '../procedures'
+
+/**
+ * Records a request to move `member` into `toChapterId` and asks the side that answers it. One
+ * move waits at a time, checked in the serializable transaction that adds it.
+ */
+async function askToMove(
+  actor: { id: number; name: string },
+  member: {
+    id: number
+    name: string
+    nationalChapterId: number | null
+    approvalStatus: ApprovalStatus
+    duplicateOfId: number | null
+  },
+  toChapterId: number,
+  kind: ChapterTransferKind,
+  reason: string | null | undefined,
+) {
+  const from = member.nationalChapterId
+  if (member.approvalStatus !== ApprovalStatus.approved || member.duplicateOfId !== null) {
+    throw new ORPCError('BAD_REQUEST', { message: 'Only an approved member can be moved' })
+  }
+  const to = await prisma.nationalChapter.findUnique({ where: { id: toChapterId } })
+  if (!to) throw new ORPCError('NOT_FOUND', { message: 'Chapter not found' })
+  const request = await prisma.$transaction(
+    async (tx) => {
+      const waiting = await tx.chapterTransferRequest.findFirst({
+        where: { volunteerId: member.id, status: ChapterTransferStatus.pending },
+      })
+      if (waiting) {
+        throw new ORPCError('BAD_REQUEST', {
+          message: `${member.name} already has a move waiting for an answer`,
+        })
+      }
+      const created = await tx.chapterTransferRequest.create({
+        data: {
+          volunteerId: member.id,
+          fromChapterId: from,
+          toChapterId: to.id,
+          toCountry: to.country,
+          reason: reason || null,
+          kind,
+          requestedById: actor.id,
+        },
+      })
+      await audit(tx, ChapterAuditAction.TRANSFER_REQUESTED, {
+        actorId: actor.id,
+        chapterId: askingChapter(created),
+        targetVolunteerId: member.id,
+        details: { kind, fromChapterId: from, toChapterId: to.id },
+      })
+      return created
+    },
+    { isolationLevel: 'Serializable' },
+  )
+  await notifyChapterStaff(
+    decidingChapter(request),
+    'chapter_transfer_request',
+    kind === ChapterTransferKind.SEND
+      ? `${actor.name} asks you to take ${member.name} into ${to.name}`
+      : `${actor.name} asks to bring ${member.name} into ${to.name}`,
+    reason || null,
+    '/admin/transfers',
+    undefined,
+    request.id,
+  )
+  return to
+}
 
 /**
  * Moving a member between chapters. A member moving country asks to move; their chapter's staff
@@ -166,56 +237,104 @@ export const chapterTransfersRouter = {
         return { message: `${member.name} is in the holding pool` }
       }
 
-      if (member.approvalStatus !== ApprovalStatus.approved || member.duplicateOfId !== null) {
-        throw new ORPCError('BAD_REQUEST', { message: 'Only an approved member can be moved' })
-      }
-      const to = await prisma.nationalChapter.findUnique({ where: { id: input.toChapterId } })
-      if (!to) throw new ORPCError('NOT_FOUND', { message: 'Chapter not found' })
       const kind = sending ? ChapterTransferKind.SEND : ChapterTransferKind.BRING
-      // One move waits at a time; checked in the same serializable transaction that adds it.
-      const request = await prisma.$transaction(
-        async (tx) => {
-          const waiting = await tx.chapterTransferRequest.findFirst({
-            where: { volunteerId: member.id, status: ChapterTransferStatus.pending },
-          })
-          if (waiting) {
-            throw new ORPCError('BAD_REQUEST', {
-              message: `${member.name} already has a move waiting for an answer`,
-            })
-          }
-          const created = await tx.chapterTransferRequest.create({
-            data: {
-              volunteerId: member.id,
-              fromChapterId: from,
-              toChapterId: to.id,
-              toCountry: to.country,
-              reason: input.reason || null,
-              kind,
-              requestedById: actorId,
-            },
-          })
-          await audit(tx, ChapterAuditAction.TRANSFER_REQUESTED, {
-            actorId,
-            chapterId: askingChapter(created),
-            targetVolunteerId: member.id,
-            details: { kind, fromChapterId: from, toChapterId: to.id },
-          })
-          return created
-        },
-        { isolationLevel: 'Serializable' },
-      )
-      await notifyChapterStaff(
-        decidingChapter(request),
-        'chapter_transfer_request',
-        kind === ChapterTransferKind.SEND
-          ? `${context.volunteer.name} asks you to take ${member.name} into ${to.name}`
-          : `${context.volunteer.name} asks to bring ${member.name} into ${to.name}`,
-        input.reason || null,
-        '/admin/transfers',
-        undefined,
-        request.id,
-      )
+      const to = await askToMove(context.volunteer, member, input.toChapterId, kind, input.reason)
       return { message: `Asked: ${to.name}'s move for ${member.name} is waiting for an answer` }
+    }),
+
+  /**
+   * A chapter's staff invite someone by email. With no account, they are sent a link to sign
+   * up with the chapter's country filled in. Someone already in another chapter, or the pool, is
+   * named to the inviter with where they are; with `bring`, they are asked for as `requestFor`
+   * would, without the inviter needing to see their profile.
+   */
+  inviteToChapter: staffProcedure
+    .input(
+      z.object({
+        chapterId: z.number().int(),
+        email: z.string().trim().toLowerCase().email({ message: 'Enter an email address' }),
+        bring: z.boolean().optional().default(false),
+        reason: z.string().trim().max(1000).optional().nullable(),
+      }),
+    )
+    .handler(async ({ input, context }) => {
+      const { access } = context
+      if (!canAdminChapter(access, input.chapterId)) {
+        throw new ORPCError('FORBIDDEN', {
+          message: "Only the chapter's lead or deputies can invite",
+        })
+      }
+      const { allowed } = checkRateLimit(
+        context.request,
+        `chapter-invite:${context.volunteer.id}`,
+        { limit: 30, windowMs: 60 * 60 * 1000 },
+      )
+      if (!allowed) {
+        throw new ORPCError('TOO_MANY_REQUESTS', { message: 'Too many invites; try again later' })
+      }
+      const chapter = await prisma.nationalChapter.findUnique({ where: { id: input.chapterId } })
+      if (!chapter) throw new ORPCError('NOT_FOUND', { message: 'Chapter not found' })
+      // Sign-up refuses a closed account's address as it does a live one's (auth.signup).
+      const member = await prisma.volunteer.findFirst({
+        where: { email: { equals: input.email, mode: 'insensitive' } },
+        select: {
+          id: true,
+          name: true,
+          deletedAt: true,
+          nationalChapterId: true,
+          approvalStatus: true,
+          duplicateOfId: true,
+          chapter: { select: { name: true } },
+        },
+      })
+      const refused = (message: string) => {
+        throw new ORPCError('BAD_REQUEST', { message })
+      }
+
+      if (!member) {
+        const anonymised = await prisma.anonymisedEmail.findUnique({
+          where: { emailHash: hashEmail(input.email) },
+          select: { reapplyAllowedAt: true },
+        })
+        if (anonymised && !anonymised.reapplyAllowedAt) {
+          refused('This address was turned down before; a global admin can let them apply again')
+        }
+        // A transport that fails says so by throwing or by returning false; either is unsent.
+        const sent = await sendChapterMemberInviteEmail({
+          to: input.email,
+          invitedBy: context.volunteer.name,
+          chapter,
+        }).catch(() => false)
+        if (!sent) refused('The invite email could not be sent; try again later')
+        return { message: `Invite sent to ${input.email}`, existing: null }
+      }
+      if (member.deletedAt) refused('This address belonged to an account that has been closed')
+      if (member.id === context.volunteer.id) refused('Ask to move yourself from your settings')
+      if (member.nationalChapterId === chapter.id) {
+        refused(`${member.name} is already a member of ${chapter.name}`)
+      }
+      // Only an approved account in use can move; anyone else is not named.
+      if (member.approvalStatus !== ApprovalStatus.approved || member.duplicateOfId !== null) {
+        refused('This address already has an account that cannot be moved yet')
+      }
+      const existing = { name: member.name, chapterName: member.chapter?.name ?? null }
+      if (!input.bring) {
+        const where = existing.chapterName
+          ? `the ${existing.chapterName} chapter`
+          : 'the holding pool'
+        return { message: `${member.name} is already on Action Hub, in ${where}`, existing }
+      }
+      await askToMove(
+        context.volunteer,
+        member,
+        chapter.id,
+        ChapterTransferKind.BRING,
+        input.reason,
+      )
+      return {
+        message: `Asked: ${chapter.name}'s move for ${member.name} is waiting for an answer`,
+        existing,
+      }
     }),
 
   /** Staff of the side that asked take back a move nobody has answered yet. */

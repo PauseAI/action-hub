@@ -12,6 +12,7 @@ import {
 } from '@/test/factories'
 import { emails } from '@/test/fakes/email'
 import { navigation } from '@/test/next-navigation'
+import { holdNextFetch } from '@/test/rpc-fetch'
 import { fullText, renderApp } from '@/test/render'
 import AdminChaptersPage from './page'
 import AdminChapterPage from './[id]/page'
@@ -140,6 +141,72 @@ describe('one chapter', () => {
       expect(within(history).getAllByRole('listitem').length).toBeGreaterThanOrEqual(3),
     )
     expect(within(history).getByText(/made the lead: Ann/)).toBeInTheDocument()
+  })
+
+  it('lets a lead invite someone new, or ask for someone already in another chapter', async () => {
+    const [mine, theirs] = [await createChapter(), await createChapter()]
+    const lead = await createChapterLead(mine)
+    await createMember(theirs, { name: 'Elsewhere Ed', email: 'ed@example.org' })
+    await createMember(mine, { name: 'Ours Already', email: 'ours@example.org' })
+    await renderApp(chapterPage(mine.id), { as: lead })
+    const section = await screen.findByRole('region', { name: 'Invite someone to join' })
+    const email = within(section).getByLabelText('Their email')
+
+    await userEvent.type(email, 'fresh@example.org')
+    await userEvent.click(within(section).getByRole('button', { name: 'Invite to join' }))
+    await screen.findByText('Invite sent to fresh@example.org')
+    expect(email).toHaveValue('')
+    expect(emails.lastTo('fresh@example.org')).toBeTruthy()
+
+    await userEvent.type(email, 'ours@example.org')
+    await userEvent.click(within(section).getByRole('button', { name: 'Invite to join' }))
+    await screen.findByText(`Ours Already is already a member of ${mine.name}`)
+
+    await userEvent.clear(email)
+    await userEvent.type(email, 'ed@example.org')
+    await userEvent.click(within(section).getByRole('button', { name: 'Invite to join' }))
+    expect(await within(section).findByRole('status')).toHaveTextContent(
+      `Elsewhere Ed is already on Action Hub, in the ${theirs.name} chapter.`,
+    )
+    await userEvent.type(within(section).getByLabelText('Why (optional)'), 'Moved here')
+    await userEvent.click(
+      within(section).getByRole('button', { name: `Ask to bring Elsewhere Ed into ${mine.name}` }),
+    )
+    await screen.findByText(`Asked: ${mine.name}'s move for Elsewhere Ed is waiting for an answer`)
+    expect(within(section).queryByRole('status')).toBeNull()
+    // Editing the address puts the offer away.
+    await userEvent.type(email, 'ed@example.org')
+    await userEvent.click(within(section).getByRole('button', { name: 'Invite to join' }))
+    await within(section).findByRole('status')
+    await userEvent.type(email, 'x')
+    expect(within(section).queryByRole('status')).toBeNull()
+  })
+
+  it('makes no offer from a reply for an address the field no longer holds', async () => {
+    const [mine, theirs] = [await createChapter(), await createChapter()]
+    await createMember(theirs, { name: 'Late Reply', email: 'late@example.org' })
+    await renderApp(chapterPage(mine.id), { as: await createChapterLead(mine) })
+    const section = await screen.findByRole('region', { name: 'Invite someone to join' })
+    const email = within(section).getByLabelText('Their email')
+    await userEvent.type(email, 'late@example.org')
+    const release = holdNextFetch('chapterTransfers/inviteToChapter')
+    await userEvent.click(within(section).getByRole('button', { name: 'Invite to join' }))
+    await userEvent.type(email, '.uk')
+    release()
+    await screen.findByText(/Late Reply is already on Action Hub/)
+    expect(within(section).queryByRole('status')).toBeNull()
+  })
+
+  it('names the holding pool for someone in it', async () => {
+    const chapter = await createChapter()
+    await createVolunteer({ name: 'Pool Pat', email: 'pat@example.org' })
+    await renderApp(chapterPage(chapter.id), { as: await createChapterLead(chapter) })
+    const section = await screen.findByRole('region', { name: 'Invite someone to join' })
+    await userEvent.type(within(section).getByLabelText('Their email'), 'pat@example.org')
+    await userEvent.click(within(section).getByRole('button', { name: 'Invite to join' }))
+    expect(await within(section).findByRole('status')).toHaveTextContent(
+      'Pool Pat is already on Action Hub, in the holding pool.',
+    )
   })
 
   it('tells two same-named members apart by email when appointing a lead', async () => {
