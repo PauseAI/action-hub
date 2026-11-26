@@ -10,6 +10,11 @@ import {
   buildAccountMergeHtml,
   ACCOUNT_MERGE_SUBJECT,
   buildAdminInviteHtml,
+  buildAccountsMergedHtml,
+  buildStaffMergeConfirmHtml,
+  STAFF_MERGE_CONFIRM_SUBJECT,
+  staffMergeConfirmUrl,
+  ACCOUNTS_MERGED_SUBJECT,
   buildSuspensionHtml,
   suspensionSubject,
   buildChapterMemberInviteHtml,
@@ -153,6 +158,14 @@ const EMAIL_PREVIEW_REGISTRY: Record<string, { subject: string; build: () => Pro
         'Jamie Smith',
         SAMPLE_CHAPTER_INVITE,
       ),
+  },
+  'accounts-merged': {
+    subject: ACCOUNTS_MERGED_SUBJECT,
+    build: () => buildAccountsMergedHtml('Alex', 'al•••@example.com'),
+  },
+  'staff-merge-confirm': {
+    subject: STAFF_MERGE_CONFIRM_SUBJECT,
+    build: () => buildStaffMergeConfirmHtml(staffMergeConfirmUrl('sample-token-abc123'), 'Alex'),
   },
   'member-suspended': {
     subject: suspensionSubject(false),

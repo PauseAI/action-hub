@@ -1,11 +1,9 @@
 import { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
+import { MIN_PHONE_DIGITS } from '@/lib/account-overlap'
 
 /** Why two accounts look like the same person. */
 export type DuplicateReason = 'name' | 'discord' | 'phone'
-
-/** The shortest phone number compared, so a stray digit or two never makes a match. */
-const MIN_PHONE_DIGITS = 7
 
 /**
  * Pairs of live accounts that look like one person: the same name once case, accents and

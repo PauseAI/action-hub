@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import type { InferRouterOutputs } from '@orpc/server'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { AppRouter } from '@/server/router'
@@ -13,6 +14,7 @@ import { H2, H3 } from '@/components/Heading'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
+import { OVERLAP_LABELS } from '@/lib/account-overlap'
 import Textarea from '@/components/ui/Textarea'
 import { formatDate } from '@/lib/format-date'
 import PersonName from '@/components/PersonName'
@@ -251,6 +253,181 @@ function CoordinatorControl({
   )
 }
 
+/** A merge of this account waiting for proof, with the answer this admin may give. */
+function PendingMerge({ pending }: { pending: NonNullable<Manage['merge']>['pending'] }) {
+  const options = useManaged(() => {})
+  const approve = useMutation({
+    ...orpc.admin.volunteers.approveMerge.mutationOptions(),
+    ...options,
+  })
+  const withdraw = useMutation({
+    ...orpc.admin.volunteers.withdrawMerge.mutationOptions(),
+    ...options,
+  })
+  if (!pending) return null
+  const busy = approve.isPending || withdraw.isPending
+  return (
+    <div role="status" className="w-full text-sm">
+      <p className="m-0 mb-2">
+        Waiting: merging {pending.mergedName}&apos;s account into {pending.keptName}&apos;s, asked
+        by {pending.requestedByName ?? 'a global admin'}, until{' '}
+        {pending.gate === 'MAILBOXES'
+          ? 'the links sent to both addresses are followed.'
+          : 'another global admin approves it.'}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {pending.canApprove && (
+          <Button size="sm" disabled={busy} onClick={() => approve.mutate({ id: pending.id })}>
+            Approve merge
+          </Button>
+        )}
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={busy}
+          onClick={() => withdraw.mutate({ id: pending.id })}
+        >
+          Withdraw merge request
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Folds this account and one that looks like the same person's into one. Offered only where the
+ * two share more than a name, listed in the confirm step; it cannot be undone.
+ */
+function MergeAccounts({
+  member,
+  merge: control,
+}: {
+  member: Member
+  merge: NonNullable<Manage['merge']>
+}) {
+  const [otherId, setOtherId] = useState('')
+  const [keepThis, setKeepThis] = useState(true)
+  const dialog = useDialog(() => {
+    setOtherId('')
+    setKeepThis(true)
+  })
+  const { data: candidates, isError } = useQuery({
+    ...orpc.admin.volunteers.mergeCandidates.queryOptions({ input: { volunteerId: member.id } }),
+    enabled: dialog.open,
+  })
+  const router = useRouter()
+  const managed = useManaged(dialog.close)
+  const merge = useMutation({
+    ...orpc.admin.volunteers.merge.mutationOptions(),
+    ...managed,
+    onSuccess: (result, { keptId, mergedId }) => {
+      managed.onSuccess(result)
+      // This profile's account is closed once merged away; its person lives on at the other.
+      if (mergedId === member.id) router.push(`/volunteers/${keptId}`)
+    },
+  })
+  const choose = (c: { id: number; mustKeep: 'this' | 'other' | null; keepOther: boolean }) => {
+    setOtherId(String(c.id))
+    setKeepThis(c.mustKeep ? c.mustKeep === 'this' : !c.keepOther)
+  }
+  const other = candidates?.find((c) => String(c.id) === otherId)
+  const kept = other && (keepThis ? member.name : other.name)
+  const outcome = !kept
+    ? 'Choose the account that is the same person.'
+    : other.gated
+      ? `They share nothing that shows one person holds both, so we first ask for proof: a link to each address, merged once both are followed, or, where an account has no confirmed address, another global admin's approval. Then everything moves to ${kept}'s account.`
+      : `Everything moves to ${kept}'s account; the other is closed. They sign in with a confirmed address, and each address is emailed. This cannot be undone.`
+  return (
+    <>
+      <PendingMerge pending={control.pending} />
+      <Button variant="danger" size="sm" onClick={dialog.show}>
+        Merge with another account
+      </Button>
+      <ConfirmDialog
+        id="merge-dialog"
+        isOpen={dialog.open}
+        title={`Merge ${member.name}'s account with another?`}
+        body={
+          isError ? (
+            <p className="m-0">The accounts could not be loaded. Close this and try again.</p>
+          ) : !candidates ? (
+            <p className="m-0">Looking for accounts that look like the same person…</p>
+          ) : candidates.length === 0 ? (
+            <p className="m-0">
+              No account looks like the same person: none shares a name, Discord handle, number or
+              mailbox with this one, or is marked as its duplicate.
+            </p>
+          ) : (
+            <div className="grid gap-3">
+              <fieldset className="m-0 p-0 border-0 grid gap-1">
+                <legend className="mb-1">The other account</legend>
+                {candidates.map((c) => (
+                  <label key={c.id} className="flex gap-2 items-start">
+                    <input
+                      type="radio"
+                      name="merge-other"
+                      checked={otherId === String(c.id)}
+                      onChange={() => choose(c)}
+                    />
+                    <span>
+                      {c.name}
+                      {c.chapterName && ` (${c.chapterName})`}
+                      <span className="block text-sm">
+                        {c.gated && !c.overlap.length
+                          ? 'Marked as the same person, sharing nothing'
+                          : c.overlap.map((o) => OVERLAP_LABELS[o]).join(' · ')}
+                        {c.gated && ' (needs proof first)'}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
+              {other && (
+                <fieldset className="m-0 p-0 border-0 grid gap-1" disabled={!!other.mustKeep}>
+                  <legend className="mb-1">
+                    Keep{other.mustKeep && ' (the one that holds a role stays)'}
+                  </legend>
+                  <label className="flex gap-2 items-center">
+                    <input
+                      type="radio"
+                      name="merge-keep"
+                      checked={keepThis}
+                      onChange={() => setKeepThis(true)}
+                    />
+                    This account ({member.name})
+                  </label>
+                  <label className="flex gap-2 items-center">
+                    <input
+                      type="radio"
+                      name="merge-keep"
+                      checked={!keepThis}
+                      onChange={() => setKeepThis(false)}
+                    />
+                    {other.name}&apos;s
+                  </label>
+                </fieldset>
+              )}
+              <p className="m-0">{outcome}</p>
+            </div>
+          )
+        }
+        confirmLabel={other?.gated ? 'Ask for proof' : 'Merge accounts'}
+        confirmDisabled={!other}
+        danger
+        busy={merge.isPending}
+        busyLabel="Merging…"
+        onConfirm={() =>
+          merge.mutate({
+            keptId: keepThis ? member.id : Number(otherId),
+            mergedId: keepThis ? Number(otherId) : member.id,
+          })
+        }
+        onClose={dialog.close}
+      />
+    </>
+  )
+}
+
 /** Ends every session a member has, for when their account may be in someone else's hands. */
 function SignOutEverywhere({
   member,
@@ -404,6 +581,7 @@ const DONE_TO_THEM: Record<ChapterAuditAction, (chapter: string) => string> = {
   SESSIONS_REVOKED: () => 'signed them out everywhere',
   MEMBER_SUSPENDED: () => 'suspended them',
   MEMBER_UNSUSPENDED: () => 'lifted their suspension',
+  ACCOUNT_MERGED: () => 'merged another account into theirs',
   TRANSFER_REQUESTED: (c) => `asked, for ${c}, to move them`,
 }
 
@@ -981,6 +1159,7 @@ export default function MemberManage({
               <SignOutEverywhere member={member} control={manage.signOutEverywhere} />
             )}
             {hasPicture && manage.removePicture && <RemovePicture member={member} />}
+            {manage.merge && <MergeAccounts member={member} merge={manage.merge} />}
           </div>
         </div>
       )}

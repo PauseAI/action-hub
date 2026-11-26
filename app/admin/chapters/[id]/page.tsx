@@ -41,6 +41,7 @@ const ACTION_LABELS: Record<ChapterAuditAction, string> = {
   APPLICATION_REJECTED: 'rejected an application:',
   APPLICATION_INFO_REQUESTED: 'asked an applicant for more:',
   APPLICATION_REOPENED: 'reopened an application:',
+  ACCOUNT_MERGED: 'merged two accounts of:',
   SESSIONS_REVOKED: 'signed a member out on every device:',
   MEMBER_SUSPENDED: 'suspended:',
   MEMBER_UNSUSPENDED: 'lifted the suspension of:',

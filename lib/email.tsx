@@ -13,8 +13,10 @@ import { AccountMergeEmail } from './emails/AccountMergeEmail'
 import { OutreachLoginEmail } from './emails/OutreachLoginEmail'
 import { AdminInviteEmail, type ChapterRoleInvite, roleTitle } from './emails/AdminInviteEmail'
 import { WelcomeEmail } from './emails/WelcomeEmail'
-import { SuspensionEmail } from './emails/SuspensionEmail'
+import { AccountsMergedEmail } from './emails/AccountsMergedEmail'
+import { StaffMergeConfirmEmail } from './emails/StaffMergeConfirmEmail'
 import { SUPPORT_EMAIL } from './support-email'
+import { SuspensionEmail } from './emails/SuspensionEmail'
 import { ChapterMemberInviteEmail } from './emails/ChapterMemberInviteEmail'
 import { ProjectNotificationEmail } from './emails/ProjectNotificationEmail'
 import { AdminAlertEmail } from './emails/AdminAlertEmail'
@@ -368,6 +370,56 @@ export async function sendAdminInviteEmail({
     to,
     chapterInviteSubject(invitedBy, invite),
     await buildAdminInviteHtml(inviteUrl, invitedBy, invite),
+  )
+}
+
+export const ACCOUNTS_MERGED_SUBJECT = 'Your two Action Hub accounts are now one'
+
+export function buildAccountsMergedHtml(name: string, signInWith: string | null): Promise<string> {
+  return render(
+    <AccountsMergedEmail
+      name={name}
+      signInWith={signInWith}
+      supportEmail={SUPPORT_EMAIL}
+      appUrl={env.APP_URL}
+    />,
+  )
+}
+
+export async function sendAccountsMergedEmail({
+  to,
+  name,
+  signInWith,
+}: {
+  to: string
+  name: string
+  signInWith: string | null
+}): Promise<boolean> {
+  return sendEmail(to, ACCOUNTS_MERGED_SUBJECT, await buildAccountsMergedHtml(name, signInWith))
+}
+
+export const STAFF_MERGE_CONFIRM_SUBJECT = 'Are these both your Action Hub accounts?'
+
+export const staffMergeConfirmUrl = (token: string) =>
+  `${env.APP_URL}/confirm-merge?token=${encodeURIComponent(token)}`
+
+export function buildStaffMergeConfirmHtml(confirmUrl: string, name: string): Promise<string> {
+  return render(<StaffMergeConfirmEmail confirmUrl={confirmUrl} name={name} appUrl={env.APP_URL} />)
+}
+
+export async function sendStaffMergeConfirmEmail({
+  to,
+  name,
+  token,
+}: {
+  to: string
+  name: string
+  token: string
+}): Promise<boolean> {
+  return sendEmail(
+    to,
+    STAFF_MERGE_CONFIRM_SUBJECT,
+    await buildStaffMergeConfirmHtml(staffMergeConfirmUrl(token), name),
   )
 }
 

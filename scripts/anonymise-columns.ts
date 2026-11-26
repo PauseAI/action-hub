@@ -19,6 +19,7 @@ export const COLUMN_TREATMENT: Record<string, Record<string, Treatment>> = {
   // A merge's conflicts hold both accounts' profile values.
   account_merges: { conflicts: 'rows-deleted' },
   account_merge_requests: { token: 'rows-deleted' },
+  staff_merge_requests: { kept_token: 'rows-deleted', merged_token: 'rows-deleted' },
   admin_invites: { email: 'custom', invite_token: 'token' },
   admin_notes: { content: 'redact', category: 'keep' },
   api_tokens: { name: 'rows-deleted', token_hash: 'rows-deleted' },

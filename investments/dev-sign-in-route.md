@@ -15,3 +15,4 @@ A development-only route that takes a `dev-` token, stores it and redirects, ref
 - 2026-11-11 (x2): screenshots for two features each needed the throwaway page
 - 2026-11-22: profile pictures needed the throwaway page again to check the header avatar locally
 - 2026-11-25: screenshots of a passwordless account's settings needed a `tmp/` script to give the seeded volunteer a known password, sign in through `/login` with `shot`, then clear the password again
+- 2026-11-25: per-role screenshots for member-manage-panel (#435) fell back to `npm run snapshots`, as shot could not sign in as lead or deputy

@@ -19,3 +19,4 @@ Size: S. Kind: small fix.
 - 2026-11-11: the call dismissals migration carried both; a chained `new-migration && migrate` failed the same way
 - 2026-11-18: the email suppression migration carried both; migrate ran first, failed, and needed `prisma migrate resolve --rolled-back`
 - 2026-11-25: the project stages migration carried the `schema_migrations` noise
+- 2026-11-25 (x6): every migration in the member-actions series (sessions revoked, application steps, audit index, transfer kinds, suspension, staff merges) carried `schema_migrations` and, after branch switches, a full enum rebuild; the first ran before stripping and was left recorded as failed

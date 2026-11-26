@@ -23,6 +23,7 @@ const RequiredActionsContext = createContext<RequiredActionsValue | null>(null)
 /** Pages an emailed link or sign-in lands on, where a dialog would cover what they are for. */
 const QUIET_PATHS = [
   '/merge-accounts',
+  '/confirm-merge',
   '/verify-email',
   '/reset-password',
   '/accept-invite',

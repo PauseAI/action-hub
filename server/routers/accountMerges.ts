@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { ORPCError } from '@orpc/server'
 import { prisma } from '@/lib/prisma'
+import { confirmStaffMerge } from '@/lib/staff-merge'
 import { generateAuthToken } from '@/lib/auth'
 import { mergeAccounts, sameMailbox } from '@/lib/account-merge'
 import { MERGE_FIELDS, type MergeConflict } from '@/lib/account-merge-fields'
@@ -77,6 +78,30 @@ export const accountMergesRouter = {
       return {
         message: `We sent a link to ${maskEmail(other.email)}`,
         ...(env.STUB_EMAIL ? { _devMergeUrl: `/merge-accounts?token=${token}` } : {}),
+      }
+    }),
+
+  /**
+   * Follows the link a staff merge sent to one of two addresses (lib/staff-merge.ts); the merge
+   * runs once both are followed.
+   */
+  confirmStaff: publicProcedure
+    .input(z.object({ token: z.string().min(1) }))
+    .handler(async ({ input, context }) => {
+      const { allowed } = checkRateLimit(context.request, 'staff-merge-confirm', {
+        limit: 20,
+        windowMs: 60 * 60 * 1000,
+      })
+      if (!allowed) {
+        throw new ORPCError('TOO_MANY_REQUESTS', { message: 'Too many tries; try later' })
+      }
+      const done = await confirmStaffMerge(input.token)
+      return {
+        merged: done === 'merged',
+        message:
+          done === 'merged'
+            ? 'Your accounts are now one. Sign in as usual.'
+            : 'Thank you. Now follow the link we sent to your other address.',
       }
     }),
 

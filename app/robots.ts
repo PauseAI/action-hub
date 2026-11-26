@@ -25,6 +25,7 @@ export default function robots(): MetadataRoute.Robots {
         '/reset-password',
         '/accept-invite',
         '/merge-accounts',
+        '/confirm-merge',
       ],
     },
     sitemap: `${env.APP_URL}/sitemap.xml`,

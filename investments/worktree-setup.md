@@ -14,3 +14,4 @@ A `scripts/new-worktree.ts` (or a step in Orca's worktree setup) that links the 
 
 - 2026-10-15 (x2): a worktree beside another session's changes needed the env files linked and `node_modules` cloned; an Orca worktree for the status-badge review needed `npm ci`, a dummy `DATABASE_URL`, `CHECKPOINT_DISABLE=1` and `node --import tsx` to typecheck, and could run no unit test
 - 2026-10-23: the dependency-lag rework's worktree had no `.env.local`, so `npm run generate` failed until it was copied
+- 2026-11-26: a scratch worktree for member-suspend fixes could not run tests (no local settings file, and linking it is blocked), so work waited on a review using the checkout

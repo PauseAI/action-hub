@@ -4,6 +4,7 @@ import { randomBytes } from 'crypto'
 import { z } from 'zod'
 import { logger } from '@/lib/logger'
 import { prisma } from '@/lib/prisma'
+import { assertNotMergedAway } from '@/lib/account-merge'
 import { SUSPENDED_MESSAGE } from '@/lib/suspension'
 import { chapterCarers } from '@/lib/chapter-access-server'
 import {
@@ -233,6 +234,7 @@ export const authRouter = {
         throw new ORPCError('UNAUTHORIZED', { message: 'Invalid email or password' })
 
       const volunteer = await prisma.volunteer.findFirst({ where: { email, deletedAt: null } })
+      if (!volunteer) await assertNotMergedAway(email)
       // Tells a caller the address signs in only with Google; signup already confirms an
       // address is registered, and saying so spares a Google user guessing at a password.
       if (volunteer && !volunteer.passwordHash)
@@ -274,6 +276,7 @@ export const authRouter = {
       where: { email },
       select: { id: true, deletedAt: true },
     })
+    if (existing?.deletedAt) await assertNotMergedAway(email)
     if (existing) {
       throw new ORPCError('BAD_REQUEST', {
         message: existing.deletedAt
@@ -856,6 +859,7 @@ export const authRouter = {
       email = email.toLowerCase().trim()
 
       const found = await prisma.volunteer.findFirst({ where: { email, deletedAt: null } })
+      if (!found) await assertNotMergedAway(email)
       if (found?.suspendedAt) throw new ORPCError('FORBIDDEN', { message: SUSPENDED_MESSAGE })
       if (found) {
         // Google vouches for the address, which may have been unconfirmed since a
@@ -928,6 +932,7 @@ export const authRouter = {
         where: { email },
         select: { id: true, deletedAt: true },
       })
+      if (existing?.deletedAt) await assertNotMergedAway(email)
       if (existing) {
         throw new ORPCError('BAD_REQUEST', {
           message: existing.deletedAt

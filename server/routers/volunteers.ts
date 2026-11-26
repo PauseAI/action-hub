@@ -14,10 +14,12 @@ import {
   canAppointDeputies,
   isStaff,
   seesEveryChapter,
+  staffRoleIn,
   type ChapterAccess,
 } from '@/lib/chapter-access'
 import { peopleInfo, viewableVolunteers } from '@/lib/people'
 import { chapterFilter, mayUnseat, outranks, staffRoleOf } from '@/lib/chapter-access-server'
+import { pendingMergeView } from '@/lib/staff-merge'
 import { isActiveRecently } from '@/lib/activity'
 import { askingChapter, decidingChapter } from '@/lib/chapter-transfers'
 import { NOT_NOW_MESSAGE, dismissFastTrack, setFastTrack } from '@/lib/fast-track'
@@ -110,6 +112,17 @@ async function manageControls(
         ? { isCoordinator: Boolean(coordinator), remit: coordinator?.remit ?? null }
         : null,
     moveChapter: access.globalAdmin ? { chapterId } : null,
+    /** Whether the viewer merges accounts here (the dialog reads candidates when opened), and any merge waiting on proof. */
+    merge:
+      access.globalAdmin ||
+      (staffRoleIn(access, vol.nationalChapterId) === 'LEAD' && !isSuperAdmin(vol))
+        ? {
+            pending: await pendingMergeView(vol.id, {
+              id: viewerId,
+              globalAdmin: access.globalAdmin,
+            }),
+          }
+        : null,
     removePicture: !outranked,
     signOutEverywhere: signIn,
     // Only someone who runs nothing, anywhere, as admin.volunteers.setSuspended requires.

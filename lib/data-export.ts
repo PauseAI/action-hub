@@ -63,6 +63,8 @@ export const EXPORTED_LINKS: readonly string[] = [
   'DeletionRequest.volunteerId',
   'DistinctAccountPair.volunteerA',
   'DistinctAccountPair.volunteerB',
+  'StaffMergeRequest.kept',
+  'StaffMergeRequest.merged',
   'EmailSuppression.emailHash',
   'EmailVerificationToken.volunteer',
   'ExperimentalJournalist.claimedBy',
@@ -131,6 +133,8 @@ export const OMITTED_LINKS: Readonly<Record<string, string>> = {
   'Volunteer.duplicateOf':
     "an admin's guess at the same person, until both accounts confirm a merge",
   'Volunteer.reviewer': 'applications reviewed for other people',
+  'StaffMergeRequest.requestedBy': STAFF_ACTION,
+  'StaffMergeRequest.approvedBy': STAFF_ACTION,
   'Volunteer.suspendedBy': STAFF_ACTION,
   'ProfilePicture.volunteer': 'exported as `profilePicture`, the image as a data URL',
   'VolunteerSkill.volunteer': 'exported as `skills`',
@@ -151,6 +155,7 @@ export const SECRET_FIELDS: Readonly<Record<string, readonly string[]>> = {
   PasswordResetToken: ['token'],
   RejectedApplication: ['emailHash'],
   Session: ['tokenHash'],
+  StaffMergeRequest: ['keptToken', 'mergedToken'],
   Volunteer: ['authToken', 'authTokenExpiresAt', 'passwordHash'],
 }
 
