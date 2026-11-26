@@ -3104,6 +3104,7 @@ export const projectsRouter = {
         projectTitle: project.title,
         projectOwnerId: project.assigneeId,
         isRequest: project.standingRequests,
+        projectChapterId: project.nationalChapterId,
         reviewerId: reviewerOf(project, task),
         projectStatus: project.status,
         projectCompletedAt: project.completedAt,
@@ -4066,6 +4067,11 @@ export const projectsRouter = {
         'Only the project owner, a deputy, an admin or the task creator can delete this task',
       )
 
+      // A call carrying it keeps its answers, closed, as a record of who came forward.
+      await prisma.call.updateMany({
+        where: { requestId: input.taskId, closedAt: null },
+        data: { closedAt: new Date() },
+      })
       const deleted = await prisma.workItem.deleteMany({
         where: { id: input.taskId, parentId: input.projectId, type: WorkItemType.TASK },
       })

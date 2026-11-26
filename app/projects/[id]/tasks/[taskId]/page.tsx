@@ -64,6 +64,8 @@ import HelpersWantedField, {
 import { TERMINAL_STATUSES } from '@/lib/project-status'
 import { SECTION_CARD } from '@/lib/ui-classes'
 import PersonName from '@/components/PersonName'
+import SendRequestAsCall from '@/components/SendRequestAsCall'
+import { canSendCalls } from '@/lib/permissions'
 
 /** "Waiting on 1 of 2.", or that everything it waits on is done; nothing once it is handed in. */
 function waitsOnSummary(waitsOn: WorkItemSummary[], status: string): string | null {
@@ -302,6 +304,12 @@ export default function TaskDetailPage({
     task.status === TaskStatus.not_started
   // Whoever sees Accept on work in review is the one it waits on.
   const viewer = { isAssignee: task.assignedToId === user.id, canReview: task.canReview }
+  // Someone could still take it, or help on it: what a call for it would ask for.
+  const wantsSomeone =
+    (task.status === TaskStatus.not_started && task.assignedToId === null) ||
+    (!handedIn(task.status) &&
+      task.assignedToId !== null &&
+      (task.helpersWanted ?? 0) > task.helpers.length)
 
   return (
     <main className="container py-5 pb-15">
@@ -333,6 +341,18 @@ export default function TaskDetailPage({
               <>
                 {task.isRequest && task.createdByName && (
                   <P className="text-sm m-0 mb-1">Asked by {task.createdByName}</P>
+                )}
+                {task.isRequest && wantsSomeone && canSendCalls(user) && (
+                  <div className="mb-2">
+                    <SendRequestAsCall
+                      request={{
+                        id: task.id,
+                        title: task.title,
+                        description: task.description,
+                        chapterId: task.projectChapterId,
+                      }}
+                    />
+                  </div>
                 )}
                 <TaskDatesSummary
                   className=""

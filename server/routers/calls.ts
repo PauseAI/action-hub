@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ORPCError } from '@orpc/server'
+import { call as callProcedure, ORPCError } from '@orpc/server'
 import { prisma } from '@/lib/prisma'
 import { clearNotifications, notifyUser } from '@/lib/notify'
 import type { Prisma } from '@/generated/prisma/client'
@@ -14,6 +14,8 @@ import {
 } from '@/lib/calls'
 import type { ChapterAccess } from '@/lib/chapter-access'
 import { confirmedProcedure, coordinatorProcedure } from '../procedures'
+import { projectsRouter } from './projects'
+import { InterestStatus, TaskStatus, WorkItemType } from '@/generated/prisma/enums'
 
 const CallInput = z.object({
   title: z.string().trim().min(1, 'Give the call a title').max(200),
@@ -22,7 +24,80 @@ const CallInput = z.object({
   chapterIds: z.array(z.number().int()).max(200),
   /** Any one of these addresses the call to a volunteer; empty: anyone. */
   skillIds: z.array(z.number().int()).max(50),
+  /** A request for help to carry: answering the call takes it, or helps on it. */
+  requestId: z.number().int().optional(),
 })
+
+type RequestRow = {
+  id: number
+  parentId: number | null
+  status: string
+  assigneeId: number | null
+  helpersWanted: number | null
+  title: string
+}
+
+/**
+ * Where each request is for `volunteerId`, by id: whether they can take it (nobody has, and it
+ * has not started), help on it (someone has, with places left), or are on it already.
+ */
+async function requestStandings(requests: RequestRow[], volunteerId: number) {
+  const helping = await prisma.workItemInterest.findMany({
+    where: {
+      workItemId: { in: requests.map((r) => r.id) },
+      status: InterestStatus.accepted,
+    },
+    select: { workItemId: true, volunteerId: true },
+  })
+  return new Map(
+    requests.map((request) => {
+      const helpers = helping.filter((h) => h.workItemId === request.id)
+      const mine =
+        request.assigneeId === volunteerId || helpers.some((h) => h.volunteerId === volunteerId)
+      const live =
+        request.status === TaskStatus.not_started || request.status === TaskStatus.in_progress
+      const standing = {
+        projectId: request.parentId,
+        taskId: request.id,
+        title: request.title,
+        mine,
+        canTake: !mine && request.status === TaskStatus.not_started && request.assigneeId === null,
+        canHelp:
+          live &&
+          !mine &&
+          request.assigneeId !== null &&
+          (request.helpersWanted ?? 0) > helpers.length,
+      }
+      return [request.id, standing] as const
+    }),
+  )
+}
+
+const standingOf = async (request: RequestRow, volunteerId: number) =>
+  (await requestStandings([request], volunteerId)).get(request.id)!
+
+/**
+ * The request a call is to carry: one somebody can still take or help on, and in a chapter the
+ * call reaches no further than (a chapter's requests are its own; Global requests go anywhere).
+ */
+async function requestToCarry(requestId: number, chapterIds: number[]) {
+  const request = await prisma.workItem.findFirst({
+    where: { id: requestId, type: WorkItemType.TASK, parent: { standingRequests: true } },
+    include: { parent: { select: { nationalChapterId: true } } },
+  })
+  // Asked as nobody at all, so that being on it oneself does not count as a place.
+  const standing = request && (await standingOf(request, -1))
+  if (!request?.parent || !standing || !(standing.canTake || standing.canHelp)) {
+    throw new ORPCError('BAD_REQUEST', { message: 'That request is not waiting for help' })
+  }
+  const chapterId = request.parent.nationalChapterId
+  if (chapterId !== null && (chapterIds.length !== 1 || chapterIds[0] !== chapterId)) {
+    throw new ORPCError('BAD_REQUEST', {
+      message: "A chapter's request can only be sent to that chapter",
+    })
+  }
+  return request
+}
 
 /**
  * Tells each addressee of a call about it in their Inbox, and never by email: one call can reach
@@ -93,6 +168,8 @@ export const callsRouter = {
       throw new ORPCError('BAD_REQUEST', { message: 'Choose chapters from the list' })
     }
     const skillIds = [...new Set(input.skillIds)]
+    const request =
+      input.requestId === undefined ? null : await requestToCarry(input.requestId, chapterIds)
     // One transaction, so a delivery that fails takes its call with it and the sender can resend.
     return prisma.$transaction(async (tx) => {
       // Shared row locks keep the skills from being deleted until the call is in.
@@ -109,6 +186,7 @@ export const callsRouter = {
           title: input.title,
           body: input.body,
           chapterIds,
+          requestId: request?.id ?? null,
           skills: { create: skillIds.map((skillId) => ({ skillId })) },
         },
       })
@@ -200,28 +278,42 @@ export const callsRouter = {
         sender: { select: { name: true, coordinatorRole: { select: { remit: true } } } },
         responses: { where: { volunteerId: me.id }, select: { message: true, createdAt: true } },
         dismissals: { where: { volunteerId: me.id }, select: { callId: true } },
+        request: true,
       },
       orderBy: { createdAt: 'desc' },
     })
+    const standings = await requestStandings(
+      calls.flatMap((c) => (c.request ? [c.request] : [])),
+      me.id,
+    )
     const addressed = await prisma.call.findMany({
       where: { AND: [{ id: { in: calls.map((c) => c.id) } }, addressedToWhere(me)] },
       select: { id: true },
     })
     const addressedIds = new Set(addressed.map((c) => c.id))
-    return calls.map((c) => ({
-      id: c.id,
-      title: c.title,
-      body: c.body,
-      skillNames: skillNames(c),
-      matchesSkills: addressedIds.has(c.id),
-      senderName: c.sender?.name ?? null,
-      senderRemit: c.sender?.coordinatorRole?.remit ?? null,
-      createdAt: c.createdAt,
-      open: c.closedAt === null,
-      myResponse: c.responses[0] ?? null,
-      // An answer wins over a dismissal a merge of two accounts brought beside it.
-      dismissed: c.dismissals.length > 0 && c.responses.length === 0,
-    }))
+    return calls.flatMap((c) => {
+      const request = c.request ? standings.get(c.request.id)! : null
+      // A call whose request needs nobody else takes no more answers.
+      const open = c.closedAt === null && (!request || request.canTake || request.canHelp)
+      if (!open && c.responses.length === 0) return []
+      return [
+        {
+          id: c.id,
+          title: c.title,
+          body: c.body,
+          skillNames: skillNames(c),
+          matchesSkills: addressedIds.has(c.id),
+          senderName: c.sender?.name ?? null,
+          senderRemit: c.sender?.coordinatorRole?.remit ?? null,
+          createdAt: c.createdAt,
+          open,
+          myResponse: c.responses[0] ?? null,
+          request,
+          // An answer wins over a dismissal a merge of two accounts brought beside it.
+          dismissed: c.dismissals.length > 0 && c.responses.length === 0,
+        },
+      ]
+    })
   }),
 
   /** Answers a call, which shares the caller's name, email and message with its sender. */
@@ -230,6 +322,9 @@ export const callsRouter = {
     .handler(async ({ input, context }) => {
       const me = context.volunteer
       const call = await openCallFor(me.id, input.callId)
+      if (call.requestId !== null) {
+        throw new ORPCError('BAD_REQUEST', { message: 'Answer this call by taking its request' })
+      }
       const where = { callId_volunteerId: { callId: call.id, volunteerId: me.id } }
       // Create first, so of two first answers sent at once only one notifies the sender.
       const { count: created } = await prisma.callResponse.createMany({
@@ -255,6 +350,66 @@ export const callsRouter = {
       return { message: 'Thanks: the coordinator can now see your answer and contact you' }
     }),
 
+  /**
+   * Answers a call that carries a request by taking the request, or by joining it as a helper
+   * once someone has; the answer the sender sees says which.
+   */
+  takeRequest: confirmedProcedure
+    .input(z.object({ callId: z.number().int() }))
+    .handler(async ({ input, context }) => {
+      const me = context.volunteer
+      const call = await openCallFor(me.id, input.callId)
+      const request = call.requestId
+        ? await prisma.workItem.findUnique({ where: { id: call.requestId } })
+        : null
+      if (!request?.parentId) {
+        throw new ORPCError('BAD_REQUEST', { message: 'This call carries no request' })
+      }
+      const standing = await standingOf(request, me.id)
+      const ids = { projectId: request.parentId, taskId: request.id }
+      if (standing.canTake) {
+        await callProcedure(
+          projectsRouter.updateTask,
+          { ...ids, data: { assigneeId: me.id } },
+          {
+            context,
+          },
+        )
+      } else if (standing.canHelp) {
+        await callProcedure(
+          projectsRouter.expressInterest,
+          { ...ids, interestType: 'want_to_help_task' },
+          { context },
+        )
+      } else {
+        throw new ORPCError('BAD_REQUEST', { message: 'This request needs nobody else now' })
+      }
+      const message = standing.canTake ? `Took '${request.title}'` : `Helping on '${request.title}'`
+      const where = { callId_volunteerId: { callId: call.id, volunteerId: me.id } }
+      // Create first, so of two first answers sent at once only one notifies the sender; taking
+      // it again after letting go rewrites the answer.
+      const { count } = await prisma.callResponse.createMany({
+        data: [{ callId: call.id, volunteerId: me.id, message }],
+        skipDuplicates: true,
+      })
+      const response = count
+        ? await prisma.callResponse.findUnique({ where })
+        : await prisma.callResponse.update({ where, data: { message } })
+      await prisma.callDismissal.deleteMany({ where: { callId: call.id, volunteerId: me.id } })
+      if (count && response && call.senderId !== null) {
+        await notifyUser(
+          call.senderId,
+          CALL_ANSWERED,
+          `${me.name} answered your call: ${call.title}`,
+          message,
+          '/coordinate',
+          undefined,
+          response.id,
+        )
+      }
+      return { ...ids, message: standing.canTake ? 'The request is yours' : "You're helping on it" }
+    }),
+
   /** Takes back an answer, and the sender's notification of it. */
   withdraw: confirmedProcedure
     .input(z.object({ callId: z.number().int() }))
@@ -264,6 +419,15 @@ export const callsRouter = {
       })
       if (!response)
         throw new ORPCError('NOT_FOUND', { message: 'You have not answered this call' })
+      const call = await prisma.call.findUniqueOrThrow({
+        where: { id: input.callId },
+        include: { request: true },
+      })
+      if (call.request && (await standingOf(call.request, context.volunteer.id)).mine) {
+        throw new ORPCError('BAD_REQUEST', {
+          message: 'Your answer stands while you are on its request',
+        })
+      }
       await prisma.callResponse.delete({ where: { id: response.id } })
       // A merge of two accounts can leave a dismissal beside an answer; it was never this choice.
       await prisma.callDismissal.deleteMany({

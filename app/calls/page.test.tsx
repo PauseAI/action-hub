@@ -2,7 +2,15 @@ import { describe, it, expect, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { prisma } from '@/lib/prisma'
-import { createCoordinator, createSkill, createVolunteer } from '@/test/factories'
+import {
+  createChapter,
+  createCoordinator,
+  createMember,
+  createSkill,
+  createVolunteer,
+} from '@/test/factories'
+import { clientAs } from '@/test/rpc'
+import { navigation } from '@/test/next-navigation'
 import { renderApp } from '@/test/render'
 import CallsPage from './page'
 
@@ -193,5 +201,58 @@ describe('calls for volunteers', () => {
     expect(
       within(await card('Leaflet run')).queryByRole('button', { name: /Dismiss/ }),
     ).not.toBeInTheDocument()
+  })
+})
+
+describe('a call that carries a request for help', () => {
+  it('is answered by taking the request, and then says so', async () => {
+    const chapter = await createChapter()
+    const asker = await createMember(chapter)
+    const me = await createMember(chapter)
+    const coordinator = await createCoordinator(chapter, { name: 'Caio Coordinator' })
+    const asked = await clientAs(asker).requests.ask({ title: 'Proofread the flyer' })
+    await clientAs(coordinator).calls.send({
+      title: 'Proofreader wanted',
+      body: 'Two pages',
+      chapterIds: [chapter.id],
+      skillIds: [],
+      requestId: asked.id,
+    })
+    const href = `/projects/${asked.projectId}/tasks/${asked.id}`
+    await renderApp(<CallsPage />, { as: me })
+    const section = within(await card('Proofreader wanted'))
+    expect(section.queryByLabelText('Answer this call')).toBeNull()
+    expect(section.getByText(/makes the request yours/)).toBeInTheDocument()
+    await userEvent.click(section.getByRole('button', { name: 'Take this request' }))
+    await screen.findByText('The request is yours')
+    await waitFor(() => expect(navigation.push).toHaveBeenCalledWith(href))
+    expect(await section.findByText(/You are on this request/)).toBeInTheDocument()
+    expect(section.getByRole('link', { name: 'Open the request' })).toHaveAttribute('href', href)
+  })
+
+  it('reports a refused answer, and drops a call whose request needs nobody else', async () => {
+    const chapter = await createChapter()
+    const asker = await createMember(chapter)
+    const [me, other] = [await createMember(chapter), await createMember(chapter)]
+    const coordinator = await createCoordinator(chapter)
+    const asked = await clientAs(asker).requests.ask({ title: 'Run a stall', helpersWanted: 1 })
+    const ids = { projectId: asked.projectId, taskId: asked.id }
+    await clientAs(coordinator).calls.send({
+      title: 'Stall helpers',
+      body: 'Saturday',
+      chapterIds: [chapter.id],
+      skillIds: [],
+      requestId: asked.id,
+    })
+    await clientAs(other).projects.updateTask({ ...ids, data: { assigneeId: other.id } })
+    await renderApp(<CallsPage />, { as: me })
+    const section = within(await card('Stall helpers'))
+    expect(section.getByText(/makes you one of its helpers/)).toBeInTheDocument()
+    // Someone takes the last place meanwhile.
+    await prisma.workItem.update({ where: { id: asked.id }, data: { helpersWanted: null } })
+    await userEvent.click(section.getByRole('button', { name: 'Help on it' }))
+    await screen.findByText('This request needs nobody else now')
+    // Needing nobody else, it takes no more answers and leaves the list.
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Stall helpers' })).toBeNull())
   })
 })
