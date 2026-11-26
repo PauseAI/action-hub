@@ -78,7 +78,7 @@ import { awaitsOwnerReview } from '@/lib/task-review'
 import { handedIn } from '@/lib/overdue'
 import { canReach } from '@/lib/contact'
 import { assertTeamInChapter, projectLocation } from '@/lib/project-location'
-import { chapterNarrowing, chapterNarrowingSql } from '@/lib/chapter-access-server'
+import { chapterCarers, chapterNarrowing, chapterNarrowingSql } from '@/lib/chapter-access-server'
 import { audit } from '@/lib/chapter-roles'
 import { isStaff, pickerChapter, type ChapterAccess } from '@/lib/chapter-access'
 import { can, NO_STANDING, permissionsOn } from '@/lib/permissions'
@@ -3616,10 +3616,14 @@ export const projectsRouter = {
       }
 
       const reviewerId = reviewerOf(project, task)
-      const accepted = !awaitsOwnerReview(
-        { autoAcceptTasks: project.autoAcceptTasks, ownerId: reviewerId },
-        can(viewer, 'task.review', resource),
-      )
+      const canReview = can(viewer, 'task.review', resource)
+      // A request always waits for review: by whoever asked, or by chapter staff when nobody did.
+      const accepted = project.standingRequests
+        ? canReview
+        : !awaitsOwnerReview(
+            { autoAcceptTasks: project.autoAcceptTasks, ownerId: reviewerId },
+            canReview,
+          )
       await updateWorkItem(
         task,
         {
@@ -3656,7 +3660,11 @@ export const projectsRouter = {
         }
       } else {
         const reviewers = [
-          ...(reviewerId === null ? [] : [reviewerId]),
+          ...(reviewerId === null
+            ? project.standingRequests
+              ? await chapterCarers(project.nationalChapterId)
+              : []
+            : [reviewerId]),
           ...(await deputyIdsOf(project.id)),
         ].filter((id) => id !== volunteer.id)
         for (const id of new Set(reviewers)) {

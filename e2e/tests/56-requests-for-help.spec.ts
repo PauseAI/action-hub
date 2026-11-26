@@ -49,4 +49,15 @@ test.describe('Requests for help', () => {
       timeout: 10_000,
     })
   })
+
+  test('An old quick-task link opens the request', async ({ volunteer, baseUrl }) => {
+    const title = fake.quickTaskTitle()
+    const asker = await createApprovedVolunteer(baseUrl)
+    const api = createApiClient(baseUrl, asker.token)
+    const asked = await api.requests.ask({ body: { title, global: true } })
+    const { id, projectId } = asked.body as { id: number; projectId: number }
+    await volunteer.page.goto(`${baseUrl}/quick-tasks/${id}`)
+    await volunteer.page.waitForURL(`**/projects/${projectId}/tasks/${id}`)
+    await expect(volunteer.page.getByRole('heading', { name: title, level: 1 })).toBeVisible()
+  })
 })

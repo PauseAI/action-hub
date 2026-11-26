@@ -610,14 +610,16 @@ export default function TaskDetailPage({
             target={{ kind: 'project', projectId, taskId }}
             ask={task}
             reviewer={
-              awaitsOwnerReview(
-                { autoAcceptTasks: task.autoAcceptTasks, ownerId: task.reviewerId },
-                task.canReview,
-              )
-                ? task.isRequest
-                  ? (task.createdByName ?? 'Whoever asked')
-                  : 'The project owner'
-                : null
+              task.isRequest
+                ? task.canReview
+                  ? null
+                  : (task.createdByName ?? 'Chapter staff')
+                : awaitsOwnerReview(
+                      { autoAcceptTasks: task.autoAcceptTasks, ownerId: task.reviewerId },
+                      task.canReview,
+                    )
+                  ? 'The project owner'
+                  : null
             }
           />
         )}

@@ -1,7 +1,8 @@
 'use client'
 
-import { use, useState } from 'react'
+import { use, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRequireApproved } from '@/lib/hooks/auth'
 import { orpc } from '@/lib/orpc'
@@ -38,9 +39,25 @@ export default function QuickTaskDetailPage({ params }: { params: Promise<{ id: 
   const queryClient = useQueryClient()
   const [reviewing, setReviewing] = useState(false)
 
+  const router = useRouter()
+
+  // A link to a quick task that is a request opens the request; failing to find out where
+  // it is, the quick task is shown as before.
+  const {
+    data: moved,
+    isPending: locating,
+    isError: unlocated,
+  } = useQuery({
+    ...orpc.requests.locate.queryOptions({ input: { id } }),
+    enabled: !!user && !isNaN(id),
+  })
+  useEffect(() => {
+    if (moved) router.replace(`/projects/${moved.projectId}/tasks/${moved.taskId}`)
+  }, [moved, router])
+
   const { data: task, isLoading } = useQuery({
     ...orpc.quickTasks.get.queryOptions({ input: { id } }),
-    enabled: !!user && !isNaN(id),
+    enabled: !!user && !isNaN(id) && (moved === null || unlocated),
   })
 
   const claimMutation = useMutation({
@@ -56,7 +73,9 @@ export default function QuickTaskDetailPage({ params }: { params: Promise<{ id: 
     },
   })
 
-  if (loading || !user) return <PageLoading />
+  if (loading || !user || (!isNaN(id) && !unlocated && (locating || moved))) {
+    return <PageLoading />
+  }
 
   if (isLoading) {
     return (
