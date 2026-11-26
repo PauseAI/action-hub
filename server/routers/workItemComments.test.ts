@@ -614,3 +614,64 @@ describe('workItemComments.list feed', () => {
     expect(feed).toMatchObject([{ type: 'event', text: 'Olive Owner assigned this to someone' }])
   })
 })
+
+describe('workItemComments.startCall', () => {
+  it('posts a call room to a project or task thread, for whoever may post there', async () => {
+    const owner = await createVolunteer({ name: 'Olga Owner' })
+    const helper = await createVolunteer()
+    const project = await createProject({ title: 'Big Fun Rally!', assigneeId: owner.id })
+    await prisma.workItemInterest.create({
+      data: {
+        workItemId: project.id,
+        volunteerId: helper.id,
+        interestType: 'want_to_contribute',
+        status: 'accepted',
+      },
+    })
+
+    const { id, callUrl } = await clientAs(owner).workItemComments.startCall({
+      workItemId: project.id,
+    })
+    expect(callUrl).toMatch(/^https:\/\/meet\.jit\.si\/PauseAI-Big-Fun-Rally-[A-Za-z0-9]{20}$/)
+    const [call] = commentsIn(
+      await clientAs(helper).workItemComments.list({ workItemId: project.id }),
+    )
+    expect(call).toMatchObject({ id, content: 'Started a call', callUrl, canEdit: false })
+    // A call's announcement is not edited into something else, though it can be removed.
+    await expect(
+      clientAs(owner).workItemComments.edit({ id, content: 'Something else' }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' })
+    await clientAs(owner).workItemComments.delete({ id })
+    const [gone] = commentsIn(
+      await clientAs(owner).workItemComments.list({ workItemId: project.id }),
+    )
+    expect(gone).toMatchObject({ deleted: true, callUrl: null })
+
+    // A task's thread too, by its assignee; each call gets its own room, and the project's
+    // owner hears of it as of any comment there.
+    const task = await createTask(project.id, { assigneeId: helper.id })
+    const second = await clientAs(helper).workItemComments.startCall({ workItemId: task.id })
+    expect(second.callUrl).not.toBe(callUrl)
+    expect(
+      await prisma.notification.findFirst({
+        where: { volunteerId: owner.id, type: 'work_item_comment' },
+      }),
+    ).toMatchObject({ body: 'Started a call' })
+  })
+
+  it('refuses someone not on the project, and anything but a project or task', async () => {
+    const owner = await createVolunteer()
+    const project = await createProject({ assigneeId: owner.id })
+    await expect(
+      clientAs(await createVolunteer()).workItemComments.startCall({ workItemId: project.id }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' })
+    const quick = await createQuickTask({ assigneeId: owner.id })
+    await expect(
+      clientAs(owner).workItemComments.startCall({ workItemId: quick.id }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    await expect(
+      clientAs(owner).workItemComments.startCall({ workItemId: 999_999 }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    expect(await prisma.workItemComment.count({ where: { workItemId: project.id } })).toBe(0)
+  })
+})

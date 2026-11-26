@@ -2405,6 +2405,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 <H2>Discussion</H2>
                 <CommentThread
                   workItemId={project.id}
+                  calls
                   emptyText="No messages yet."
                   placeholder="Share an update or ask a question. Type @ to mention someone."
                 />

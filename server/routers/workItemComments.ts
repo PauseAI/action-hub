@@ -14,6 +14,7 @@ import {
 import { mentionedIds, mentionsToPlain, type MentionMember } from '@/lib/mentions'
 import { describeEvent, eventPersonIds, updateWorkItem } from '@/lib/work-item-events'
 import { taskHelperIds } from '@/lib/task-helpers'
+import { newCallUrl } from '@/lib/video-call'
 import { authedProcedure } from '../procedures'
 import { ApprovalStatus, InterestStatus, WorkItemType } from '@/generated/prisma/enums'
 
@@ -238,6 +239,127 @@ function newestFirst<T extends { type: string; id: number; createdAt: Date | nul
   )
 }
 
+type CommentContext = {
+  volunteer: { id: number; name: string }
+  access: ChapterAccess
+}
+
+/**
+ * Posts a comment (a reply when `parentId` is given) as the caller, telling whoever should hear
+ * of it; `callUrl` makes it the announcement of a video call. Returns the new comment's id.
+ */
+async function postComment(
+  context: CommentContext,
+  input: { workItemId: number; content: string; parentId?: number; callUrl?: string },
+  loadedItem?: { item: LoadedWorkItem; parent: LoadedWorkItem | null },
+): Promise<number> {
+  const volunteer = context.volunteer
+  const loaded = loadedItem ?? (await loadWithParent(input.workItemId))
+  if (!loaded) throw new ORPCError('NOT_FOUND', { message: 'Work item not found' })
+
+  const viewer = { id: volunteer.id, isAdmin: adminOver(context.access, loaded) }
+  if (!(await resolveCanPost(loaded.item, loaded.parent, viewer))) {
+    throw new ORPCError('FORBIDDEN', { message: 'Not authorized to comment here' })
+  }
+
+  // A reply to a reply joins the same top-level thread; its author is still the one told.
+  // Its target is quoted too, unless that's the thread's own top-level comment: a reply
+  // already sits under that one, so quoting it back would say nothing new.
+  let parent: { id: number; authorId: number | null } | null = null
+  let repliedTo: number | null = null
+  let repliedToId: number | null = null
+  if (input.parentId !== undefined) {
+    const target = await prisma.workItemComment.findUnique({
+      where: { id: input.parentId },
+      include: { parent: { select: { id: true, authorId: true } } },
+    })
+    if (!target || target.workItemId !== input.workItemId || target.deletedAt) {
+      throw new ORPCError('NOT_FOUND', { message: 'Comment not found' })
+    }
+    parent = target.parent ?? target
+    repliedTo = target.authorId
+    repliedToId = target.parent ? target.id : null
+  }
+
+  const content = input.content.trim()
+  const comment = await prisma.workItemComment.create({
+    data: {
+      workItemId: input.workItemId,
+      authorId: volunteer.id,
+      content,
+      parentId: parent?.id ?? null,
+      repliedToId,
+      callUrl: input.callUrl ?? null,
+    },
+  })
+
+  // The assignee's comment on their project task is the update the inactivity job
+  // waits for, so it restarts the clock; their first one starts the work. Starting a call is
+  // not an update.
+  if (
+    loaded.item.type === WorkItemType.TASK &&
+    loaded.item.assigneeId === volunteer.id &&
+    !input.callUrl
+  ) {
+    const now = new Date()
+    await updateWorkItem(
+      loaded.item,
+      {
+        ...startWorkData(loaded.item, now),
+        updatedAt: now,
+        nudgeSentAt: null,
+        finalWarningSentAt: null,
+      },
+      { actorId: volunteer.id, kind: 'started' },
+    )
+  }
+
+  const mentioned = await notifyMentions(loaded, volunteer, comment.id, content)
+  const plain = mentionsToPlain(content).slice(0, 200)
+
+  // The person replied to hears it as a reply, by email too unless they muted updates.
+  const told = new Set(mentioned)
+  if (repliedTo && repliedTo !== volunteer.id && !told.has(repliedTo)) {
+    told.add(repliedTo)
+    const link = `${threadLink(loaded.item)}#comment-${comment.id}`
+    await notifyUser(
+      repliedTo,
+      'comment_reply',
+      `${volunteer.name} replied to your comment on "${loaded.item.title}"`,
+      plain,
+      link,
+      {
+        message: html`<strong>${volunteer.name}</strong> replied to your comment on
+          <strong>${loaded.item.title}</strong>:
+          <div style="padding: 12px; background: #f7fafc; border-radius: 8px; margin: 16px 0;">
+            ${plain}
+          </div>`,
+        ctaLabel: 'Read the reply',
+        ctaUrl: link,
+      },
+      comment.id,
+    )
+  }
+
+  // Notify the other participants (in-app only), once each.
+  const recipientIds = new Set<number>()
+  for (const id of [
+    loaded.item.creatorId,
+    loaded.item.assigneeId,
+    loaded.parent?.assigneeId ?? null,
+    parent?.authorId ?? null,
+    ...(loaded.item.type === WorkItemType.TASK ? await taskHelperIds(loaded.item.id) : []),
+  ]) {
+    if (id && id !== volunteer.id && !told.has(id)) recipientIds.add(id)
+  }
+  const link = commentLink(loaded.item)
+  for (const rid of recipientIds) {
+    await notifyUser(rid, 'work_item_comment', `New comment on "${loaded.item.title}"`, plain, link)
+  }
+
+  return comment.id
+}
+
 export const workItemCommentsRouter = {
   list: authedProcedure
     .input(z.object({ workItemId: z.number().int() }))
@@ -282,10 +404,11 @@ export const workItemCommentsRouter = {
           authorId: c.authorId,
           authorName: c.author?.name ?? null,
           content: deleted ? '' : c.content,
+          callUrl: deleted ? null : c.callUrl,
           createdAt: c.createdAt,
           editedAt: c.editedAt,
           deleted,
-          canEdit: !deleted && isAuthor && canPost,
+          canEdit: !deleted && isAuthor && canPost && c.callUrl === null,
           canDelete: !deleted && (isAuthor || viewer.isAdmin),
           repliedTo: quoted
             ? {
@@ -326,111 +449,31 @@ export const workItemCommentsRouter = {
       }),
     )
     .handler(async ({ input, context }) => {
-      const volunteer = context.volunteer
+      const id = await postComment(context, input)
+      return { id, message: 'Comment added' }
+    }),
+
+  /**
+   * Opens a video call room for a project or task and announces it in the thread, so the link
+   * is kept with the discussion. For whoever may post there.
+   */
+  startCall: authedProcedure
+    .input(z.object({ workItemId: z.number().int() }))
+    .handler(async ({ input, context }) => {
       const loaded = await loadWithParent(input.workItemId)
-      if (!loaded) throw new ORPCError('NOT_FOUND', { message: 'Work item not found' })
-
-      const viewer = { id: volunteer.id, isAdmin: adminOver(context.access, loaded) }
-      if (!(await resolveCanPost(loaded.item, loaded.parent, viewer))) {
-        throw new ORPCError('FORBIDDEN', { message: 'Not authorized to comment here' })
+      if (
+        !loaded ||
+        (loaded.item.type !== WorkItemType.PROJECT && loaded.item.type !== WorkItemType.TASK)
+      ) {
+        throw new ORPCError('NOT_FOUND', { message: 'Project or task not found' })
       }
-
-      // A reply to a reply joins the same top-level thread; its author is still the one told.
-      // Its target is quoted too, unless that's the thread's own top-level comment: a reply
-      // already sits under that one, so quoting it back would say nothing new.
-      let parent: { id: number; authorId: number | null } | null = null
-      let repliedTo: number | null = null
-      let repliedToId: number | null = null
-      if (input.parentId !== undefined) {
-        const target = await prisma.workItemComment.findUnique({
-          where: { id: input.parentId },
-          include: { parent: { select: { id: true, authorId: true } } },
-        })
-        if (!target || target.workItemId !== input.workItemId || target.deletedAt) {
-          throw new ORPCError('NOT_FOUND', { message: 'Comment not found' })
-        }
-        parent = target.parent ?? target
-        repliedTo = target.authorId
-        repliedToId = target.parent ? target.id : null
-      }
-
-      const content = input.content.trim()
-      const comment = await prisma.workItemComment.create({
-        data: {
-          workItemId: input.workItemId,
-          authorId: volunteer.id,
-          content,
-          parentId: parent?.id ?? null,
-          repliedToId,
-        },
-      })
-
-      // The assignee's comment on their project task is the update the inactivity job
-      // waits for, so it restarts the clock; their first one starts the work.
-      if (loaded.item.type === WorkItemType.TASK && loaded.item.assigneeId === volunteer.id) {
-        const now = new Date()
-        await updateWorkItem(
-          loaded.item,
-          {
-            ...startWorkData(loaded.item, now),
-            updatedAt: now,
-            nudgeSentAt: null,
-            finalWarningSentAt: null,
-          },
-          { actorId: volunteer.id, kind: 'started' },
-        )
-      }
-
-      const mentioned = await notifyMentions(loaded, volunteer, comment.id, content)
-      const plain = mentionsToPlain(content).slice(0, 200)
-
-      // The person replied to hears it as a reply, by email too unless they muted updates.
-      const told = new Set(mentioned)
-      if (repliedTo && repliedTo !== volunteer.id && !told.has(repliedTo)) {
-        told.add(repliedTo)
-        const link = `${threadLink(loaded.item)}#comment-${comment.id}`
-        await notifyUser(
-          repliedTo,
-          'comment_reply',
-          `${volunteer.name} replied to your comment on "${loaded.item.title}"`,
-          plain,
-          link,
-          {
-            message: html`<strong>${volunteer.name}</strong> replied to your comment on
-              <strong>${loaded.item.title}</strong>:
-              <div style="padding: 12px; background: #f7fafc; border-radius: 8px; margin: 16px 0;">
-                ${plain}
-              </div>`,
-            ctaLabel: 'Read the reply',
-            ctaUrl: link,
-          },
-          comment.id,
-        )
-      }
-
-      // Notify the other participants (in-app only), once each.
-      const recipientIds = new Set<number>()
-      for (const id of [
-        loaded.item.creatorId,
-        loaded.item.assigneeId,
-        loaded.parent?.assigneeId ?? null,
-        parent?.authorId ?? null,
-        ...(loaded.item.type === WorkItemType.TASK ? await taskHelperIds(loaded.item.id) : []),
-      ]) {
-        if (id && id !== volunteer.id && !told.has(id)) recipientIds.add(id)
-      }
-      const link = commentLink(loaded.item)
-      for (const rid of recipientIds) {
-        await notifyUser(
-          rid,
-          'work_item_comment',
-          `New comment on "${loaded.item.title}"`,
-          plain,
-          link,
-        )
-      }
-
-      return { id: comment.id, message: 'Comment added' }
+      const callUrl = newCallUrl(loaded.item.title)
+      const id = await postComment(
+        context,
+        { workItemId: input.workItemId, content: 'Started a call', callUrl },
+        loaded,
+      )
+      return { id, callUrl }
     }),
 
   edit: authedProcedure
@@ -441,6 +484,7 @@ export const workItemCommentsRouter = {
       const viewer = { id: volunteer.id, isAdmin: adminOver(context.access, loaded) }
       if (
         comment.authorId !== volunteer.id ||
+        comment.callUrl !== null ||
         !(await resolveCanPost(loaded.item, loaded.parent, viewer))
       ) {
         throw new ORPCError('FORBIDDEN', { message: 'You can only edit your own comments' })

@@ -98,6 +98,36 @@ test.describe('Project Management (Owner)', () => {
     await expect(volunteer.page.getByText(updateText)).toBeVisible({ timeout: 10_000 })
   })
 
+  test('Project owner starts a call, which opens in a new tab and stays in the discussion', async ({
+    adminPage,
+    volunteer,
+    baseUrl,
+    snap,
+  }) => {
+    const projectId = await setupOwnedProject(baseUrl, adminPage, volunteer)
+    const page = volunteer.page
+    // The call service is outside the test; its page is stood in for.
+    await page
+      .context()
+      .route('https://meet.jit.si/**', (route) =>
+        route.fulfill({ contentType: 'text/html', body: '<title>Call</title>' }),
+      )
+
+    await page.goto(`${baseUrl}/projects/${projectId}#discussion`)
+    const start = page.getByRole('button', { name: 'Start a call' })
+    await start.focus({ timeout: 10_000 })
+    await expect(page.getByRole('tooltip')).toContainText('sign in there')
+    await snap(page, 'start a call tooltip')
+    const [tab] = await Promise.all([page.waitForEvent('popup'), start.click()])
+    await expect(tab).toHaveURL(/^https:\/\/meet\.jit\.si\/PauseAI-[\w-]+$/)
+
+    const join = page.getByRole('link', { name: 'Join' })
+    await expect(join).toHaveAttribute('href', tab.url(), { timeout: 10_000 })
+    await expect(join).toHaveAttribute('target', '_blank')
+    await expect(page.getByText('Started a call ·')).toBeVisible()
+    await tab.close()
+  })
+
   test('Project owner and admin exchange comments in a back-and-forth thread', async ({
     adminPage,
     volunteer,

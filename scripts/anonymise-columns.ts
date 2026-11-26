@@ -112,7 +112,7 @@ export const COLUMN_TREATMENT: Record<string, Record<string, Treatment>> = {
     application_admin_notes: 'redact',
     application_applicant_notes: 'redact',
   },
-  work_item_comments: { content: 'redact' },
+  work_item_comments: { content: 'redact', call_url: 'null' },
   // before/after can hold submission notes and replan reasons, and jsonb takes no marker.
   work_item_events: { kind: 'keep', before: 'rows-deleted', after: 'rows-deleted' },
   work_item_interests: { interest_type: 'keep', message: 'redact', response_message: 'redact' },
