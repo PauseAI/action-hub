@@ -2193,7 +2193,9 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         <ReopenProjectButton projectId={project.id} title={project.title} />
       )}
       {project.isSeekingOwner && !leadRequestPending && <StatusFlag>Seeking owner</StatusFlag>}
-      {project.isSeekingHelp && <StatusFlag>Seeking help</StatusFlag>}
+      {project.isSeekingHelp && project.stage === 'running' && (
+        <StatusFlag>Seeking help</StatusFlag>
+      )}
       {/* While planning, the Planning banner says what is missing. */}
       {project.stage === 'planning' ? (
         <StatusFlag>Planning</StatusFlag>

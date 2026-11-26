@@ -17,6 +17,8 @@ export interface Project {
   updatedAt?: string | Date | null
   pendingInterestCount?: number
   isSeekingHelp?: boolean | null
+  /** A call for helpers is shown once the project is planned (Running), as the lists do. */
+  stage?: string
   /** Derived server-side: live but ownerless. */
   isSeekingOwner?: boolean | null
   /** Derived server-side: owned, but no open tasks. */
@@ -101,7 +103,7 @@ export function ProjectCard({
         />
         {badge}
         {p.isSeekingOwner && <StatusFlag>Seeking owner</StatusFlag>}
-        {p.isSeekingHelp && <StatusFlag>Seeking help</StatusFlag>}
+        {p.isSeekingHelp && p.stage === 'running' && <StatusFlag>Seeking help</StatusFlag>}
         {p.needsTasks && <StatusFlag>Needs tasks</StatusFlag>}
       </div>
       <div className="row-start-3 flex items-center gap-3 flex-wrap text-xs text-text-light self-start">

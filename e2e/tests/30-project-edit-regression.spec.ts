@@ -3,6 +3,7 @@ import {
   proposeProject,
   adminApproveProject,
   planOutlineViaApi,
+  finishPlanningViaApi,
   transferProjectOwnership,
 } from '../actions/projects'
 import { Page } from '@playwright/test'
@@ -26,6 +27,7 @@ async function setupOwnedProject(
   await adminApproveProject(baseUrl, adminPage, title)
   await planOutlineViaApi(baseUrl, projectId)
   await transferProjectOwnership(baseUrl, adminPage, projectId, volunteer.name)
+  await finishPlanningViaApi(baseUrl, projectId)
   return projectId
 }
 

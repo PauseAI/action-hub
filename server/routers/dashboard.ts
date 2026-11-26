@@ -6,7 +6,12 @@ import { isStaff, type ChapterAccess } from '@/lib/chapter-access'
 import { loadTaskStatusViews, projectScopeWhere, type ProjectViewer } from '@/lib/work-item'
 import type { TaskDisplayStatus, TaskRef } from '@/lib/task-status'
 import { authedProcedure } from '../procedures'
-import { ADVERTISABLE_STATUSES, TERMINAL_STATUSES, projectStatusLabel } from '@/lib/project-status'
+import {
+  ADVERTISABLE_STATUSES,
+  SEEKING_HELP_WHERE,
+  TERMINAL_STATUSES,
+  projectStatusLabel,
+} from '@/lib/project-status'
 import { TASK_STATUS_LABELS } from '@/lib/status-labels'
 import { daysQuiet } from '@/lib/staleness'
 import { lateProjects, pastPlanTasks } from '@/lib/project-schedule'
@@ -600,7 +605,7 @@ async function findWheres(viewer: Viewer, skillIds: number[]) {
     status: { in: ADVERTISABLE_STATUSES },
     id: { notIn: excluded },
     AND: [
-      { OR: [{ isSeekingHelp: true }, { assigneeId: null }] },
+      { OR: [SEEKING_HELP_WHERE, { assigneeId: null }] },
       { OR: [{ assigneeId: null }, { assigneeId: { not: viewer.id } }] },
       { OR: [{ creatorId: null }, { creatorId: { not: viewer.id } }] },
       projectScopeWhere(viewer),

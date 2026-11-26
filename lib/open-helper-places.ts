@@ -66,6 +66,9 @@ export async function openHelperPlaces(
       interests: { none: { volunteerId: viewer.id, status: { not: InterestStatus.withdrawn } } },
       parent: {
         status: { notIn: [...TERMINAL_STATUSES, ...UNAPPROVED_STATUSES] },
+        // A project still in Planning advertises no helper places, as it advertises no call
+        // for helpers (SEEKING_HELP_WHERE).
+        plannedAt: { not: null },
         AND: [
           projectScopeWhere({ ...viewer, isAdmin: false }),
           // Not the projects they run: there they add helpers rather than offer.

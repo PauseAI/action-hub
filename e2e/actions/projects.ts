@@ -441,3 +441,11 @@ export async function planOutlineViaApi(baseUrl: string, projectId: number): Pro
     if (planned.status !== 200) throw new Error(`Planning failed: ${JSON.stringify(planned)}`)
   }
 }
+
+/** Finishes planning an approved project that has an owner and a planned task, as its owner would. */
+export async function finishPlanningViaApi(baseUrl: string, projectId: number): Promise<void> {
+  const adminApi = createApiClient(baseUrl, readAdminToken(baseUrl))
+  const finished = await adminApi.projects.finishPlanning({ body: { id: projectId } })
+  if (finished.status !== 200)
+    throw new Error(`Finishing planning failed: ${JSON.stringify(finished)}`)
+}

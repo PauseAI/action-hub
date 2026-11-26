@@ -2480,7 +2480,10 @@ describe('project page — Planning', () => {
 
   it('lets the owner plan outline items into tasks, then finish planning', async () => {
     // Work may start during Planning; the banner, not "Needs tasks", says what is missing.
-    const { owner, project, print } = await inPlanning({ status: 'in_progress' })
+    const { owner, project, print } = await inPlanning({
+      status: 'in_progress',
+      isSeekingHelp: true,
+    })
     await mount(project.id, owner, '#tasks')
     const banner = await screen.findByRole('region', { name: 'Planning' })
     expect(banner.textContent).toContain('No tasks planned yet')
@@ -2489,6 +2492,8 @@ describe('project page — Planning', () => {
     expect(within(banner).getByRole('button', { name: 'Finish planning' })).toBeDisabled()
     expect(screen.getByText('• Planning')).toBeInTheDocument()
     expect(screen.queryByText('• Needs tasks')).toBeNull()
+    // Asking for helpers waits until there is something to pick up.
+    expect(screen.queryByText('• Seeking help')).toBeNull()
 
     const outline = screen.getByRole('region', { name: 'Outline' })
     expect(within(outline).getByText('Ask the print shop')).toBeInTheDocument()
@@ -2525,6 +2530,7 @@ describe('project page — Planning', () => {
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Planning' })).toBeNull())
     expect((await row(project.id)).plannedAt).not.toBeNull()
     expect(screen.queryByText('• Planning')).toBeNull()
+    expect(screen.getByText('• Seeking help')).toBeInTheDocument()
     // The rough item left over stays in the outline.
     expect(within(screen.getByRole('region', { name: 'Outline' })).getByText('Pick a Saturday'))
   })

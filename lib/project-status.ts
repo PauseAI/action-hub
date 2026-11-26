@@ -94,6 +94,13 @@ export function isSeekingOwner(p: {
   return p.assigneeId === null && !p.standingRequests && SEEKING_OWNER_STATUSES.includes(p.status)
 }
 
+/**
+ * A call for helpers is advertised only once the project is planned: in Planning there is
+ * nothing yet to pick up, so it is advertised only as wanting an owner.
+ */
+export const SEEKING_HELP_SQL = '(is_seeking_help AND planned_at IS NOT NULL)'
+export const SEEKING_HELP_WHERE = { isSeekingHelp: true, plannedAt: { not: null } }
+
 const quoted = (values: string[]) => values.map((v) => `'${v}'`).join(', ')
 
 /** `isSeekingOwner` as a raw SQL predicate, for the hand-written projects.list query. */

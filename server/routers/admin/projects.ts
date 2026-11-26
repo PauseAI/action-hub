@@ -175,31 +175,35 @@ export const adminProjectsRouter = {
         })
         await clearNotifications('project_needs_discussion', input.id)
 
+        // A project going into Planning is announced when its planning finishes; one planned
+        // before it was sent back goes straight live.
+        const planned = project.plannedAt !== null
         if (project.creatorId) {
           await notifyUser(
             project.creatorId,
             'project_approved',
-            `Approved: '${project.title}' is now visible to volunteers`,
+            planned
+              ? `Approved: '${project.title}' is now visible to volunteers`
+              : `Approved: '${project.title}' is ready to plan`,
             null,
             `/projects/${input.id}`,
             {
-              message:
-                'Great news! Your project has been approved and is now visible to all volunteers.',
+              message: planned
+                ? 'Great news! Your project has been approved and is now visible to all volunteers.'
+                : 'Great news! Your project has been approved. Next, its owner turns the outline into tasks and finishes planning; volunteers looking for work hear about it then.',
               projectTitle: project.title,
               projectId: input.id,
             },
           )
         }
 
-        // A project going into Planning tells matching volunteers when its planning finishes.
-        if (project.plannedAt !== null) {
+        if (planned) {
           notifyMatchingVolunteers(input.id).catch((e) => logger.error(e, '[MATCH NOTIFY]'))
-        }
-
-        if (project.teamId) {
-          notifyTeamOfProject(project.teamId, project.id, project.title).catch((e) =>
-            logger.error(e, '[TEAM NOTIFY]'),
-          )
+          if (project.teamId) {
+            notifyTeamOfProject(project.teamId, project.id, project.title).catch((e) =>
+              logger.error(e, '[TEAM NOTIFY]'),
+            )
+          }
         }
       } else {
         await updateWorkItem(

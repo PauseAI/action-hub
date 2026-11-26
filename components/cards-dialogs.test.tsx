@@ -24,6 +24,21 @@ const base: Project = {
 }
 
 describe('ProjectCard', () => {
+  it('shows a call for helpers only once the project is planned', () => {
+    render(
+      <>
+        <ProjectCard project={{ ...base, isSeekingHelp: true, stage: 'planning' }} />
+        <ProjectCard
+          project={{ ...base, id: 3, title: 'Proposed', isSeekingHelp: true, stage: 'proposal' }}
+        />
+        <ProjectCard
+          project={{ ...base, id: 2, title: 'Planned', isSeekingHelp: true, stage: 'running' }}
+        />
+      </>,
+    )
+    expect(screen.getAllByText('• Seeking help')).toHaveLength(1)
+  })
+
   it("names each project's chapter for a global admin, who sees every chapter", async () => {
     await renderApp(
       <>
@@ -42,6 +57,7 @@ describe('ProjectCard', () => {
         project={{
           ...base,
           isSeekingHelp: true,
+          stage: 'running',
           needsTasks: true,
           daysLate: 2,
           reach: 'LOCAL',
