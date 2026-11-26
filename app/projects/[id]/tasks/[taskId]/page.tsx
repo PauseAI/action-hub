@@ -668,8 +668,8 @@ export default function TaskDetailPage({
 
             <div className="mb-5">
               <Checkbox checked={editFeatured} onChange={(e) => setEditFeatured(e.target.checked)}>
-                Add this task to the quick tasks page so volunteers can find and claim it without
-                first clicking into this project
+                Add this task to the Tasks page so volunteers can find and take it without first
+                opening this project
               </Checkbox>
             </div>
 

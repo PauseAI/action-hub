@@ -79,9 +79,13 @@ const taskWhere = (scope: HistoryScope): Prisma.WorkItemWhereInput => ({
   OR: [{ assigneeId: scope.volunteerId }, { interests: { some: helperWhere(scope) } }],
 })
 
-/** Projects the volunteer has held any role on, or led or helped on a task in. */
+/**
+ * Projects the volunteer has held any role on, or led or helped on a task in. Requests for help
+ * are listed on their own, not as their standing project.
+ */
 export const historyWhere = (scope: HistoryScope): Prisma.WorkItemWhereInput => ({
   type: WorkItemType.PROJECT,
+  standingRequests: false,
   OR: [
     { creatorId: scope.volunteerId },
     { assigneeId: scope.volunteerId },

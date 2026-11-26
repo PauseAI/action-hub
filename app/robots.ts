@@ -16,6 +16,7 @@ export default function robots(): MetadataRoute.Robots {
         '/component-preview',
         '/projects',
         '/quick-tasks',
+        '/tasks',
         '/teams',
         '/suggest',
         '/suggest-team',

@@ -433,7 +433,7 @@ describe('a completed project is locked', () => {
       where: { id: l.tasks.open.id },
       data: { featuredAsQuickTask: true },
     })
-    const ids = (await clientAs(l.stranger).quickTasks.available()).map((t) => t.id)
+    const ids = (await clientAs(l.stranger).requests.feed()).map((t) => t.id)
     expect(ids).toContain(liveTask.id)
     expect(ids).not.toContain(l.tasks.open.id)
   })

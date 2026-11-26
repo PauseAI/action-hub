@@ -42,8 +42,8 @@ const TOUR: { title: string; body: string }[] = [
     body: 'Campaigns, policy, organising and creative work, each run by a volunteer owner. Join one that fits your skills, or propose your own.',
   },
   {
-    title: 'Quick tasks',
-    body: 'Small, self-contained jobs you can pick up and finish in an evening, like a design, a translation or some research.',
+    title: 'Requests for help',
+    body: 'Small things other volunteers have asked for help with, like a design, a translation or some research, that you can pick up and finish in an evening. Ask for help yourself, too.',
   },
   {
     title: 'Teams and local groups',
@@ -54,15 +54,15 @@ const TOUR: { title: string; body: string }[] = [
 export interface Waiting {
   projects: number
   matching: number
-  quickTasks: number
+  requests: number
 }
 
-/** "12 projects (3 using your skills) and 5 quick tasks", or null when nothing is open. */
-function waitingSummary({ projects, matching, quickTasks }: Waiting): string | null {
+/** "12 projects (3 using your skills) and 5 requests for help", or null when nothing is open. */
+function waitingSummary({ projects, matching, requests }: Waiting): string | null {
   const parts = [
     projects > 0 &&
       `${plural(projects, 'project')} looking for volunteers${matching > 0 ? ` (${matching} using your skills)` : ''}`,
-    quickTasks > 0 && plural(quickTasks, 'quick task'),
+    requests > 0 && `${plural(requests, 'request')} for help`,
   ].filter(Boolean)
   return parts.length > 0 ? parts.join(' and ') : null
 }

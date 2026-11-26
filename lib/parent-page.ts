@@ -2,7 +2,7 @@
 const PARENTS: [RegExp, string][] = [
   [/^\/projects\/([^/]+)\/(edit|import|tasks\/[^/]+)$/, '/projects/$1'],
   [/^\/projects\/[^/]+$/, '/projects'],
-  [/^\/quick-tasks\/[^/]+$/, '/quick-tasks'],
+  [/^\/quick-tasks\/[^/]+$/, '/tasks'],
   [/^\/volunteers\/[^/]+$/, '/volunteers'],
   [/^\/teams\/[^/]+$/, '/teams'],
   [/^\/inbox\/messages\/[^/]+$/, '/inbox'],

@@ -24,7 +24,7 @@ import {
   ApprovalStatus,
   ContactRequestStatus,
   ProjectStatus,
-  QuickTaskStatus,
+  TaskStatus,
   WorkItemType,
 } from '@/generated/prisma/enums'
 
@@ -376,16 +376,14 @@ export const volunteersRouter = {
         }),
         prisma.workItem.findMany({
           where: {
-            // Quick tasks moved into Requests for help projects keep their rating there.
-            OR: [
-              { type: WorkItemType.QUICK_TASK },
-              { type: WorkItemType.TASK, parent: { standingRequests: true } },
-            ],
+            type: WorkItemType.TASK,
+            parent: { standingRequests: true },
             assigneeId: input.id,
-            status: QuickTaskStatus.completed,
-            reviewRating: { in: ['excellent', 'good'] },
+            status: TaskStatus.completed,
+            // Rated ones are quick tasks from before; a poor rating is not shown off.
+            OR: [{ reviewRating: null }, { reviewRating: { in: ['excellent', 'good'] } }],
           },
-          orderBy: { reviewedAt: 'desc' },
+          orderBy: [{ completedAt: 'desc' }, { id: 'desc' }],
           select: {
             title: true,
             reviewRating: true,

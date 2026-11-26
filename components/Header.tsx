@@ -86,7 +86,7 @@ const NAV_ITEMS: NavItem[] = [
     members: true,
     active: (p) => under(p, '/projects') || under(p, '/templates') || under(p, '/suggest'),
   },
-  { href: '/quick-tasks', label: 'Tasks', members: true, active: (p) => under(p, '/quick-tasks') },
+  { href: '/tasks', label: 'Tasks', members: true, active: (p) => under(p, '/tasks') },
   {
     href: '/volunteers',
     label: 'People',

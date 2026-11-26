@@ -5,8 +5,8 @@ import {
   createChapterDeputy,
   createMember,
   createProject,
-  createQuickTask,
   createTask,
+  createRequest,
 } from '@/test/factories'
 import { clientAs } from '@/test/rpc'
 
@@ -174,17 +174,16 @@ describe("a chapter's staff", () => {
     expect(await c.admin.notes.delete({ id: noteId })).toEqual({ message: 'Note deleted' })
   })
 
-  it('review the quick tasks nobody set in their chapter, from Home', async () => {
+  it('review the requests nobody asked for in their chapter, from Home', async () => {
     const { c, home, away, proposer } = await setup()
     const submitted = { status: 'under_review', assigneeId: proposer.id, creatorId: null }
-    const ours = await createQuickTask({ ...submitted, nationalChapterId: home.id })
-    const theirs = await createQuickTask({ ...submitted, nationalChapterId: away.id })
+    const ours = await createRequest(home.id, submitted)
+    const theirs = await createRequest(away.id, submitted)
     const attention = (await c.dashboard.get()).attention
     expect(attention).toContainEqual(
       expect.objectContaining({ title: expect.stringContaining(ours.title), asStaff: true }),
     )
     expect(attention.map((a) => a.title).join(' ')).not.toContain(theirs.title)
-    expect((await c.quickTasks.get({ id: ours.id })).viewerCanAdmin).toBe(true)
   })
 
   it('keep the admin-only kinds of notification out of their own inbox', async () => {

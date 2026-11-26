@@ -1,76 +1,95 @@
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { AskForHelpSchema } from '@/lib/schemas'
-import { requestsProjectFor } from '@/lib/requests'
-import { applyScheduleWrite, CLAIM_BLOCKING_INTEREST, projectScopeWhere } from '@/lib/work-item'
+import { openRequests, requestsProjectFor } from '@/lib/requests'
+import {
+  applyScheduleWrite,
+  CLAIM_BLOCKING_INTEREST,
+  projectScopeWhere,
+  resolveClaimViewers,
+} from '@/lib/work-item'
+import { openHelperPlaces } from '@/lib/open-helper-places'
+import { TERMINAL_STATUSES, UNAPPROVED_STATUSES } from '@/lib/project-status'
 import { approvedProcedure } from '../procedures'
 import { TaskStatus, TaskTiming, WorkItemType } from '@/generated/prisma/enums'
 
-export type OpenRequest = {
-  kind: 'request'
-  id: number
-  title: string
-  description: string | null
-  projectId: number
-  projectTitle: string
-  askedBy: { id: number; name: string } | null
-  global: boolean
-  helpersWanted: number | null
-  estimatedHours: number | null
-  deadline: Date | null
-  createdAt: Date | null
-}
-
-/**
- * Requests for help nobody has taken yet that `viewer` could take: in their chapter's standing
- * project or the global one, not their own, and not on a project that turned them away.
- */
-export async function openRequests(viewer: {
-  id: number
-  nationalChapterId: number | null
-}): Promise<OpenRequest[]> {
-  const tasks = await prisma.workItem.findMany({
-    where: {
-      type: WorkItemType.TASK,
-      status: TaskStatus.not_started,
-      assigneeId: null,
-      requestedById: null,
-      OR: [{ creatorId: null }, { creatorId: { not: viewer.id } }],
-      parent: {
-        standingRequests: true,
-        OR: [{ nationalChapterId: viewer.nationalChapterId }, { nationalChapterId: null }],
-        interests: { none: { volunteerId: viewer.id, ...CLAIM_BLOCKING_INTEREST } },
-      },
-    },
-    include: {
-      creator: { select: { id: true, name: true } },
-      parent: { select: { id: true, title: true, nationalChapterId: true } },
-    },
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-  })
-  return tasks.flatMap((t) =>
-    t.parent
-      ? [
-          {
-            kind: 'request' as const,
-            id: t.id,
-            title: t.title,
-            description: t.description,
-            projectId: t.parent.id,
-            projectTitle: t.parent.title,
-            askedBy: t.creator,
-            global: t.parent.nationalChapterId === null,
-            helpersWanted: t.helpersWanted,
-            estimatedHours: t.estimatedHours,
-            deadline: t.deadline,
-            createdAt: t.createdAt,
-          },
-        ]
-      : [],
-  )
-}
-
 export const requestsRouter = {
+  /**
+   * The work the caller could take now, newest first: requests for help, tasks their projects'
+   * owners have featured, and tasks with helper places, each listed once. Projects that turned
+   * the caller away are left out.
+   */
+  feed: approvedProcedure.handler(async ({ context }) => {
+    const viewer = context.volunteer
+    const blocked = await prisma.workItemInterest.findMany({
+      where: {
+        volunteerId: viewer.id,
+        ...CLAIM_BLOCKING_INTEREST,
+        workItem: { type: WorkItemType.PROJECT },
+      },
+      select: { workItemId: true },
+    })
+    const [requests, featured] = await Promise.all([
+      openRequests(viewer),
+      prisma.workItem.findMany({
+        where: {
+          type: WorkItemType.TASK,
+          status: TaskStatus.not_started,
+          assigneeId: null,
+          requestedById: null,
+          featuredAsQuickTask: true,
+          parentId: { not: null, notIn: blocked.map((b) => b.workItemId) },
+          parent: {
+            standingRequests: false,
+            status: { notIn: [...TERMINAL_STATUSES, ...UNAPPROVED_STATUSES] },
+            AND: [projectScopeWhere({ ...viewer, isAdmin: false })],
+          },
+        },
+        include: {
+          parent: {
+            select: {
+              id: true,
+              title: true,
+              teamId: true,
+              assigneeId: true,
+              alwaysAskToJoin: true,
+              standingRequests: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ])
+    const claimViewerOn = await resolveClaimViewers(
+      featured.flatMap((t) => (t.parent ? [t.parent] : [])),
+      viewer,
+    )
+    const listed = new Set([...requests, ...featured].map((t) => t.id))
+    const helperPlaces = (await openHelperPlaces(viewer)).items.filter((t) => !listed.has(t.id))
+    return [
+      ...requests,
+      ...featured.flatMap((t) =>
+        t.parent
+          ? [
+              {
+                kind: 'featured' as const,
+                id: t.id,
+                title: t.title,
+                description: t.description,
+                projectId: t.parent.id,
+                projectTitle: t.parent.title,
+                claimViewer: claimViewerOn(t.parent),
+                estimatedHours: t.estimatedHours,
+                deadline: t.deadline,
+                createdAt: t.createdAt,
+              },
+            ]
+          : [],
+      ),
+      ...helperPlaces,
+    ].sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0))
+  }),
+
   /**
    * Asks for help: a task in the asker's chapter's Requests for help project, or the global one.
    * Anyone approved may ask, and reviews the work handed in on it.

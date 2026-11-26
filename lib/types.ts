@@ -28,9 +28,6 @@ import type {
   ReviewSuggestionSchema,
   InviteChapterStaffSchema,
   PlatformSettingsSchema,
-  CreateQuickTaskSchema,
-  AssignQuickTaskSchema,
-  ReviewQuickTaskSchema,
   CreateBugReportSchema,
   LocalGroupSuggestionBodySchema,
   UpdateVolunteerSchema,
@@ -71,10 +68,6 @@ export type UpdateBugReportBody = z.infer<typeof UpdateBugReportSchema>
 export type ReviewSuggestionBody = z.infer<typeof ReviewSuggestionSchema>
 export type InviteChapterStaffBody = z.infer<typeof InviteChapterStaffSchema>
 export type PlatformSettingsBody = z.infer<typeof PlatformSettingsSchema>
-
-export type CreateQuickTaskBody = z.infer<typeof CreateQuickTaskSchema>
-export type AssignQuickTaskBody = z.infer<typeof AssignQuickTaskSchema>
-export type ReviewQuickTaskBody = z.infer<typeof ReviewQuickTaskSchema>
 
 export type CreateBugReportBody = z.infer<typeof CreateBugReportSchema>
 export type LocalGroupSuggestionBody = z.infer<typeof LocalGroupSuggestionBodySchema>

@@ -20,12 +20,12 @@ import { Badge } from '@/components/Badge'
 import { BLEED } from '@/lib/ui-classes'
 import { H1, H2, H3 } from '@/components/Heading'
 import { P } from '@/components/Text'
-import { ApprovalStatus, WorkItemType } from '@/generated/prisma/enums'
+import { ApprovalStatus } from '@/generated/prisma/enums'
 import type { AppRouter } from '@/server/router'
 import type { InferRouterOutputs } from '@orpc/server'
 
 type Home = InferRouterOutputs<AppRouter>['dashboard']['get']
-type FindRow = NonNullable<Home['find']>['quickTasks']
+type FindRow = NonNullable<Home['find']>['requests']
 type Work = Home['work'][number]
 type Attention = Home['attention'][number]
 
@@ -72,7 +72,7 @@ function GettingStarted({
       done: steps.firstTask,
       label: 'First task claimed',
       todo: 'Pick a first task',
-      href: steps.approved ? '/quick-tasks' : null,
+      href: steps.approved ? '/tasks' : null,
     },
   ]
   return (
@@ -278,13 +278,7 @@ export default function HomePage() {
         <WorkRow
           key={w.key}
           className={ROW_CLASSES}
-          status={
-            <WorkStatusBadge
-              status={item.displayStatus}
-              quick={item.type === WorkItemType.QUICK_TASK}
-              viewer={item.viewer}
-            />
-          }
+          status={<WorkStatusBadge status={item.displayStatus} viewer={item.viewer} />}
           title={title}
           below={
             <>
@@ -413,7 +407,7 @@ export default function HomePage() {
         >
           <P>
             {welcome.emailConfirmed
-              ? 'Your application has been approved. Browse projects to find something you can help with, or pick up a quick task to get started.'
+              ? 'Your application has been approved. Browse projects to find something you can help with, or take a request for help to get started.'
               : 'Your application has been approved. One last step: confirm your email address, then you can browse projects and pick a first task.'}
           </P>
           <div className="mt-4 flex justify-end gap-2">
@@ -502,8 +496,8 @@ export default function HomePage() {
                 {finished.length > 0
                   ? 'Nothing on the go right now.'
                   : "You're not working on anything yet."}{' '}
-                <Link className="text-primary-text underline" href="/quick-tasks">
-                  Pick up a quick task
+                <Link className="text-primary-text underline" href="/tasks">
+                  Take a request for help
                 </Link>{' '}
                 or{' '}
                 <Link className="text-primary-text underline" href="/projects">
@@ -570,16 +564,15 @@ export default function HomePage() {
             {showFind && (
               <div id="find-body" className={`bg-surface shadow px-4 sm:px-5 py-2 ${BLEED}`}>
                 <FindRowView
-                  label="Quick tasks"
-                  row={data.find.quickTasks}
-                  seeAll="/quick-tasks"
-                  empty="No open quick tasks right now."
+                  label="Requests for help"
+                  row={data.find.requests}
+                  seeAll="/tasks"
+                  empty="Nobody is asking for help right now."
                 />
                 <FindRowView
                   label="Helpers wanted"
                   row={data.find.helpersWanted}
-                  // Staff get the Quick Tasks admin view, which lists no helper places.
-                  seeAll={user.isAdmin || user.access.role ? undefined : '/quick-tasks'}
+                  seeAll="/tasks"
                   empty="No tasks are asking for helpers right now."
                 />
                 <FindRowView
