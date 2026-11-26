@@ -304,6 +304,12 @@ export default function TaskDetailPage({
     task.status === TaskStatus.not_started
   // Whoever sees Accept on work in review is the one it waits on.
   const viewer = { isAssignee: task.assignedToId === user.id, canReview: task.canReview }
+  // Someone could still take it, or help on it: what a call for it would ask for.
+  const wantsSomeone =
+    (task.status === TaskStatus.not_started && task.assignedToId === null) ||
+    (!handedIn(task.status) &&
+      task.assignedToId !== null &&
+      (task.helpersWanted ?? 0) > task.helpers.length)
 
   return (
     <main className="container py-5 pb-15">
@@ -336,7 +342,7 @@ export default function TaskDetailPage({
                 {task.isRequest && task.createdByName && (
                   <P className="text-sm m-0 mb-1">Asked by {task.createdByName}</P>
                 )}
-                {task.isRequest && !handedIn(task.status) && canSendCalls(user) && (
+                {task.isRequest && wantsSomeone && canSendCalls(user) && (
                   <div className="mb-2">
                     <SendRequestAsCall
                       request={{

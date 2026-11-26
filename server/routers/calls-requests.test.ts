@@ -61,7 +61,7 @@ describe('a request sent as a call', () => {
     const { id: callId } = await c.calls.send(call(asked.id, [uk.id], [skill.id]))
 
     const [posted] = await notes(taker.id, CALL_POSTED)
-    expect(posted.link).toBe(`/projects/${asked.projectId}/tasks/${asked.id}`)
+    expect(posted.link).toBe('/calls')
     const forTaker = async () => (await clientAs(taker).calls.forMe()).find((x) => x.id === callId)!
     expect((await forTaker()).request).toMatchObject({
       taskId: asked.id,
@@ -90,7 +90,7 @@ describe('a request sent as a call', () => {
       expect.objectContaining({ body: "Took 'Run a stall'" }),
     ])
     await expect(clientAs(taker).calls.withdraw({ callId })).rejects.toMatchObject({
-      message: 'You took on its request: let go of it on the task page instead',
+      message: 'Your answer stands while you are on its request',
     })
 
     const forHelper = (await clientAs(helper).calls.forMe()).find((x) => x.id === callId)!
@@ -103,13 +103,17 @@ describe('a request sent as a call', () => {
       ['Hal Helper', "Helping on 'Run a stall'"],
     ])
 
-    // Full now: nobody else is needed.
+    // Full now: nobody else is needed, so it is no longer offered, and is not sent again.
     const late = await createMember(uk)
-    const forLate = (await clientAs(late).calls.forMe()).find((x) => x.id === callId)!
-    expect(forLate.request).toMatchObject({ canTake: false, canHelp: false })
+    expect((await clientAs(late).calls.forMe()).map((x) => x.id)).not.toContain(callId)
     await expect(clientAs(late).calls.takeRequest({ callId })).rejects.toMatchObject({
       message: 'This request needs nobody else now',
     })
+    await expect(c.calls.send(call(asked.id, [uk.id]))).rejects.toMatchObject({
+      message: 'That request is not waiting for help',
+    })
+    // Those who answered still see it, closed.
+    expect((await forTaker()).open).toBe(false)
   })
 
   it('leaves plain calls as they were, and cannot be taken without a request', async () => {
@@ -126,5 +130,45 @@ describe('a request sent as a call', () => {
     })
     await clientAs(taker).calls.respond({ callId, message: 'Yes' })
     await clientAs(taker).calls.withdraw({ callId })
+  })
+
+  it('lets someone taken off the request withdraw, and rewrites the answer if they come back', async () => {
+    const { uk, c, asker, taker } = await setup()
+    const asked = await clientAs(asker).requests.ask({ title: 'Count leaflets' })
+    const { id: callId } = await c.calls.send(call(asked.id, [uk.id]))
+    // Released, as the nudge job or chapter staff would.
+    const release = () =>
+      prisma.workItem.update({
+        where: { id: asked.id },
+        data: { assigneeId: null, status: 'not_started' },
+      })
+    await clientAs(taker).calls.takeRequest({ callId })
+    await release()
+    await clientAs(taker).calls.takeRequest({ callId })
+    expect((await c.calls.responses({ callId })).map((r) => r.message)).toEqual([
+      "Took 'Count leaflets'",
+    ])
+    await release()
+    await clientAs(taker).calls.withdraw({ callId })
+    expect(await c.calls.responses({ callId })).toEqual([])
+  })
+
+  it('cannot be taken while started by nobody, and is closed, answers kept, when the request goes', async () => {
+    const { uk, c, coordinator, asker, taker, helper } = await setup()
+    const asked = await clientAs(asker).requests.ask({ title: 'Odd one' })
+    const { id: callId } = await c.calls.send(call(asked.id, [uk.id]))
+    await prisma.workItem.update({ where: { id: asked.id }, data: { status: 'in_progress' } })
+    expect((await clientAs(helper).calls.forMe()).map((x) => x.id)).not.toContain(callId)
+    await expect(c.calls.send(call(asked.id, [uk.id]))).rejects.toMatchObject({
+      message: 'That request is not waiting for help',
+    })
+    await prisma.workItem.update({ where: { id: asked.id }, data: { status: 'not_started' } })
+    await clientAs(taker).calls.takeRequest({ callId })
+    await clientAs(asker).projects.deleteTask({ projectId: asked.projectId, taskId: asked.id })
+    expect(await prisma.call.findUniqueOrThrow({ where: { id: callId } })).toMatchObject({
+      requestId: null,
+      closedAt: expect.any(Date),
+    })
+    expect(await clientAs(coordinator).calls.responses({ callId })).toHaveLength(1)
   })
 })

@@ -72,10 +72,9 @@ export function DismissCallButton({ call }: { call: Call }) {
   )
 }
 
-/** The form that answers a call, changes the answer or withdraws it. */
 /**
  * The answer to a call that carries a request for help: taking the request, or helping on it once
- * someone has. Letting go of it again happens on the task's page.
+ * someone has.
  */
 function RequestAnswer({
   call,
@@ -133,12 +132,14 @@ function RequestAnswer({
   )
 }
 
+/** How a call is answered: by taking the request it carries, or in writing. */
 export function CallAnswer({ call, onAnswered }: { call: Call; onAnswered?: () => void }) {
   if (call.request)
     return <RequestAnswer call={call} request={call.request} onAnswered={onAnswered} />
   return <MessageAnswer call={call} onAnswered={onAnswered} />
 }
 
+/** The form that answers a call, changes the answer or withdraws it. */
 function MessageAnswer({ call, onAnswered }: { call: Call; onAnswered?: () => void }) {
   const showToast = useToast()
   const refresh = useRefreshCalls()

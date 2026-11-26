@@ -230,7 +230,7 @@ describe('a call that carries a request for help', () => {
     expect(section.getByRole('link', { name: 'Open the request' })).toHaveAttribute('href', href)
   })
 
-  it('says when someone else has the request in hand, and reports a refused answer', async () => {
+  it('reports a refused answer, and drops a call whose request needs nobody else', async () => {
     const chapter = await createChapter()
     const asker = await createMember(chapter)
     const [me, other] = [await createMember(chapter), await createMember(chapter)]
@@ -252,6 +252,7 @@ describe('a call that carries a request for help', () => {
     await prisma.workItem.update({ where: { id: asked.id }, data: { helpersWanted: null } })
     await userEvent.click(section.getByRole('button', { name: 'Help on it' }))
     await screen.findByText('This request needs nobody else now')
-    expect(await section.findByText(/Someone has this request in hand/)).toBeInTheDocument()
+    // Needing nobody else, it takes no more answers and leaves the list.
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Stall helpers' })).toBeNull())
   })
 })

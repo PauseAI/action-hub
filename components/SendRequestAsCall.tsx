@@ -42,8 +42,9 @@ function SendDialog({
 }) {
   const showToast = useToast()
   const queryClient = useQueryClient()
-  const [title, setTitle] = useState(request.title)
-  const [body, setBody] = useState(request.description ?? request.title)
+  // Cut to what a call holds; a request's own text has no limit.
+  const [title, setTitle] = useState(request.title.slice(0, 200))
+  const [body, setBody] = useState((request.description ?? request.title).slice(0, 2000))
   const [chapterIds, setChapterIds] = useState<number[]>(
     request.chapterId === null ? [] : [request.chapterId],
   )

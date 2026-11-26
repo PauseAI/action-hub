@@ -28,21 +28,66 @@ const CallInput = z.object({
   requestId: z.number().int().optional(),
 })
 
+type RequestRow = {
+  id: number
+  parentId: number | null
+  status: string
+  assigneeId: number | null
+  helpersWanted: number | null
+  title: string
+}
+
 /**
- * The request a call is to carry: still waiting for someone, and in a chapter the call reaches
- * no further than (a chapter's requests are its own; Global requests go anywhere).
+ * Where each request is for `volunteerId`, by id: whether they can take it (nobody has, and it
+ * has not started), help on it (someone has, with places left), or are on it already.
+ */
+async function requestStandings(requests: RequestRow[], volunteerId: number) {
+  const helping = await prisma.workItemInterest.findMany({
+    where: {
+      workItemId: { in: requests.map((r) => r.id) },
+      status: InterestStatus.accepted,
+    },
+    select: { workItemId: true, volunteerId: true },
+  })
+  return new Map(
+    requests.map((request) => {
+      const helpers = helping.filter((h) => h.workItemId === request.id)
+      const mine =
+        request.assigneeId === volunteerId || helpers.some((h) => h.volunteerId === volunteerId)
+      const live =
+        request.status === TaskStatus.not_started || request.status === TaskStatus.in_progress
+      const standing = {
+        projectId: request.parentId,
+        taskId: request.id,
+        title: request.title,
+        mine,
+        canTake: !mine && request.status === TaskStatus.not_started && request.assigneeId === null,
+        canHelp:
+          live &&
+          !mine &&
+          request.assigneeId !== null &&
+          (request.helpersWanted ?? 0) > helpers.length,
+      }
+      return [request.id, standing] as const
+    }),
+  )
+}
+
+const standingOf = async (request: RequestRow, volunteerId: number) =>
+  (await requestStandings([request], volunteerId)).get(request.id)!
+
+/**
+ * The request a call is to carry: one somebody can still take or help on, and in a chapter the
+ * call reaches no further than (a chapter's requests are its own; Global requests go anywhere).
  */
 async function requestToCarry(requestId: number, chapterIds: number[]) {
   const request = await prisma.workItem.findFirst({
-    where: {
-      id: requestId,
-      type: WorkItemType.TASK,
-      status: { in: [TaskStatus.not_started, TaskStatus.in_progress] },
-      parent: { standingRequests: true },
-    },
+    where: { id: requestId, type: WorkItemType.TASK, parent: { standingRequests: true } },
     include: { parent: { select: { nationalChapterId: true } } },
   })
-  if (!request?.parent) {
+  // Asked as nobody at all, so that being on it oneself does not count as a place.
+  const standing = request && (await standingOf(request, -1))
+  if (!request?.parent || !standing || !(standing.canTake || standing.canHelp)) {
     throw new ORPCError('BAD_REQUEST', { message: 'That request is not waiting for help' })
   }
   const chapterId = request.parent.nationalChapterId
@@ -54,37 +99,6 @@ async function requestToCarry(requestId: number, chapterIds: number[]) {
   return request
 }
 
-/** Where a request a call carries stands for `volunteerId`: whether they can take it or help. */
-async function requestStanding(
-  request: {
-    id: number
-    parentId: number | null
-    status: string
-    assigneeId: number | null
-    helpersWanted: number | null
-    title: string
-  },
-  volunteerId: number,
-) {
-  const helping = await prisma.workItemInterest.findMany({
-    where: { workItemId: request.id, status: InterestStatus.accepted },
-    select: { volunteerId: true },
-  })
-  const mine =
-    request.assigneeId === volunteerId || helping.some((h) => h.volunteerId === volunteerId)
-  const open =
-    request.status === TaskStatus.not_started || request.status === TaskStatus.in_progress
-  return {
-    projectId: request.parentId,
-    taskId: request.id,
-    title: request.title,
-    mine,
-    canTake: open && !mine && request.assigneeId === null,
-    canHelp:
-      open && !mine && request.assigneeId !== null && (request.helpersWanted ?? 0) > helping.length,
-  }
-}
-
 /**
  * Tells each addressee of a call about it in their Inbox, and never by email: one call can reach
  * every volunteer, so emailing each would spend the mail provider's quota in one send. The
@@ -92,7 +106,7 @@ async function requestStanding(
  */
 async function deliver(
   tx: Prisma.TransactionClient,
-  call: { id: number; title: string; body: string; link: string } & Addressing,
+  call: { id: number; title: string; body: string } & Addressing,
 ) {
   const addressees = await tx.volunteer.findMany({
     where: addresseeWhere(call),
@@ -104,7 +118,7 @@ async function deliver(
       type: CALL_POSTED,
       title: `Call for volunteers: ${call.title}`,
       body: call.body,
-      link: call.link,
+      link: '/calls',
       entityId: call.id,
     })),
   })
@@ -176,11 +190,7 @@ export const callsRouter = {
           skills: { create: skillIds.map((skillId) => ({ skillId })) },
         },
       })
-      await deliver(tx, {
-        ...call,
-        skillIds,
-        link: request ? `/projects/${request.parentId}/tasks/${request.id}` : '/calls',
-      })
+      await deliver(tx, { ...call, skillIds })
       return { id: call.id }
     })
   }),
@@ -272,33 +282,38 @@ export const callsRouter = {
       },
       orderBy: { createdAt: 'desc' },
     })
-    const requests = new Map(
-      await Promise.all(
-        calls.flatMap((c) =>
-          c.request ? [requestStanding(c.request, me.id).then((r) => [c.id, r] as const)] : [],
-        ),
-      ),
+    const standings = await requestStandings(
+      calls.flatMap((c) => (c.request ? [c.request] : [])),
+      me.id,
     )
     const addressed = await prisma.call.findMany({
       where: { AND: [{ id: { in: calls.map((c) => c.id) } }, addressedToWhere(me)] },
       select: { id: true },
     })
     const addressedIds = new Set(addressed.map((c) => c.id))
-    return calls.map((c) => ({
-      id: c.id,
-      title: c.title,
-      body: c.body,
-      skillNames: skillNames(c),
-      matchesSkills: addressedIds.has(c.id),
-      senderName: c.sender?.name ?? null,
-      senderRemit: c.sender?.coordinatorRole?.remit ?? null,
-      createdAt: c.createdAt,
-      open: c.closedAt === null,
-      myResponse: c.responses[0] ?? null,
-      request: requests.get(c.id) ?? null,
-      // An answer wins over a dismissal a merge of two accounts brought beside it.
-      dismissed: c.dismissals.length > 0 && c.responses.length === 0,
-    }))
+    return calls.flatMap((c) => {
+      const request = c.request ? standings.get(c.request.id)! : null
+      // A call whose request needs nobody else takes no more answers.
+      const open = c.closedAt === null && (!request || request.canTake || request.canHelp)
+      if (!open && c.responses.length === 0) return []
+      return [
+        {
+          id: c.id,
+          title: c.title,
+          body: c.body,
+          skillNames: skillNames(c),
+          matchesSkills: addressedIds.has(c.id),
+          senderName: c.sender?.name ?? null,
+          senderRemit: c.sender?.coordinatorRole?.remit ?? null,
+          createdAt: c.createdAt,
+          open,
+          myResponse: c.responses[0] ?? null,
+          request,
+          // An answer wins over a dismissal a merge of two accounts brought beside it.
+          dismissed: c.dismissals.length > 0 && c.responses.length === 0,
+        },
+      ]
+    })
   }),
 
   /** Answers a call, which shares the caller's name, email and message with its sender. */
@@ -350,7 +365,7 @@ export const callsRouter = {
       if (!request?.parentId) {
         throw new ORPCError('BAD_REQUEST', { message: 'This call carries no request' })
       }
-      const standing = await requestStanding(request, me.id)
+      const standing = await standingOf(request, me.id)
       const ids = { projectId: request.parentId, taskId: request.id }
       if (standing.canTake) {
         await callProcedure(
@@ -370,14 +385,17 @@ export const callsRouter = {
         throw new ORPCError('BAD_REQUEST', { message: 'This request needs nobody else now' })
       }
       const message = standing.canTake ? `Took '${request.title}'` : `Helping on '${request.title}'`
+      const where = { callId_volunteerId: { callId: call.id, volunteerId: me.id } }
+      // Create first, so of two first answers sent at once only one notifies the sender; taking
+      // it again after letting go rewrites the answer.
       const { count } = await prisma.callResponse.createMany({
         data: [{ callId: call.id, volunteerId: me.id, message }],
         skipDuplicates: true,
       })
+      const response = count
+        ? await prisma.callResponse.findUnique({ where })
+        : await prisma.callResponse.update({ where, data: { message } })
       await prisma.callDismissal.deleteMany({ where: { callId: call.id, volunteerId: me.id } })
-      const response = await prisma.callResponse.findUnique({
-        where: { callId_volunteerId: { callId: call.id, volunteerId: me.id } },
-      })
       if (count && response && call.senderId !== null) {
         await notifyUser(
           call.senderId,
@@ -401,10 +419,13 @@ export const callsRouter = {
       })
       if (!response)
         throw new ORPCError('NOT_FOUND', { message: 'You have not answered this call' })
-      const call = await prisma.call.findUniqueOrThrow({ where: { id: input.callId } })
-      if (call.requestId !== null) {
+      const call = await prisma.call.findUniqueOrThrow({
+        where: { id: input.callId },
+        include: { request: true },
+      })
+      if (call.request && (await standingOf(call.request, context.volunteer.id)).mine) {
         throw new ORPCError('BAD_REQUEST', {
-          message: 'You took on its request: let go of it on the task page instead',
+          message: 'Your answer stands while you are on its request',
         })
       }
       await prisma.callResponse.delete({ where: { id: response.id } })
