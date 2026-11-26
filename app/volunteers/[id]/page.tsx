@@ -350,7 +350,7 @@ export default function VolunteerDetailPage({ params }: { params: Promise<{ id: 
             </div>
           </div>
 
-          {volunteer.manage && (
+          {(volunteer.manage || volunteer.move) && (
             <MemberManage
               member={{
                 id: volunteer.id,
@@ -359,6 +359,7 @@ export default function VolunteerDetailPage({ params }: { params: Promise<{ id: 
                 skills: volunteer.skills ?? [],
               }}
               manage={volunteer.manage}
+              move={volunteer.move}
               hasPicture={Boolean(person?.picture)}
             />
           )}

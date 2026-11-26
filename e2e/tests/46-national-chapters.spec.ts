@@ -247,6 +247,49 @@ test.describe('National chapters', () => {
     await expect(adminPage.getByText('No national chapter yet')).toBeVisible({ timeout: 10_000 })
   })
 
+  test('A chapter lead asks another chapter to take a member, and its lead accepts', async ({
+    browser,
+    baseUrl,
+    snap,
+  }) => {
+    const chapterId = await ensureChapter(baseUrl, COUNTRY)
+    // Austria's chapter is this test's alone.
+    const otherId = await ensureChapter(baseUrl, 'Austria')
+    const lead = await createApprovedVolunteer(baseUrl, { country: COUNTRY })
+    await makeChapterStaff(baseUrl, lead.id, chapterId, 'LEAD')
+    const otherLead = await createApprovedVolunteer(baseUrl, { country: 'Austria' })
+    await makeChapterStaff(baseUrl, otherLead.id, otherId, 'LEAD')
+    const member = await createApprovedVolunteer(baseUrl, { country: COUNTRY })
+
+    const page = await signedInPage(browser, lead.token)
+    const otherPage = await signedInPage(browser, otherLead.token)
+    try {
+      await page.goto(`${baseUrl}/volunteers/${member.id}`)
+      await page
+        .getByRole('button', { name: 'Ask to move to another chapter' })
+        .click({ timeout: 10_000 })
+      const dialog = page.getByRole('dialog', { name: `Move ${member.name} on?` })
+      await dialog.getByLabel('Move to').selectOption({ label: 'Austria' })
+      await snap(page, 'ask to move dialog')
+      await dialog.getByRole('button', { name: 'Ask' }).click()
+      await expect(page.getByText(/Waiting: a move from Germany to Austria/)).toBeVisible({
+        timeout: 10_000,
+      })
+
+      await otherPage.goto(`${baseUrl}/admin/transfers`)
+      await expect(otherPage.getByText(/asked you to take them/)).toBeVisible({ timeout: 10_000 })
+      await otherPage.getByRole('button', { name: `Approve move for ${member.name}` }).click()
+      await expect(getAlert(otherPage)).toContainText('Moved', { timeout: 10_000 })
+
+      // Austria's lead now runs them; Germany's lead no longer does.
+      await otherPage.goto(`${baseUrl}/volunteers/${member.id}`)
+      await expect(otherPage.getByText(/Austria chapter/).first()).toBeVisible({ timeout: 10_000 })
+    } finally {
+      await page.context().close()
+      await otherPage.context().close()
+    }
+  })
+
   test("A chapter lead verifies a member's skill and invites them to a project from their profile", async ({
     browser,
     baseUrl,

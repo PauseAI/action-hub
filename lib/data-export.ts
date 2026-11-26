@@ -120,6 +120,7 @@ export const OMITTED_LINKS: Readonly<Record<string, string>> = {
   'ChapterDeputy.appointedBy': STAFF_ACTION,
   'Coordinator.appointedBy': STAFF_ACTION,
   'ChapterTransferRequest.decidedBy': STAFF_ACTION,
+  'ChapterTransferRequest.requestedBy': STAFF_ACTION,
   'DistinctAccountPair.dismissedBy': STAFF_ACTION,
   'LocalGroupSuggestion.reviewedBy': STAFF_ACTION,
   'ProjectDeputy.appointedBy': STAFF_ACTION,

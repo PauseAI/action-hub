@@ -12,16 +12,20 @@ import { contactRelations, seesFullProfile } from '@/lib/contact'
 import {
   canAdminChapter,
   canAppointDeputies,
+  isStaff,
   seesEveryChapter,
   type ChapterAccess,
 } from '@/lib/chapter-access'
 import { peopleInfo, viewableVolunteers } from '@/lib/people'
-import { chapterFilter } from '@/lib/chapter-access-server'
+import { chapterFilter, mayUnseat } from '@/lib/chapter-access-server'
 import { isActiveRecently } from '@/lib/activity'
+import { askingChapter, decidingChapter } from '@/lib/chapter-transfers'
 import { NOT_NOW_MESSAGE, dismissFastTrack, setFastTrack } from '@/lib/fast-track'
 import { approvedProcedure, authedProcedure } from '../procedures'
 import {
   ApprovalStatus,
+  ChapterTransferKind,
+  ChapterTransferStatus,
   ContactRequestStatus,
   ProjectStatus,
   TaskStatus,
@@ -92,6 +96,65 @@ async function manageControls(
     /** Whether they are on fast track, for the control that puts them on or takes them off. */
     fastTrack: { on: vol.fastTrack },
   }
+}
+
+/**
+ * Chapter moves the viewer may ask for from this profile, and any move already waiting. Their
+ * chapter's lead or deputies may send them on or to the holding pool; another chapter's staff
+ * may ask to bring them in; a global admin moves them directly (`manage.moveChapter`). Null when
+ * none of it applies.
+ */
+async function moveControls(
+  viewerId: number,
+  access: ChapterAccess,
+  vol: { id: number; nationalChapterId: number | null; duplicateOfId: number | null } & {
+    approvalStatus: ApprovalStatus | null
+  },
+) {
+  if (vol.id === viewerId) return null
+  const runs = canAdminChapter(access, vol.nationalChapterId)
+  const ownChapter = access.chapterId
+  const elsewhere =
+    !runs && isStaff(access) && ownChapter !== null && ownChapter !== vol.nationalChapterId
+  if (!runs && !elsewhere) return null
+  const [pending, own] = await Promise.all([
+    prisma.chapterTransferRequest.findFirst({
+      where: { volunteerId: vol.id, status: ChapterTransferStatus.pending },
+      include: {
+        fromChapter: { select: { name: true } },
+        toChapter: { select: { name: true } },
+        requestedBy: { select: { name: true } },
+      },
+    }),
+    elsewhere
+      ? prisma.nationalChapter.findUniqueOrThrow({
+          where: { id: ownChapter },
+          select: { id: true, name: true },
+        })
+      : null,
+  ])
+  const movable = vol.approvalStatus === ApprovalStatus.approved && vol.duplicateOfId === null
+  const send =
+    runs && !access.globalAdmin && vol.nationalChapterId !== null && (await mayUnseat(access, vol))
+  // Asking to bring them in waits until no other move does.
+  const bringInto = own && movable && !pending ? own : null
+  // Another chapter's staff see a move only when it concerns their own chapter.
+  const seen =
+    pending && (runs || [pending.fromChapterId, pending.toChapterId].includes(ownChapter))
+      ? {
+          id: pending.id,
+          kind: pending.kind,
+          fromChapterName: pending.fromChapter?.name ?? null,
+          toChapterName: pending.toChapter?.name ?? null,
+          requestedByName: pending.requestedBy?.name ?? null,
+          canAnswer: canAdminChapter(access, decidingChapter(pending)),
+          canWithdraw:
+            pending.kind !== ChapterTransferKind.SELF &&
+            canAdminChapter(access, askingChapter(pending)),
+        }
+      : null
+  if (!send && !bringInto && !seen) return null
+  return { send: send && movable, toPool: send, bringInto, pending: seen }
 }
 
 /** The volunteer, once the viewer is shown to be on their chapter's staff (or a global admin). */
@@ -308,7 +371,7 @@ export const volunteersRouter = {
       // Contact details go only to people who work with the volunteer, or whom they have
       // accepted a contact request from; their chapter's staff and coordinators see them too
       // (lib/contact.ts).
-      const [relations, incoming, manage] = await Promise.all([
+      const [relations, incoming, manage, move] = await Promise.all([
         contactRelations(currentVolunteer, context.access, [vol.id]),
         prisma.contactRequest.findFirst({
           where: {
@@ -319,6 +382,7 @@ export const volunteersRouter = {
           select: { id: true, message: true },
         }),
         manageControls(currentVolunteer.id, context.access, vol),
+        moveControls(currentVolunteer.id, context.access, vol),
       ])
       const showContact = isAdmin || relations.reachable.has(vol.id)
 
@@ -413,6 +477,7 @@ export const volunteersRouter = {
         activeRecently: isActiveRecently(vol.lastActiveAt),
         chapter: vol.chapter,
         manage,
+        move,
         // lib/fast-track.ts says who sees it; staff change it from `manage`.
         fastTrack: vol.id === currentVolunteer.id || isAdmin ? { on: vol.fastTrack } : null,
         projects: projectHistory(projects, input.id),

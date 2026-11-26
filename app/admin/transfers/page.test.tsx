@@ -61,6 +61,42 @@ describe('moving chapter', () => {
     await screen.findByText('Nobody is waiting to move.')
   })
 
+  it('says which staff asked, whether sending a member on or bringing one in', async () => {
+    const [mine, other] = [await createChapter(), await createChapter()]
+    const lead = await createChapterLead(mine)
+    const sender = await createChapterLead(other, { name: 'Sending Sam' })
+    const bringer = await createChapterLead(await createChapter(), { name: 'Bringing Bo' })
+    const sent = await createMember(other, { name: 'Sent Over' })
+    const sought = await createMember(mine, { name: 'Sought Away' })
+    await prisma.chapterTransferRequest.createMany({
+      data: [
+        {
+          volunteerId: sent.id,
+          fromChapterId: other.id,
+          toChapterId: mine.id,
+          toCountry: mine.country,
+          kind: 'SEND',
+          requestedById: sender.id,
+        },
+        {
+          volunteerId: sought.id,
+          fromChapterId: mine.id,
+          toChapterId: other.id,
+          toCountry: other.country,
+          kind: 'BRING',
+          requestedById: bringer.id,
+        },
+      ],
+    })
+    await renderApp(<AdminTransfersPage />, { as: lead })
+    expect(await screen.findByText(/asked you to take them/)).toHaveTextContent(
+      'Sending Sam asked you to take them',
+    )
+    expect(screen.getByText(/asked to bring them in/)).toHaveTextContent(
+      'Bringing Bo asked to bring them in',
+    )
+  })
+
   it('lets a global admin narrow the moves to a chapter', async () => {
     await renderApp(<AdminTransfersPage />, { as: await createAdmin() })
     expect(await screen.findByRole('button', { name: 'Chapter filter' })).toBeInTheDocument()

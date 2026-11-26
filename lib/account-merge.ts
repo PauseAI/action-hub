@@ -46,6 +46,7 @@ export const MERGE_REFERENCES = {
   'chapter_deputies.appointed_by_id': 'move',
   'chapter_deputies.volunteer_id': 'refuse',
   'chapter_transfer_requests.decided_by_id': 'move',
+  'chapter_transfer_requests.requested_by_id': 'move',
   'chapter_transfer_requests.volunteer_id': 'move',
   'contact_messages.from_volunteer_id': 'move',
   'contact_messages.to_volunteer_id': 'move',

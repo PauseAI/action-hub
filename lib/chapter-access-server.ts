@@ -1,6 +1,6 @@
 import { Prisma, type Volunteer } from '@/generated/prisma/client'
 import { adminEmails, isSuperAdmin } from './auth'
-import { NO_ACCESS, type ChapterAccess } from './chapter-access'
+import { NO_ACCESS, canAppointDeputies, type ChapterAccess } from './chapter-access'
 import { prisma } from './prisma'
 
 type AccessSubject = Pick<Volunteer, 'id' | 'email' | 'emailConfirmed' | 'isAdmin'>
@@ -112,4 +112,22 @@ export function globalAdminWhere(): Prisma.VolunteerWhereInput {
     emailConfirmed: true,
     OR: adminEmails().map((email) => ({ email: { equals: email, mode: 'insensitive' as const } })),
   }
+}
+
+/**
+ * Whether `access` may take someone out of the staff role they hold: a lead only by a global
+ * admin, who appoints leads; a deputy by their lead or a global admin, who appoint deputies.
+ * Anyone with no staff role may be moved by whoever may move them at all.
+ */
+export async function mayUnseat(
+  access: ChapterAccess,
+  member: { id: number; nationalChapterId: number | null },
+): Promise<boolean> {
+  if (access.globalAdmin || member.nationalChapterId === null) return true
+  const chapter = await prisma.nationalChapter.findUnique({
+    where: { id: member.nationalChapterId },
+    select: { leadId: true, deputies: { where: { volunteerId: member.id }, select: { id: true } } },
+  })
+  if (chapter?.leadId === member.id) return false
+  return !chapter?.deputies.length || canAppointDeputies(access, member.nationalChapterId)
 }

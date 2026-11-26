@@ -40,6 +40,7 @@ const ACTION_LABELS: Record<ChapterAuditAction, string> = {
   APPLICATION_REJECTED: 'rejected an application:',
   APPLICATION_INFO_REQUESTED: 'asked an applicant for more:',
   APPLICATION_REOPENED: 'reopened an application:',
+  TRANSFER_REQUESTED: 'asked to move a member:',
 }
 
 const NONE = ''

@@ -559,7 +559,7 @@ describe('volunteer profile', () => {
     expect(screen.queryByRole('heading', { name: 'Manage' })).toBeNull()
   })
 
-  it("shows a chapter's deputy the member's admin record, and no role controls", async () => {
+  it("shows a chapter's deputy the member's admin record, and only a request to move them", async () => {
     const chapter = await createChapter()
     const member = await createMember(chapter, { name: 'Deputy Viewed' })
     await openProfile(member, await createChapterDeputy(chapter))
@@ -568,7 +568,13 @@ describe('volunteer profile', () => {
       'href',
       `/admin/volunteers/${member.id}`,
     )
-    expect(within(panel).queryByRole('group', { name: 'Role and access' })).toBeNull()
+    // Of the role controls, a deputy may only ask to move the member.
+    const roles = within(panel).getByRole('group', { name: 'Role and access' })
+    expect(
+      within(roles)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(['Ask to move to another chapter'])
     expect(within(panel).queryByRole('button', { name: 'Remove picture' })).toBeNull()
   })
 
@@ -706,6 +712,111 @@ describe('volunteer profile', () => {
     expect(screen.queryByRole('heading', { name: 'Manage' })).toBeNull()
   })
 
+  it("lets a chapter's deputy ask another chapter to take a member, then withdraw it", async () => {
+    const [home, other] = [await createChapter(), await createChapter()]
+    const member = await createMember(home, { name: 'Sent On' })
+    await openProfile(member, await createChapterDeputy(home))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ask to move to another chapter' }))
+    const dialog = dialogNamed('Move Sent On on?')
+    expect(dialog).toHaveTextContent('The chapter you choose is asked to take them.')
+    expect(within(dialog).getByRole('button', { name: 'Ask' })).toBeDisabled()
+    const select = within(dialog).getByLabelText('Move to')
+    await within(select).findByRole('option', { name: other.name })
+    expect(within(select).queryByRole('option', { name: home.name })).toBeNull()
+    await userEvent.selectOptions(select, String(other.id))
+    expect(dialog).toHaveTextContent(`The ${other.name} chapter's staff are asked.`)
+    await userEvent.type(within(dialog).getByLabelText('Why (optional)'), 'Moved to Lyon')
+    await confirmIn(dialog, 'Ask')
+    await screen.findByText(`Asked: ${other.name}'s move for Sent On is waiting for an answer`)
+    expect(
+      await screen.findByText(`Waiting: a move from ${home.name} to ${other.name}, asked by`, {
+        exact: false,
+      }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Accept move' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Withdraw request' }))
+    await screen.findByText('Request withdrawn')
+    await screen.findByRole('button', { name: 'Ask to move to another chapter' })
+  })
+
+  it("lets a chapter's lead move a member to the holding pool at once", async () => {
+    const chapter = await createChapter()
+    const member = await createMember(chapter, { name: 'Pool Bound' })
+    await openProfile(member, await createChapterLead(chapter))
+    await userEvent.click(screen.getByRole('button', { name: 'Ask to move to another chapter' }))
+    const dialog = dialogNamed('Move Pool Bound on?')
+    await userEvent.selectOptions(within(dialog).getByLabelText('Move to'), 'pool')
+    expect(dialog).toHaveTextContent('Pool Bound moves out at once and is told.')
+    expect(within(dialog).queryByLabelText('Why (optional)')).toBeNull()
+    await confirmIn(dialog, 'Move to holding pool')
+    await screen.findByText('Pool Bound is in the holding pool')
+    expect(await prisma.volunteer.findUnique({ where: { id: member.id } })).toMatchObject({
+      nationalChapterId: null,
+    })
+  })
+
+  it("lets another chapter's staff ask to bring a member in, which their chapter answers", async () => {
+    const [home, other] = [await createChapter(), await createChapter()]
+    const member = await createMember(home, { name: 'Sought After' })
+    const asker = await createChapterLead(other)
+    const project = await createProject({ nationalChapterId: null, assigneeId: asker.id })
+    await prisma.workItemInterest.create({
+      data: {
+        workItemId: project.id,
+        volunteerId: member.id,
+        status: 'accepted',
+        interestType: 'want_to_contribute',
+      },
+    })
+    await openProfile(member, asker)
+    // Only the request is theirs: no admin record or other controls.
+    expect(screen.queryByRole('link', { name: 'Admin record' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: `Ask to bring into ${other.name}` }))
+    const dialog = dialogNamed(`Bring Sought After into ${other.name}?`)
+    expect(dialog).toHaveTextContent(`The ${home.name} chapter's lead or deputies are asked.`)
+    await confirmIn(dialog, 'Ask')
+    await screen.findByText(`Asked: ${other.name}'s move for Sought After is waiting for an answer`)
+
+    cleanup()
+    queryClient.clear()
+    await openProfile(member, await createChapterDeputy(home))
+    await userEvent.click(await screen.findByRole('button', { name: 'Decline move' }))
+    await screen.findByText('Declined')
+    await clientAs(asker).chapterTransfers.requestFor({
+      volunteerId: member.id,
+      toChapterId: other.id,
+    })
+    cleanup()
+    queryClient.clear()
+    await openProfile(member, await createChapterLead(home))
+    await userEvent.click(await screen.findByRole('button', { name: 'Accept move' }))
+    await screen.findByText('Moved')
+    expect(await prisma.volunteer.findUnique({ where: { id: member.id } })).toMatchObject({
+      nationalChapterId: other.id,
+    })
+  })
+
+  it('says the global admins are asked to bring someone in from the holding pool', async () => {
+    const chapter = await createChapter()
+    const pooled = await createVolunteer({ name: 'From The Pool' })
+    const asker = await createChapterDeputy(chapter)
+    const project = await createProject({ nationalChapterId: null, assigneeId: asker.id })
+    await prisma.workItemInterest.create({
+      data: {
+        workItemId: project.id,
+        volunteerId: pooled.id,
+        status: 'accepted',
+        interestType: 'want_to_contribute',
+      },
+    })
+    await openProfile(pooled, asker)
+    await userEvent.click(screen.getByRole('button', { name: `Ask to bring into ${chapter.name}` }))
+    expect(dialogNamed(`Bring From The Pool into ${chapter.name}?`)).toHaveTextContent(
+      'The global admins, who look after the holding pool, are asked.',
+    )
+  })
+
   it("shows a member's history to their chapter's staff once opened", async () => {
     const chapter = await createChapter()
     const lead = await createChapterLead(chapter, { name: 'History Lead' })
@@ -772,6 +883,7 @@ describe('volunteer profile', () => {
       'APPLICATION_REJECTED',
       'APPLICATION_REOPENED',
       'APPLICATION_APPROVED',
+      'TRANSFER_REQUESTED',
     ] as const
     await prisma.chapterAuditEvent.createMany({
       data: actions.map((action) => ({
@@ -816,6 +928,7 @@ describe('volunteer profile', () => {
       'rejected their application',
       'reopened their application',
       'approved their application',
+      `asked, for ${at}, to move them`,
       'approved their move to the holding pool',
       'removed them as a deputy of a chapter since closed',
     ]) {

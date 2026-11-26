@@ -45,9 +45,9 @@ function AdminTransfersPageContent() {
     <main className="container py-5 pb-15">
       <H1>Chapter moves</H1>
       <P className="text-text-light">
-        Members moving country ask to join the chapter they are moving to. Moving takes them out of
-        their old chapter&apos;s local group and staff, but not off the projects and teams they are
-        on.
+        Members moving country ask to join the chapter they are moving to, and chapter leads and
+        deputies ask each other to take a member on or let one go. Moving takes them out of their
+        old chapter&apos;s local group and staff, but not off the projects and teams they are on.
       </P>
       {user.isAdmin && (
         <div className="mb-5">
@@ -67,7 +67,17 @@ function AdminTransfersPageContent() {
                 {r.fromChapterName ?? 'the holding pool'} to {countryLabel(r.toCountry)}
                 {r.toChapterName ? '' : ' (no chapter yet)'}
               </P>
-              <P className="text-text-light text-sm m-0">Asked {formatDate(r.createdAt)}</P>
+              <P className="text-text-light text-sm m-0">
+                {r.requestedBy ? (
+                  <>
+                    <PersonName id={r.requestedBy.id} name={r.requestedBy.name} />{' '}
+                    {r.kind === 'BRING' ? 'asked to bring them in' : 'asked you to take them'}
+                  </>
+                ) : (
+                  'They asked'
+                )}{' '}
+                on {formatDate(r.createdAt)}
+              </P>
               {r.reason && <P className="mt-2 mb-0">{r.reason}</P>}
               <div className="flex gap-3 mt-3">
                 <Button

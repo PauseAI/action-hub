@@ -643,3 +643,93 @@ describe('volunteers.getById endorsements', () => {
     expect(await verifiedBy(elsewhere)).toEqual([null])
   })
 })
+
+describe('volunteers.getById move', () => {
+  const moveOf = async (viewer: Parameters<typeof clientAs>[0], id: number) =>
+    (await clientAs(viewer).volunteers.getById({ id })).move
+
+  it("offers a chapter's staff to send their member on, and another chapter's to bring them in", async () => {
+    const [home, other] = [await createChapter(), await createChapter()]
+    const member = await createMember(home, { consentMakeProfileVisibleInDirectory: true })
+    const deputy = await createChapterDeputy(home)
+    expect(await moveOf(deputy, member.id)).toEqual({
+      send: true,
+      toPool: true,
+      bringInto: null,
+      pending: null,
+    })
+    // A global admin moves people directly, so is offered no request.
+    expect(await moveOf(await createAdmin(), member.id)).toBeNull()
+    expect(await moveOf(await createMember(home), member.id)).toBeNull()
+    expect(await moveOf(deputy, deputy.id)).toBeNull()
+
+    // Another chapter's lead who can see the member (they share a project) may ask for them.
+    const otherLead = await createChapterLead(other, { name: 'Other Lead' })
+    const project = await createProject({ nationalChapterId: null, assigneeId: otherLead.id })
+    await prisma.workItemInterest.create({
+      data: {
+        workItemId: project.id,
+        volunteerId: member.id,
+        status: 'accepted',
+        interestType: 'want_to_contribute',
+      },
+    })
+    expect(await moveOf(otherLead, member.id)).toEqual({
+      send: false,
+      toPool: false,
+      bringInto: { id: other.id, name: other.name },
+      pending: null,
+    })
+
+    // Once asked, both sides see it waiting: one may answer, the other withdraw.
+    await clientAs(otherLead).chapterTransfers.requestFor({
+      volunteerId: member.id,
+      toChapterId: other.id,
+    })
+    const waiting = {
+      kind: 'BRING',
+      fromChapterName: home.name,
+      toChapterName: other.name,
+      requestedByName: 'Other Lead',
+    }
+    expect((await moveOf(deputy, member.id))?.pending).toMatchObject({
+      ...waiting,
+      canAnswer: true,
+      canWithdraw: false,
+    })
+    expect((await moveOf(otherLead, member.id))?.pending).toMatchObject({
+      ...waiting,
+      canAnswer: false,
+      canWithdraw: true,
+    })
+    // A third chapter's staff who can see the member see nothing of it, nor may ask meanwhile.
+    const third = await createChapterLead(await createChapter())
+    await prisma.workItemInterest.create({
+      data: {
+        workItemId: (await createProject({ nationalChapterId: null, assigneeId: third.id })).id,
+        volunteerId: member.id,
+        status: 'accepted',
+        interestType: 'want_to_contribute',
+      },
+    })
+    expect(await moveOf(third, member.id)).toBeNull()
+  })
+
+  it('offers no move of a lead or deputy to staff who did not appoint them', async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter)
+    const [deputy, other] = [await createChapterDeputy(chapter), await createChapterDeputy(chapter)]
+    expect(await moveOf(deputy, lead.id)).toBeNull()
+    expect(await moveOf(deputy, other.id)).toBeNull()
+    expect(await moveOf(lead, deputy.id)).toMatchObject({ send: true, toPool: true })
+  })
+
+  it('offers no request for an applicant or a duplicate, only the move to the pool', async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter)
+    const applicant = await createMember(chapter, { approvalStatus: 'pending' })
+    expect(await moveOf(lead, applicant.id)).toMatchObject({ send: false, toPool: true })
+    const pooled = await createVolunteer()
+    expect(await moveOf(await createAdmin(), pooled.id)).toBeNull()
+  })
+})

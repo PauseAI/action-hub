@@ -13,12 +13,13 @@ import { H2, H3 } from '@/components/Heading'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
+import Textarea from '@/components/ui/Textarea'
 import PersonName from '@/components/PersonName'
 import { formatDate } from '@/lib/format-date'
 import type { ChapterAuditAction } from '@/generated/prisma/enums'
-import Textarea from '@/components/ui/Textarea'
 
 export type Manage = NonNullable<InferRouterOutputs<AppRouter>['volunteers']['getById']['manage']>
+export type Move = NonNullable<InferRouterOutputs<AppRouter>['volunteers']['getById']['move']>
 
 type Member = {
   id: number
@@ -274,6 +275,7 @@ const DONE_TO_THEM: Record<ChapterAuditAction, (chapter: string) => string> = {
   APPLICATION_REJECTED: () => 'rejected their application',
   APPLICATION_REOPENED: () => 'reopened their application',
   APPLICATION_APPROVED: () => 'approved their application',
+  TRANSFER_REQUESTED: (c) => `asked, for ${c}, to move them`,
 }
 
 const INTO_POOL = new Set<ChapterAuditAction>([
@@ -631,20 +633,179 @@ function MoveChapter({
 }
 
 /**
+ * A chapter's lead or deputies ask another chapter to take their member, or move them to the
+ * holding pool at once; another chapter's staff ask to bring them in. The other side answers.
+ */
+function AskToMove({ member, move }: { member: Member; move: Move }) {
+  const [target, setTarget] = useState('')
+  const [reason, setReason] = useState('')
+  const dialog = useDialog(() => {
+    setTarget('')
+    setReason('')
+  })
+  const { data } = useQuery({
+    ...orpc.chapters.list.queryOptions(),
+    enabled: dialog.open && move.send,
+  })
+  const ask = useMutation({
+    ...orpc.chapterTransfers.requestFor.mutationOptions(),
+    ...useManaged(dialog.close),
+  })
+  const bring = move.bringInto
+  const chapters = (data ?? []).filter((c) => c.name !== member.chapterName)
+  const chosen = chapters.find((c) => String(c.id) === target)
+  const toPool = target === 'pool'
+  return (
+    <>
+      <Button variant="secondary" size="sm" onClick={dialog.show}>
+        {bring ? `Ask to bring into ${bring.name}` : 'Ask to move to another chapter'}
+      </Button>
+      <ConfirmDialog
+        id="ask-move-dialog"
+        isOpen={dialog.open}
+        title={bring ? `Bring ${member.name} into ${bring.name}?` : `Move ${member.name} on?`}
+        body={
+          <div className="grid gap-3">
+            {bring ? (
+              <p className="m-0">
+                {member.chapterName
+                  ? `The ${member.chapterName} chapter's lead or deputies are asked.`
+                  : 'The global admins, who look after the holding pool, are asked.'}{' '}
+                {member.name} moves once they agree, and is told then.
+              </p>
+            ) : (
+              <>
+                <div>
+                  <FormLabel htmlFor="ask-move-to">Move to</FormLabel>
+                  <Select
+                    id="ask-move-to"
+                    value={target}
+                    onChange={(e) => setTarget(e.target.value)}
+                  >
+                    <option value="">Choose a chapter…</option>
+                    {chapters.map((c) => (
+                      <option key={c.id} value={String(c.id)}>
+                        {c.name}
+                      </option>
+                    ))}
+                    {move.toPool && <option value="pool">Holding pool (no chapter)</option>}
+                  </Select>
+                </div>
+                <p className="m-0">
+                  {toPool
+                    ? `${member.name} moves out at once and is told. They lose any staff role and local group, and keep their projects and teams.`
+                    : chosen
+                      ? `The ${chosen.name} chapter's staff are asked. ${member.name} moves once they agree, and is told then.`
+                      : 'The chapter you choose is asked to take them.'}
+                </p>
+              </>
+            )}
+            {!toPool && (
+              <div>
+                <FormLabel htmlFor="ask-move-reason">Why (optional)</FormLabel>
+                <Textarea
+                  id="ask-move-reason"
+                  rows={2}
+                  maxLength={1000}
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
+        }
+        confirmLabel={toPool ? 'Move to holding pool' : 'Ask'}
+        confirmDisabled={!bring && !chosen && !toPool}
+        busy={ask.isPending}
+        busyLabel="Saving…"
+        onConfirm={() =>
+          ask.mutate({
+            volunteerId: member.id,
+            toChapterId: bring ? bring.id : toPool ? null : Number(target),
+            reason: reason.trim() || null,
+          })
+        }
+        onClose={dialog.close}
+      />
+    </>
+  )
+}
+
+/** A move already waiting: who asked, and the answer or withdrawal this viewer may give. */
+function PendingMove({
+  member,
+  pending,
+}: {
+  member: Member
+  pending: NonNullable<Move['pending']>
+}) {
+  const options = useManaged(() => {})
+  const decide = useMutation({ ...orpc.chapterTransfers.decide.mutationOptions(), ...options })
+  const withdraw = useMutation({ ...orpc.chapterTransfers.withdraw.mutationOptions(), ...options })
+  const from = pending.fromChapterName ?? 'the holding pool'
+  const to = pending.toChapterName ?? 'the holding pool'
+  const who = pending.requestedByName ?? member.name
+  const busy = decide.isPending || withdraw.isPending
+  return (
+    <div className="w-full">
+      <p className="m-0 mb-2 text-sm">
+        Waiting: a move from {from} to {to}, asked by {who}.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {pending.canAnswer && (
+          <>
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() => decide.mutate({ id: pending.id, approve: true })}
+            >
+              Accept move
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => decide.mutate({ id: pending.id, approve: false })}
+            >
+              Decline move
+            </Button>
+          </>
+        )}
+        {pending.canWithdraw && (
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={busy}
+            onClick={() => withdraw.mutate({ id: pending.id })}
+          >
+            Withdraw request
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
  * Everything the viewer may do to this member, grouped, each control shown only when the server
- * says they may (`manage` from `volunteers.getById`). Nothing renders without it.
+ * says they may (`manage` and `move` from `volunteers.getById`).
  */
 export default function MemberManage({
   member,
   manage,
+  move,
   hasPicture,
 }: {
   member: Member
-  manage: Manage
+  /** Null for staff of another chapter, who may only ask to bring the member in. */
+  manage: Manage | null
+  move: Move | null
   hasPicture: boolean
 }) {
-  const { chapterDeputy, chapterLead, coordinator, moveChapter } = manage
-  const hasRoles = chapterDeputy || chapterLead || coordinator || moveChapter
+  const { chapterDeputy, chapterLead, coordinator, moveChapter } = manage ?? {}
+  const asks = move && (move.send || move.toPool || move.bringInto) && !move.pending
+  const hasRoles =
+    chapterDeputy || chapterLead || coordinator || moveChapter || asks || move?.pending
   return (
     <section aria-labelledby="manage-heading" className={`${SECTION_CARD} mb-4`}>
       <H2 id="manage-heading" className="mt-0">
@@ -664,10 +825,12 @@ export default function MemberManage({
             )}
             {coordinator && <CoordinatorControl member={member} control={coordinator} />}
             {moveChapter && <MoveChapter member={member} control={moveChapter} />}
+            {asks && <AskToMove member={member} move={move} />}
+            {move?.pending && <PendingMove member={member} pending={move.pending} />}
           </div>
         </div>
       )}
-      {manage.work && (
+      {manage?.work && (
         <div role="group" aria-labelledby="manage-work" className="mb-4">
           <H3 id="manage-work">Work</H3>
           <div className="flex flex-wrap gap-2">
@@ -677,16 +840,18 @@ export default function MemberManage({
           </div>
         </div>
       )}
-      <div role="group" aria-labelledby="manage-account">
-        <H3 id="manage-account">Account</H3>
-        <div className="flex flex-wrap gap-2">
-          <Button href={`/admin/volunteers/${member.id}`} variant="secondary" size="sm">
-            Admin record
-          </Button>
-          {hasPicture && <RemovePicture member={member} />}
+      {manage && (
+        <div role="group" aria-labelledby="manage-account">
+          <H3 id="manage-account">Account</H3>
+          <div className="flex flex-wrap gap-2">
+            <Button href={`/admin/volunteers/${member.id}`} variant="secondary" size="sm">
+              Admin record
+            </Button>
+            {hasPicture && <RemovePicture member={member} />}
+          </div>
         </div>
-      </div>
-      <MemberHistory member={member} />
+      )}
+      {manage && <MemberHistory member={member} />}
     </section>
   )
 }
