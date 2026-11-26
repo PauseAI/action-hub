@@ -5,10 +5,19 @@ import { logger } from '@/lib/logger'
 import { dismissDuplicatePair, findDuplicatePairs } from '@/lib/duplicate-accounts'
 import { adminProcedure, staffProcedure } from '../../procedures'
 import { canAdminChapter, type ChapterAccess } from '@/lib/chapter-access'
+import { accountOverlap, mailboxKey, mayMerge, sameConfirmedMailbox } from '@/lib/account-overlap'
+import { holdingRoles } from '@/lib/account-merge'
+import {
+  approveStaffMerge,
+  finishStaffMerge,
+  requestStaffMerge,
+  withdrawStaffMerge,
+} from '@/lib/staff-merge'
 import {
   ChapterAuditAction,
   InterestStatus,
   ProjectStatus,
+  StaffMergeGate,
   WorkItemType,
 } from '@/generated/prisma/enums'
 import { audit } from '@/lib/chapter-roles'
@@ -31,6 +40,18 @@ const EndorsementInputSchema = z.object({
   sourceId: z.number().int().optional().nullable(),
   notes: z.string().optional().nullable(),
 })
+
+const MERGE_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  emailConfirmed: true,
+  nationalChapterId: true,
+  discordHandle: true,
+  signalNumber: true,
+  whatsappNumber: true,
+  duplicateOfId: true,
+} as const
 
 /** Throws unless the volunteer is in a chapter the caller runs. */
 async function assertRunsVolunteer(access: ChapterAccess, volunteerId: number) {
@@ -262,6 +283,156 @@ export const adminVolunteersRouter = {
         },
       })
       return { message: 'Skill endorsed' }
+    }),
+
+  /**
+   * The accounts this one could be merged with, for the merge dialog: marked as its duplicates or
+   * it as theirs, or suggested by findDuplicatePairs; ones the viewer may merge (`mayMerge`), that
+   * share more than a name (`isTelling`), and not recorded as different people. Each says which
+   * side must be kept, when one holds a role that a merge cannot take away.
+   */
+  mergeCandidates: staffProcedure
+    .input(z.object({ volunteerId: z.number().int() }))
+    .handler(async ({ input, context }) => {
+      const { access } = context
+      const self = await prisma.volunteer.findFirst({
+        where: { id: input.volunteerId, deletedAt: null },
+        select: MERGE_SELECT,
+      })
+      if (!self || !canAdminChapter(access, self.nationalChapterId)) {
+        throw new ORPCError('NOT_FOUND', { message: 'Volunteer not found' })
+      }
+      if (!access.globalAdmin && isSuperAdmin(self)) return []
+      const mailbox = mailboxKey(self.email)
+      const [marked, pairs, distinct, sameMailbox] = await Promise.all([
+        prisma.volunteer.findMany({
+          where: {
+            deletedAt: null,
+            OR: [{ duplicates: { some: { id: self.id } } }, { duplicateOfId: self.id }],
+          },
+          select: { id: true },
+        }),
+        findDuplicatePairs(self.id),
+        prisma.distinctAccountPair.findMany({
+          where: { OR: [{ volunteerAId: self.id }, { volunteerBId: self.id }] },
+          select: { volunteerAId: true, volunteerBId: true },
+        }),
+        // Only Gmail lets two addresses reach one mailbox (mailboxKey); elsewhere they are unique.
+        mailbox?.endsWith('@gmail.com')
+          ? prisma.$queryRaw<{ id: number }[]>`
+              SELECT id FROM volunteers
+              WHERE deleted_at IS NULL AND id <> ${self.id}
+                AND split_part(lower(email), '@', 2) IN ('gmail.com', 'googlemail.com')
+                AND regexp_replace(split_part(split_part(lower(email), '@', 1), '+', 1), '\\.', '', 'g')
+                  = ${mailbox.split('@')[0]}`
+          : [],
+      ])
+      const apart = new Set(distinct.flatMap((d) => [d.volunteerAId, d.volunteerBId]))
+      const ids = new Set([
+        ...marked.map((m) => m.id),
+        ...pairs.flatMap((p) => [p.a.id, p.b.id]),
+        ...sameMailbox.map((m) => m.id),
+      ])
+      for (const id of [self.id, context.volunteer.id, ...apart]) ids.delete(id)
+      const others = await prisma.volunteer.findMany({
+        where: { id: { in: [...ids] }, deletedAt: null },
+        select: { ...MERGE_SELECT, chapter: { select: { name: true } } },
+      })
+      const roles = await holdingRoles([self.id, ...others.map((o) => o.id)])
+      const candidates = []
+      for (const other of others) {
+        const overlap = accountOverlap(self, other)
+        if (!mayMerge(access, self, other)) continue
+        if (!access.globalAdmin && isSuperAdmin(other)) continue
+        // Without both addresses confirmed only a global admin can see it through.
+        if (!access.globalAdmin && !(self.emailConfirmed && other.emailConfirmed)) continue
+        if (roles.has(self.id) && roles.has(other.id)) continue
+        candidates.push({
+          id: other.id,
+          name: other.name,
+          chapterName: other.chapter?.name ?? null,
+          overlap,
+          /** Which must be kept, as a role goes with its account; null leaves it to the viewer. */
+          mustKeep: roles.has(self.id)
+            ? ('this' as const)
+            : roles.has(other.id)
+              ? ('other' as const)
+              : null,
+          /** Which to keep by default: the one not marked as a duplicate. */
+          keepOther: self.duplicateOfId === other.id,
+          /** Proof is asked for first, unless both addresses reach one confirmed mailbox. */
+          gated: !sameConfirmedMailbox(self, other),
+        })
+      }
+      return candidates
+    }),
+
+  /**
+   * Folds one account into another (lib/account-merge.ts) for a global admin, or for the lead of
+   * the chapter both accounts are in, when the two share more than a name (`isTelling`) and are
+   * not recorded as different people. It signs in with a confirmed address where only one is.
+   * Both mailboxes are told, and it is written to the audit log.
+   */
+  merge: staffProcedure
+    .input(z.object({ keptId: z.number().int(), mergedId: z.number().int() }))
+    .handler(async ({ input, context }) => {
+      const { access } = context
+      const actor = context.volunteer
+      const [kept, merged] = await Promise.all(
+        [input.keptId, input.mergedId].map((id) =>
+          prisma.volunteer.findFirst({ where: { id, deletedAt: null }, select: MERGE_SELECT }),
+        ),
+      )
+      if (!kept || !merged || !mayMerge(access, kept, merged)) {
+        throw new ORPCError('NOT_FOUND', { message: 'Account not found' })
+      }
+      if ([kept.id, merged.id].includes(actor.id)) {
+        throw new ORPCError('BAD_REQUEST', {
+          message: 'Merge your own accounts from your settings',
+        })
+      }
+      if (!access.globalAdmin && [kept, merged].some(isSuperAdmin)) {
+        throw new ORPCError('FORBIDDEN', { message: "Only a global admin merges a global admin's" })
+      }
+      const [volunteerAId, volunteerBId] = [kept.id, merged.id].sort((x, y) => x - y)
+      const apart = await prisma.distinctAccountPair.count({
+        where: { volunteerAId, volunteerBId },
+      })
+      if (apart) {
+        throw new ORPCError('BAD_REQUEST', {
+          message: 'These accounts are on record as two different people',
+        })
+      }
+      if (!sameConfirmedMailbox(kept, merged)) {
+        const gate = await requestStaffMerge(kept, merged, {
+          id: actor.id,
+          globalAdmin: access.globalAdmin,
+        })
+        return {
+          message:
+            gate === StaffMergeGate.MAILBOXES
+              ? `Sent ${kept.name} a link at each address; they merge once both are followed`
+              : 'Another global admin needs to approve this merge',
+        }
+      }
+      await finishStaffMerge(kept, merged, actor.id, { mailbox: true })
+      return { message: `${merged.name}'s account is merged into ${kept.name}'s` }
+    }),
+
+  /** A second global admin approves a merge waiting on one (lib/staff-merge.ts). */
+  approveMerge: adminProcedure
+    .input(z.object({ id: z.number().int() }))
+    .handler(async ({ input, context }) => {
+      const request = await approveStaffMerge(input.id, context.volunteer.id)
+      return { message: `${request.merged.name}'s account is merged into ${request.kept.name}'s` }
+    }),
+
+  /** A global admin takes back a merge still waiting for proof. */
+  withdrawMerge: adminProcedure
+    .input(z.object({ id: z.number().int() }))
+    .handler(async ({ input }) => {
+      await withdrawStaffMerge(input.id)
+      return { message: 'Merge request withdrawn' }
     }),
 
   /**

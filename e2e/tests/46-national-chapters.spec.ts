@@ -455,6 +455,33 @@ test.describe('National chapters', () => {
     }
   })
 
+  test('A global admin asks two look-alike accounts to prove they are one person', async ({
+    adminPage,
+    baseUrl,
+    snap,
+  }) => {
+    await ensureChapter(baseUrl, COUNTRY)
+    const name = fake.person().name
+    await createApprovedVolunteerNamed(baseUrl, name)
+    const second = await createApprovedVolunteerNamed(baseUrl, name)
+
+    await adminPage.goto(`${baseUrl}/volunteers/${second.id}`)
+    await adminPage
+      .getByRole('button', { name: 'Merge with another account' })
+      .click({ timeout: 10_000 })
+    const dialog = adminPage.getByRole('dialog', { name: `Merge ${name}'s account with another?` })
+    await dialog.getByRole('radio', { name: /needs proof first/ }).check({ timeout: 10_000 })
+    await snap(adminPage, 'merge accounts dialog')
+    await dialog.getByRole('button', { name: 'Ask for proof' }).click()
+    await expect(getAlert(adminPage)).toContainText(`Sent ${name} a link at each address`, {
+      timeout: 10_000,
+    })
+    await expect(adminPage.getByText(/^Waiting: merging/)).toContainText(
+      'until the links sent to both addresses are followed.',
+      { timeout: 10_000 },
+    )
+  })
+
   test("A chapter lead is turned away from another chapter's page", async ({
     browser,
     baseUrl,

@@ -13,3 +13,4 @@ Fix `e2e/tsconfig.json` and run it from `typecheck`.
 ## Hits
 
 - 2026-10-23: an edit to `e2e/actions/projects.ts` dropped `openProjectMore`; typecheck and lint passed, and three specs failed ten minutes into `check-all`
+- 2026-11-26: a merge e2e passed `{ country }` to createApprovedVolunteerNamed, which takes no such option; typecheck missed it

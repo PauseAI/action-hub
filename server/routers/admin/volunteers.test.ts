@@ -15,14 +15,18 @@ import {
   TEST_PASSWORD,
 } from '@/test/factories'
 import { anon, clientAs } from '@/test/rpc'
+import { emails, linkParam } from '@/test/fakes/email'
+import { rateLimit } from '@/test/fakes/rate-limit'
+import { dismissDuplicatePair } from '@/lib/duplicate-accounts'
+import { finishStaffMerge } from '@/lib/staff-merge'
 import { SUSPENDED_MESSAGE } from '@/lib/suspension'
 import { createSession, getCurrentVolunteer } from '@/lib/auth'
 import { authenticateApiToken, createApiToken } from '@/lib/api-tokens'
-import { emails } from '@/test/fakes/email'
-import { rateLimit } from '@/test/fakes/rate-limit'
 import { withoutAdminRights } from '@/lib/view-as'
 
 const subjects = {
+  merged: 'Your two Action Hub accounts are now one',
+  confirmMerge: 'Are these both your Action Hub accounts?',
   suspended: 'Your Action Hub account is suspended',
   lifted: 'Your Action Hub account is no longer suspended',
 }
@@ -281,6 +285,417 @@ describe('admin.emailPreview', () => {
     }
     await expect(c.admin.emailPreview.preview({ type: 'nope' })).rejects.toMatchObject({
       code: 'NOT_FOUND',
+    })
+  })
+})
+
+describe('admin.volunteers.merge', () => {
+  const merge = (who: Parameters<typeof clientAs>[0], keptId: number, mergedId: number) =>
+    clientAs(who).admin.volunteers.merge({ keptId, mergedId })
+
+  it('merges at once only two confirmed addresses that reach one mailbox, and tells it once', async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter)
+    const kept = await createMember(chapter, { name: 'Sam Twice', email: 'sam.twice@gmail.com' })
+    const second = await createMember(chapter, {
+      name: 'S Twice',
+      email: 'samtwice+old@gmail.com',
+      duplicateOfId: kept.id,
+    })
+    const sent = emails.sent.length
+    // The one email failing does not undo or refuse the merge.
+    emails.failNext()
+
+    expect(await merge(lead, kept.id, second.id)).toEqual({
+      message: "S Twice's account is merged into Sam Twice's",
+    })
+    expect(await prisma.volunteer.findUnique({ where: { id: second.id } })).toMatchObject({
+      mergedIntoId: kept.id,
+      deletedAt: expect.any(Date),
+    })
+    expect(
+      await prisma.chapterAuditEvent.findFirst({
+        where: { action: 'ACCOUNT_MERGED', targetVolunteerId: kept.id },
+      }),
+    ).toMatchObject({
+      actorId: lead.id,
+      nationalChapterId: chapter.id,
+      details: { mergedId: second.id, mailbox: true },
+    })
+    expect(emails.sent.length).toBe(sent)
+    // Merged again the same way, a working send tells the one mailbox once.
+    const third = await createMember(chapter, {
+      name: 'Sam T',
+      email: 'sam.t.wice@gmail.com',
+    })
+    await merge(lead, kept.id, third.id)
+    expect(emails.sent.length).toBe(sent + 1)
+    const notice = emails.lastTo('sam.twice@gmail.com')
+    expect(notice?.subject).toBe(subjects.merged)
+    expect(notice?.html).toContain('Sign in from now on with')
+    expect(notice?.html).toContain('tech-support@pauseai.info')
+  })
+
+  it('merges nothing on a Discord handle or number either account could have typed in', async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter)
+    // Someone sets a member's handle and number on their own account to pass as them.
+    const victim = await createMember(chapter, {
+      name: 'Real Person',
+      email: 'real@example.org',
+      discordHandle: 'real#1',
+      signalNumber: '+44 7700 900222',
+    })
+    const impostor = await createMember(chapter, {
+      name: 'Real Person',
+      email: 'impostor@example.org',
+      discordHandle: 'REAL#1',
+      signalNumber: '447700900222',
+    })
+    expect(await merge(lead, impostor.id, victim.id)).toEqual({
+      message: 'Sent Real Person a link at each address; they merge once both are followed',
+    })
+    // Nothing moved: only both mailboxes confirming would merge them.
+    expect(await prisma.volunteer.findUnique({ where: { id: victim.id } })).toMatchObject({
+      mergedIntoId: null,
+      deletedAt: null,
+    })
+    expect(emails.lastTo('real@example.org')?.subject).toBe(subjects.confirmMerge)
+  })
+
+  it("never puts another account's sign-in onto the one kept", async () => {
+    const chapter = await createChapter()
+    const admin = await createAdmin()
+    // An account with an unconfirmed address, such as a coordinator's, kept over a confirmed one.
+    const coordinator = await createCoordinator(chapter, {
+      name: 'Cora Coord',
+      email: 'cora@example.org',
+      emailConfirmed: false,
+    })
+    const alt = await createMember(chapter, { name: 'Cora Coord', email: 'alt@example.org' })
+    await expect(merge(admin, coordinator.id, alt.id)).rejects.toMatchObject({
+      message: "Keep the account whose address is confirmed: Cora Coord's",
+    })
+    // A second admin's approval keeps the kept account's own address and password.
+    const kept = await createMember(chapter, { name: 'Kit Same', email: 'kit@example.org' })
+    const other = await createMember(chapter, {
+      name: 'Kit Same',
+      email: 'kit.other@example.org',
+      emailConfirmed: false,
+    })
+    const before = await prisma.volunteer.findUniqueOrThrow({ where: { id: kept.id } })
+    await merge(admin, kept.id, other.id)
+    const request = await prisma.staffMergeRequest.findFirstOrThrow({ where: { keptId: kept.id } })
+    await clientAs(await createAdmin()).admin.volunteers.approveMerge({ id: request.id })
+    expect(await prisma.volunteer.findUniqueOrThrow({ where: { id: kept.id } })).toMatchObject({
+      email: before.email,
+      passwordHash: before.passwordHash,
+    })
+    // Only a confirmed address is told; an unconfirmed one may not be the person's.
+    expect(emails.lastTo('kit@example.org')?.subject).toBe(subjects.merged)
+    expect(emails.to('kit.other@example.org')).toEqual([])
+  })
+
+  it('checks again once the accounts are locked', async () => {
+    const chapter = await createChapter()
+    const a = await createMember(chapter, { name: 'Lo Ck', email: 'lock@gmail.com' })
+    const b = await createMember(chapter, { name: 'Lo Ck', email: 'l.ock@gmail.com' })
+    const admin = await createAdmin()
+    // Recorded as two people after the caller looked: the merge is refused, and nothing moves.
+    await dismissDuplicatePair([a.id, b.id], admin.id)
+    await expect(finishStaffMerge(a, b, admin.id, { mailbox: true })).rejects.toMatchObject({
+      message: 'These accounts are on record as two different people',
+    })
+    const c = await createMember(chapter, { name: 'Mo Ved', email: 'moved@gmail.com' })
+    const d = await createMember(chapter, { name: 'Mo Ved', email: 'm.oved@gmail.com' })
+    // One address changed after the caller looked.
+    await prisma.volunteer.update({ where: { id: d.id }, data: { email: 'else@example.org' } })
+    await expect(finishStaffMerge(c, d, admin.id, { mailbox: true })).rejects.toMatchObject({
+      message: 'These accounts no longer share a mailbox',
+    })
+    for (const id of [b.id, d.id]) {
+      expect(await prisma.volunteer.findUnique({ where: { id } })).toMatchObject({
+        deletedAt: null,
+      })
+    }
+    expect(
+      await prisma.chapterAuditEvent.count({ where: { targetVolunteerId: { in: [a.id, c.id] } } }),
+    ).toBe(0)
+  })
+
+  it("refuses anyone else, a pair on record as two people, and the merger's own", async () => {
+    const [chapter, other] = [await createChapter(), await createChapter()]
+    const lead = await createChapterLead(chapter)
+    const a = await createMember(chapter, { name: 'Kim Same', email: 'kim@gmail.com' })
+    const b = await createMember(chapter, { name: 'Kim Other', email: 'k.im@gmail.com' })
+    const elsewhere = await createMember(other, { name: 'Kim Away', email: 'ki.m@gmail.com' })
+    const unconfirmed = await createMember(chapter, { name: 'Kim Same', emailConfirmed: false })
+
+    await expect(merge(await createChapterDeputy(chapter), a.id, b.id)).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    })
+    await expect(merge(lead, a.id, elsewhere.id)).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    await expect(merge(await createMember(chapter), a.id, b.id)).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    })
+    // A lead cannot ask a second admin; both addresses must be confirmed for them.
+    await expect(merge(lead, a.id, unconfirmed.id)).rejects.toMatchObject({
+      message: expect.stringContaining('Both accounts need a confirmed address'),
+    })
+    await expect(merge(lead, lead.id, a.id)).rejects.toMatchObject({
+      message: 'Merge your own accounts from your settings',
+    })
+    await expect(merge(lead, a.id, 999_999)).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    const admin = await createAdmin({ nationalChapterId: chapter.id, country: chapter.country })
+    await expect(merge(lead, a.id, admin.id)).rejects.toMatchObject({ code: 'FORBIDDEN' })
+    await dismissDuplicatePair([a.id, b.id], lead.id)
+    await expect(merge(lead, a.id, b.id)).rejects.toMatchObject({
+      message: 'These accounts are on record as two different people',
+    })
+    // A global admin may merge across chapters.
+    expect(await merge(await createAdmin(), a.id, elsewhere.id)).toMatchObject({
+      message: expect.any(String),
+    })
+  })
+})
+
+describe('admin.volunteers.mergeCandidates', () => {
+  it('offers look-alikes, saying which need proof and which side a role keeps', async () => {
+    const [chapter, other] = [await createChapter(), await createChapter()]
+    const lead = await createChapterLead(chapter)
+    const self = await createMember(chapter, { name: 'Pat Pair', email: 'pat@gmail.com' })
+    const marked = await createMember(chapter, {
+      name: 'Pat Pair',
+      email: 'p.at@gmail.com',
+      duplicateOfId: self.id,
+    })
+    // Same name only: offered, but needs proof. On record as two people: not offered.
+    const namesake = await createMember(chapter, { name: 'Pat Pair' })
+    const apart = await createMember(chapter, { name: 'Pat Pair' })
+    await dismissDuplicatePair([self.id, apart.id], lead.id)
+    const elsewhere = await createMember(other, { name: 'Pat Pair' })
+    // A deputy look-alike: a merge must keep their account.
+    const deputy = await createChapterDeputy(chapter, { name: 'Pat Pair' })
+
+    const forLead = await clientAs(lead).admin.volunteers.mergeCandidates({ volunteerId: self.id })
+    expect(
+      forLead
+        .map((c) => [c.id, c.overlap, c.mustKeep, c.gated])
+        .sort((x, y) => Number(x[0]) - Number(y[0])),
+    ).toEqual(
+      [
+        [marked.id, ['name', 'email'], null, false],
+        [namesake.id, ['name'], null, true],
+        [deputy.id, ['name'], 'other', true],
+      ].sort((x, y) => Number(x[0]) - Number(y[0])),
+    )
+    const fromMarked = await clientAs(lead).admin.volunteers.mergeCandidates({
+      volunteerId: marked.id,
+    })
+    expect(fromMarked.find((c) => c.id === self.id)?.keepOther).toBe(true)
+    const forAdmin = await clientAs(await createAdmin()).admin.volunteers.mergeCandidates({
+      volunteerId: self.id,
+    })
+    expect(forAdmin.map((c) => c.id)).toContain(elsewhere.id)
+    // A deputy merges nothing, and another chapter's lead cannot see the member.
+    expect(
+      await clientAs(await createChapterDeputy(chapter)).admin.volunteers.mergeCandidates({
+        volunteerId: self.id,
+      }),
+    ).toEqual([])
+    await expect(
+      clientAs(await createChapterLead(other)).admin.volunteers.mergeCandidates({
+        volunteerId: self.id,
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+  })
+
+  it('leaves out pairs a lead cannot see through, and never a global admin for a lead', async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter, { name: 'Sole Name' })
+    const member = await createMember(chapter, { name: 'Sole Name' })
+    const unconfirmed = await createMember(chapter, { name: 'Sole Name', emailConfirmed: false })
+    const admin = await createAdmin({
+      name: 'Sole Name',
+      nationalChapterId: chapter.id,
+      country: chapter.country,
+    })
+    const forLead = await clientAs(lead).admin.volunteers.mergeCandidates({
+      volunteerId: member.id,
+    })
+    expect(forLead.map((c) => c.id)).not.toContain(unconfirmed.id)
+    expect(forLead.map((c) => c.id)).not.toContain(admin.id)
+    expect(forLead.map((c) => c.id)).not.toContain(lead.id)
+    // Nor a global admin's own account, from their profile.
+    expect(
+      await clientAs(lead).admin.volunteers.mergeCandidates({ volunteerId: admin.id }),
+    ).toEqual([])
+    expect((await clientAs(lead).volunteers.getById({ id: admin.id })).manage?.merge).toBeNull()
+  })
+
+  it('finds another address for the same Gmail mailbox, whatever the name on it', async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter)
+    const self = await createMember(chapter, { name: 'Ann Gee', email: 'ann.gee@gmail.com' })
+    const alias = await createMember(chapter, { name: 'AG', email: 'anngee+old@googlemail.com' })
+    await createMember(chapter, { name: 'Other', email: 'anngee@example.org' })
+    expect(await clientAs(lead).admin.volunteers.mergeCandidates({ volunteerId: self.id })).toEqual(
+      [expect.objectContaining({ id: alias.id, overlap: ['email'], gated: false })],
+    )
+  })
+
+  it('leaves out a look-alike when both hold a role', async () => {
+    const chapter = await createChapter()
+    const deputy = await createChapterDeputy(chapter, { name: 'Two Roles' })
+    const coordinator = await createCoordinator(chapter, { name: 'Two Roles' })
+    const forAdmin = await clientAs(await createAdmin()).admin.volunteers.mergeCandidates({
+      volunteerId: deputy.id,
+    })
+    expect(forAdmin.map((c) => c.id)).not.toContain(coordinator.id)
+  })
+})
+
+describe('merging accounts that need proof', () => {
+  const ask = (who: Parameters<typeof clientAs>[0], keptId: number, mergedId: number) =>
+    clientAs(who).admin.volunteers.merge({ keptId, mergedId })
+
+  it('asks each address to confirm, and merges once both have', async () => {
+    const chapter = await createChapter()
+    const kept = await createMember(chapter, { name: 'Lee Same', email: 'lee.one@example.org' })
+    const merged = await createMember(chapter, { name: 'Lee Same', email: 'lee.two@example.org' })
+    const admin = await createAdmin()
+
+    expect(await ask(admin, kept.id, merged.id)).toEqual({
+      message: 'Sent Lee Same a link at each address; they merge once both are followed',
+    })
+    const links = ['lee.one@example.org', 'lee.two@example.org'].map((to) => {
+      const sent = emails.lastTo(to)
+      expect(sent?.subject).toBe(subjects.confirmMerge)
+      return linkParam(sent!, 'token')
+    })
+    // One waiting merge per account.
+    await expect(ask(admin, kept.id, merged.id)).rejects.toMatchObject({
+      message: 'Lee Same already has a merge waiting for an answer',
+    })
+    const pending = (await clientAs(admin).volunteers.getById({ id: kept.id })).manage?.merge
+    expect(pending).toMatchObject({
+      pending: { gate: 'MAILBOXES', canApprove: false, canWithdraw: true },
+    })
+
+    expect(await anon().accountMerges.confirmStaff({ token: links[0] })).toMatchObject({
+      merged: false,
+    })
+    // The same link again changes nothing.
+    expect(await anon().accountMerges.confirmStaff({ token: links[0] })).toMatchObject({
+      merged: false,
+    })
+    expect(await anon().accountMerges.confirmStaff({ token: links[1] })).toMatchObject({
+      merged: true,
+    })
+    expect(await prisma.volunteer.findUnique({ where: { id: merged.id } })).toMatchObject({
+      mergedIntoId: kept.id,
+    })
+    expect(
+      await prisma.chapterAuditEvent.findFirst({
+        where: { action: 'ACCOUNT_MERGED', targetVolunteerId: kept.id },
+      }),
+    ).toMatchObject({ actorId: admin.id, details: { mergedId: merged.id, gate: 'MAILBOXES' } })
+    await expect(anon().accountMerges.confirmStaff({ token: links[1] })).rejects.toMatchObject({
+      message: 'This link has expired or was already used',
+    })
+  })
+
+  it('needs a second global admin where an address is unconfirmed, and can be withdrawn', async () => {
+    const chapter = await createChapter()
+    const kept = await createMember(chapter, { name: 'Ray Same' })
+    const merged = await createMember(chapter, { name: 'Ray Same', emailConfirmed: false })
+    const [first, second] = [await createAdmin(), await createAdmin()]
+
+    expect(await ask(first, kept.id, merged.id)).toEqual({
+      message: 'Another global admin needs to approve this merge',
+    })
+    const request = await prisma.staffMergeRequest.findFirstOrThrow({
+      where: { keptId: kept.id },
+    })
+    expect(request).toMatchObject({ gate: 'SECOND_ADMIN', keptToken: null })
+    await expect(
+      clientAs(first).admin.volunteers.approveMerge({ id: request.id }),
+    ).rejects.toMatchObject({ message: 'Another global admin must approve it' })
+    expect(
+      (await clientAs(second).volunteers.getById({ id: merged.id })).manage?.merge?.pending,
+    ).toMatchObject({ canApprove: true })
+    expect(await clientAs(second).admin.volunteers.approveMerge({ id: request.id })).toEqual({
+      message: "Ray Same's account is merged into Ray Same's",
+    })
+    expect(
+      await prisma.chapterAuditEvent.findFirst({
+        where: { action: 'ACCOUNT_MERGED', targetVolunteerId: kept.id },
+      }),
+    ).toMatchObject({
+      actorId: second.id,
+      details: { gate: 'SECOND_ADMIN', approvedById: second.id },
+    })
+    // The merge settles the request with the account it closed; the audit row keeps the record.
+    await expect(
+      clientAs(second).admin.volunteers.approveMerge({ id: request.id }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    // One still open but expired is refused.
+    const c = await createMember(chapter, { name: 'Ida Same' })
+    const d = await createMember(chapter, { name: 'Ida Same', emailConfirmed: false })
+    await ask(first, c.id, d.id)
+    const lapsed = await prisma.staffMergeRequest.findFirstOrThrow({ where: { keptId: c.id } })
+    await prisma.staffMergeRequest.update({
+      where: { id: lapsed.id },
+      data: { expiresAt: new Date(0) },
+    })
+    await expect(
+      clientAs(second).admin.volunteers.approveMerge({ id: lapsed.id }),
+    ).rejects.toMatchObject({ message: 'This request has expired or was answered' })
+
+    // A request may be withdrawn while it waits, and its links then do nothing.
+    const a = await createMember(chapter, { name: 'Wyn Same' })
+    const b = await createMember(chapter, { name: 'Wyn Same' })
+    await ask(first, a.id, b.id)
+    const waiting = await prisma.staffMergeRequest.findFirstOrThrow({ where: { keptId: a.id } })
+    expect(await clientAs(second).admin.volunteers.withdrawMerge({ id: waiting.id })).toEqual({
+      message: 'Merge request withdrawn',
+    })
+    await expect(
+      clientAs(second).admin.volunteers.withdrawMerge({ id: waiting.id }),
+    ).rejects.toMatchObject({ message: 'This request was already answered' })
+    await expect(
+      anon().accountMerges.confirmStaff({ token: waiting.keptToken as string }),
+    ).rejects.toMatchObject({ message: 'This link has expired or was already used' })
+    await expect(
+      clientAs(second).admin.volunteers.approveMerge({ id: 999_999 }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+  })
+
+  it("lets a lead ask a member's two addresses, and lets an expired request be asked again", async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter)
+    const a = await createMember(chapter, { name: 'Gus Same' })
+    const b = await createMember(chapter, { name: 'Gus Same' })
+    expect(await ask(lead, a.id, b.id)).toEqual({
+      message: 'Sent Gus Same a link at each address; they merge once both are followed',
+    })
+    expect(await clientAs(lead).admin.volunteers.mergeCandidates({ volunteerId: a.id })).toEqual([
+      expect.objectContaining({ id: b.id, gated: true, overlap: ['name'] }),
+    ])
+    await prisma.staffMergeRequest.updateMany({
+      where: { keptId: a.id },
+      data: { expiresAt: new Date(0) },
+    })
+    const old = await prisma.staffMergeRequest.findFirstOrThrow({ where: { keptId: a.id } })
+    await expect(
+      anon().accountMerges.confirmStaff({ token: old.keptToken as string }),
+    ).rejects.toMatchObject({ message: 'This link has expired or was already used' })
+    expect(await ask(await createAdmin(), a.id, b.id)).toMatchObject({
+      message: expect.stringContaining('Sent Gus Same a link'),
+    })
+    rateLimit.denyNext()
+    await expect(anon().accountMerges.confirmStaff({ token: 'x' })).rejects.toMatchObject({
+      code: 'TOO_MANY_REQUESTS',
     })
   })
 })

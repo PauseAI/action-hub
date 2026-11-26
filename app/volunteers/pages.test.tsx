@@ -714,6 +714,125 @@ describe('volunteer profile', () => {
     expect(screen.queryByRole('heading', { name: 'Manage' })).toBeNull()
   })
 
+  it('lets a global admin merge a marked duplicate into the account it copies', async () => {
+    const chapter = await createChapter()
+    const kept = await createMember(chapter, { name: 'Real Rae', email: 'rae@gmail.com' })
+    const copy = await createMember(chapter, {
+      name: 'Rae Copy',
+      email: 'r.ae+old@gmail.com',
+      duplicateOfId: kept.id,
+    })
+    await openProfile(copy, await createAdmin())
+
+    await userEvent.click(screen.getByRole('button', { name: 'Merge with another account' }))
+    const dialog = dialogNamed("Merge Rae Copy's account with another?")
+    expect(
+      await within(dialog).findByText('Same mailbox (one address is an alias of the other)'),
+    ).toBeInTheDocument()
+    // Choosing the account it copies keeps that one, and closes this marked duplicate.
+    await userEvent.click(within(dialog).getByRole('radio', { name: /Real Rae/ }))
+    expect(within(dialog).getByLabelText("Real Rae's")).toBeChecked()
+    expect(dialog).toHaveTextContent("Everything moves to Real Rae's account")
+    await userEvent.click(within(dialog).getByLabelText('This account (Rae Copy)'))
+    expect(dialog).toHaveTextContent("Everything moves to Rae Copy's account")
+    await userEvent.click(within(dialog).getByLabelText("Real Rae's"))
+    await confirmIn(dialog, 'Merge accounts')
+    await screen.findByText("Rae Copy's account is merged into Real Rae's")
+    expect(navigation.push).toHaveBeenCalledWith(`/volunteers/${kept.id}`)
+    expect(await prisma.volunteer.findUnique({ where: { id: copy.id } })).toMatchObject({
+      mergedIntoId: kept.id,
+    })
+  })
+
+  it('asks which account when there are several, and stays on a profile that is kept', async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter)
+    const main = await createMember(chapter, { name: 'Multi Mo', email: 'multimo@gmail.com' })
+    await createMember(chapter, { name: 'Mo Two', email: 'multi.mo@gmail.com' })
+    await createMember(chapter, { name: 'Mo Three', email: 'multimo+3@gmail.com' })
+    await openProfile(main, lead)
+    await userEvent.click(screen.getByRole('button', { name: 'Merge with another account' }))
+    const dialog = dialogNamed("Merge Multi Mo's account with another?")
+    expect(dialog).toHaveTextContent('Looking for accounts that look like the same person')
+    await within(dialog).findByRole('radio', { name: /Mo Two/ })
+    expect(dialog).toHaveTextContent('Choose the account that is the same person.')
+    expect(within(dialog).getByRole('button', { name: 'Merge accounts' })).toBeDisabled()
+    await userEvent.click(within(dialog).getByRole('radio', { name: /Mo Three/ }))
+    await confirmIn(dialog, 'Merge accounts')
+    await screen.findByText("Mo Three's account is merged into Multi Mo's")
+    expect(navigation.push).not.toHaveBeenCalled()
+  })
+
+  it('says when no account can be merged, and keeps the side that holds a role', async () => {
+    const chapter = await createChapter()
+    const alone = await createMember(chapter, { name: 'Only One' })
+    await openProfile(alone, await createAdmin())
+    await userEvent.click(screen.getByRole('button', { name: 'Merge with another account' }))
+    expect(await screen.findByText(/No account looks like the same person/)).toBeInTheDocument()
+    cleanup()
+    queryClient.clear()
+    const member = await createMember(chapter, { name: 'Plain Pam', discordHandle: 'pam#4' })
+    await createChapterDeputy(chapter, { name: 'Deputy Pam', discordHandle: 'pam#4' })
+    await openProfile(member, await createAdmin())
+    await userEvent.click(screen.getByRole('button', { name: 'Merge with another account' }))
+    const dialog = dialogNamed("Merge Plain Pam's account with another?")
+    await userEvent.click(await within(dialog).findByRole('radio', { name: /Deputy Pam/ }))
+    expect(within(dialog).getByLabelText("Deputy Pam's")).toBeChecked()
+    expect(within(dialog).getByLabelText('This account (Plain Pam)')).toBeDisabled()
+    expect(dialog).toHaveTextContent('the one that holds a role stays')
+  })
+
+  it('says when the accounts to merge cannot be loaded', async () => {
+    const chapter = await createChapter()
+    const member = await createMember(chapter, { name: 'Gone Soon' })
+    await openProfile(member, await createAdmin())
+    await prisma.volunteer.update({ where: { id: member.id }, data: { deletedAt: new Date() } })
+    await userEvent.click(screen.getByRole('button', { name: 'Merge with another account' }))
+    expect(
+      await screen.findByText('The accounts could not be loaded. Close this and try again.'),
+    ).toBeInTheDocument()
+  })
+
+  it('lets a global admin ask for proof to merge namesakes, and another approve it', async () => {
+    const chapter = await createChapter()
+    const kept = await createMember(chapter, { name: 'Nell Same' })
+    const other = await createMember(chapter, { name: 'Nell Same', emailConfirmed: false })
+    const asker = await createAdmin()
+    await openProfile(kept, asker)
+    await userEvent.click(screen.getByRole('button', { name: 'Merge with another account' }))
+    const dialog = dialogNamed("Merge Nell Same's account with another?")
+    await userEvent.click(await within(dialog).findByRole('radio', { name: /needs proof first/ }))
+    expect(dialog).toHaveTextContent('we first ask for proof')
+    await confirmIn(dialog, 'Ask for proof')
+    await screen.findByText('Another global admin needs to approve this merge')
+    const waiting = await screen.findByText(/^Waiting: merging/)
+    expect(waiting).toHaveTextContent('until another global admin approves it.')
+    expect(screen.queryByRole('button', { name: 'Approve merge' })).toBeNull()
+
+    cleanup()
+    queryClient.clear()
+    await openProfile(kept, await createAdmin())
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve merge' }))
+    await screen.findByText("Nell Same's account is merged into Nell Same's")
+    expect(await prisma.volunteer.findUnique({ where: { id: other.id } })).toMatchObject({
+      mergedIntoId: kept.id,
+    })
+  })
+
+  it('lets a global admin withdraw a merge waiting on the two addresses', async () => {
+    const chapter = await createChapter()
+    const a = await createMember(chapter, { name: 'Ola Same' })
+    const b = await createMember(chapter, { name: 'Ola Same' })
+    const admin = await createAdmin()
+    await clientAs(admin).admin.volunteers.merge({ keptId: a.id, mergedId: b.id })
+    await openProfile(b, admin)
+    const waiting = await screen.findByText(/^Waiting: merging/)
+    expect(waiting).toHaveTextContent('the links sent to both addresses are followed.')
+    await userEvent.click(screen.getByRole('button', { name: 'Withdraw merge request' }))
+    await screen.findByText('Merge request withdrawn')
+    await waitFor(() => expect(screen.queryByText(/^Waiting: merging/)).toBeNull())
+  })
+
   it("lets a chapter's staff sign a member out on every device", async () => {
     const chapter = await createChapter()
     const member = await createMember(chapter, { name: 'Lost Phone' })
@@ -962,6 +1081,7 @@ describe('volunteer profile', () => {
       'SESSIONS_REVOKED',
       'MEMBER_SUSPENDED',
       'MEMBER_UNSUSPENDED',
+      'ACCOUNT_MERGED',
       'TRANSFER_REQUESTED',
     ] as const
     await prisma.chapterAuditEvent.createMany({
@@ -1010,6 +1130,7 @@ describe('volunteer profile', () => {
       'signed them out everywhere',
       'suspended them',
       'lifted their suspension',
+      'merged another account into theirs',
       `asked, for ${at}, to move them`,
       'approved their move to the holding pool',
       'removed them as a deputy of a chapter since closed',

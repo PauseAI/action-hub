@@ -316,6 +316,24 @@ const rowFor: Record<string, (who: Person, other: Person) => Promise<Row>> = {
     prisma.distinctAccountPair.create({
       data: { volunteerAId: (await createVolunteer()).id, volunteerBId: who.id },
     }),
+  'StaffMergeRequest.kept': async (who) =>
+    prisma.staffMergeRequest.create({
+      data: {
+        keptId: who.id,
+        mergedId: (await createVolunteer()).id,
+        gate: 'SECOND_ADMIN',
+        expiresAt: new Date(),
+      },
+    }),
+  'StaffMergeRequest.merged': async (who) =>
+    prisma.staffMergeRequest.create({
+      data: {
+        keptId: (await createVolunteer()).id,
+        mergedId: who.id,
+        gate: 'SECOND_ADMIN',
+        expiresAt: new Date(),
+      },
+    }),
   'EmailVerificationToken.volunteer': (who) =>
     prisma.emailVerificationToken.create({
       data: { volunteerId: who.id, token: `e${nextSeq()}`, expiresAt: new Date() },

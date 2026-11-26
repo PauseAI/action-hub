@@ -14,3 +14,4 @@ Size: S. Kind: small fix.
 
 - 2026-09-24: a debugging round in R-06 and two in R-08 (the owner's buttons, then the "waiting" count)
 - 2026-10-15 (x3): P4-07's task page found no Reopen button after remounting as the owner, then saw the old Done state come back; P4-11's timeline drew the not-done task's Plan menu until `queryClient.clear()`; a task-helpers test's fourth viewer rendered the third viewer's `canAddHelpers`/`eligibleHelpers`
+- 2026-11-25: member-history and member-transfers profile tests remounted as another user and read the last user's History and pending move until `queryClient.clear()`

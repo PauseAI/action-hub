@@ -1,4 +1,5 @@
 import { ORPCError } from '@orpc/server'
+import { SUPPORT_EMAIL } from './support-email'
 import type { Prisma } from '@/generated/prisma/client'
 import { ApprovalStatus, ChapterTransferStatus } from '@/generated/prisma/enums'
 import { prisma } from './prisma'
@@ -29,6 +30,11 @@ export const MERGE_REFERENCES = {
   'account_merge_requests.requester_id': 'delete',
   'account_merges.kept_id': 'move',
   'api_tokens.volunteer_id': 'delete',
+  // A staff merge waiting on either account is settled by this one.
+  'staff_merge_requests.kept_id': 'delete',
+  'staff_merge_requests.merged_id': 'delete',
+  'staff_merge_requests.requested_by_id': 'move',
+  'staff_merge_requests.approved_by_id': 'move',
   'account_merges.merged_id': 'keep',
   'admin_invites.accepted_by_id': 'move',
   'admin_invites.invited_by_id': 'move',
@@ -254,6 +260,40 @@ function signInSource(kept: Account, merged: Account, signInWith: 'kept' | 'merg
 const describe = (v: { id: number; name: string; email: string | null }) =>
   `${v.name} (${v.email ?? `#${v.id}`})`
 
+/** What someone signing in to, or signing up with, an account merged into another is told. */
+export const MERGED_ACCOUNT_MESSAGE = `This account was merged into another. Contact ${SUPPORT_EMAIL} if you can't sign in.`
+
+/** Refuses an address that belongs to an account merged into another, saying so. */
+export async function assertNotMergedAway(email: string) {
+  const merged = await prisma.volunteer.findFirst({
+    where: { email: { equals: email, mode: 'insensitive' }, mergedIntoId: { not: null } },
+    select: { id: true },
+  })
+  if (merged) throw new ORPCError('FORBIDDEN', { message: MERGED_ACCOUNT_MESSAGE })
+}
+
+/**
+ * Which of `ids` hold something a merge refuses to take from the account it closes (the `refuse`
+ * references: a chapter role, coordinating), so that account must be the one kept.
+ */
+export async function holdingRoles(
+  ids: number[],
+  db: Tx | typeof prisma = prisma,
+): Promise<Set<number>> {
+  const refusing = (await volunteerReferences(db)).filter(
+    (r) => (MERGE_REFERENCES as Record<string, string>)[`${r.table}.${r.column}`] === 'refuse',
+  )
+  const held = new Set<number>()
+  for (const ref of refusing) {
+    const rows = await db.$queryRawUnsafe<{ id: number }[]>(
+      `SELECT DISTINCT ${ident(ref.column)} AS id FROM ${ident(ref.table)} WHERE ${ident(ref.column)} = ANY($1::int[])`,
+      ids,
+    )
+    for (const { id } of rows) held.add(id)
+  }
+  return held
+}
+
 /**
  * Folds `mergedId` into `keptId`: everything that references the merged account moves to the
  * kept one (see MERGE_REFERENCES), the kept profile fills its blanks from the merged one, and
@@ -267,6 +307,12 @@ export async function mergeAccounts(
   mergedId: number,
   actorId: number,
   signInWith: 'kept' | 'merged' = 'kept',
+  hooks: {
+    /** Re-checks what the caller decided on, against the two rows once locked. */
+    check?: (tx: Tx) => Promise<void>
+    /** Writes what goes with the merge, such as its audit row, in its transaction. */
+    after?: (tx: Tx) => Promise<void>
+  } = {},
 ) {
   if (keptId === mergedId) throw refused('An account cannot be merged into itself')
   return prisma.$transaction(
@@ -285,6 +331,7 @@ export async function mergeAccounts(
       if (kept.suspendedAt || merged.suspendedAt) {
         throw refused('One of these accounts is suspended. Lift the suspension before merging.')
       }
+      await hooks.check?.(tx)
 
       const references = await volunteerReferences(tx)
       const policyOf = (ref: Reference) =>
@@ -296,16 +343,10 @@ export async function mergeAccounts(
         )
       }
 
-      for (const ref of references.filter((r) => policyOf(r) === 'refuse')) {
-        const [{ count }] = await tx.$queryRawUnsafe<{ count: number }[]>(
-          `SELECT count(*)::int AS count FROM ${ident(ref.table)} WHERE ${ident(ref.column)} = $1`,
-          mergedId,
+      if ((await holdingRoles([mergedId], tx)).size) {
+        throw refused(
+          'The account being merged in holds a chapter role or is a coordinator. A global admin must give the role to the account being kept first.',
         )
-        if (count) {
-          throw refused(
-            'The account being merged in holds a chapter role or is a coordinator. A global admin must give the role to the account being kept first.',
-          )
-        }
       }
 
       // Only one transfer request may wait at a time.
@@ -386,6 +427,7 @@ export async function mergeAccounts(
           },
         ],
       })
+      await hooks.after?.(tx)
       return { merge, kept, merged, signInEmail }
     },
     { timeout: 30_000 },

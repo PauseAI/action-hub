@@ -545,6 +545,7 @@ describe('volunteers.getById manage', () => {
       chapterLead: null,
       coordinator: null,
       moveChapter: null,
+      merge: null,
       removePicture: true,
       signOutEverywhere: { signedIn: true, apiTokens: 0 },
       suspend: { suspension: null },
@@ -568,6 +569,7 @@ describe('volunteers.getById manage', () => {
     expect(await manageOf(lead, member.id)).toEqual({
       ...noRoles,
       chapterDeputy: { chapterId: chapter.id, isDeputy: false },
+      merge: { pending: null },
     })
   })
 
@@ -586,6 +588,7 @@ describe('volunteers.getById manage', () => {
       },
       coordinator: { isCoordinator: false, remit: null },
       moveChapter: { chapterId: chapter.id },
+      merge: { pending: null },
       removePicture: true,
       signOutEverywhere: { signedIn: false, apiTokens: 0 },
       suspend: { suspension: null },

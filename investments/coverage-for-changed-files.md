@@ -13,3 +13,4 @@ An npm script that runs the unit tests with coverage limited to files changed si
 ## Hits
 
 - 2026-10-15 (x2): Phase 3 needed four extra runs for single lines (a cron registry wrapper, a dialog's error toast, an import path no test fed a new field, a chip's null guard), and its UX-review follow-up a fifth (a hint's click handler)
+- 2026-11-25 (x5): each PR in the member-actions series needed an ad-hoc node script over coverage-final.json to see the touched files' uncovered lines

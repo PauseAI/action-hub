@@ -2,6 +2,7 @@ import { suppressAddresses, suppressionKey } from '@/lib/email-suppression'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { logger } from '@/lib/logger'
 import { prisma } from '@/lib/prisma'
+import { MERGED_ACCOUNT_MESSAGE, mergeAccounts } from '@/lib/account-merge'
 import { SUSPENDED_MESSAGE } from '@/lib/suspension'
 import { createApiToken } from '@/lib/api-tokens'
 import {
@@ -506,6 +507,44 @@ describe('forgotPassword / resetPassword', () => {
     await expect(
       anon().auth.resetPassword({ token: 'x', newPassword: 'brand-new-pass' }),
     ).rejects.toMatchObject({ code: 'TOO_MANY_REQUESTS' })
+  })
+})
+
+describe('an address whose account was merged into another', () => {
+  it('says so, and where to get help, wherever it is used to sign in or up', async () => {
+    const kept = await createVolunteer({ email: 'kept@example.org' })
+    const merged = await createVolunteer({ email: 'absorbed@example.org' })
+    await mergeAccounts(kept.id, merged.id, kept.id)
+    const said = { code: 'FORBIDDEN', message: MERGED_ACCOUNT_MESSAGE }
+
+    await expect(
+      anon().auth.login({ email: 'Absorbed@example.org', password: TEST_PASSWORD }),
+    ).rejects.toMatchObject(said)
+    google.accept('absorbed', { email: 'absorbed@example.org', name: 'Absorbed' })
+    await expect(anon().auth.google({ credential: 'absorbed' })).rejects.toMatchObject(said)
+    await expect(
+      anon().auth.signup({
+        name: 'Again',
+        email: 'absorbed@example.org',
+        password: 'a-long-password',
+        bio: 'A biography that is comfortably long enough',
+        country: 'UK',
+        availabilityHoursPerWeek: 2,
+        applicationMessage: 'I would like to help',
+        consentMakeProfileVisibleInDirectory: true,
+        consentContactableByProjectOwners: true,
+      }),
+    ).rejects.toMatchObject(said)
+    const { email: _e, password: _p, name: _n, ...form } = signupInput('unused@example.com')
+    await expect(
+      anon().auth.completeGoogleSignup({ ...form, credential: 'absorbed' }),
+    ).rejects.toMatchObject(said)
+    expect(MERGED_ACCOUNT_MESSAGE).toContain('tech-support@pauseai.info')
+    expect(MERGED_ACCOUNT_MESSAGE).not.toMatch(/•/)
+    // An unknown address is still just a wrong sign-in.
+    await expect(
+      anon().auth.login({ email: 'nobody@example.org', password: TEST_PASSWORD }),
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
   })
 })
 
