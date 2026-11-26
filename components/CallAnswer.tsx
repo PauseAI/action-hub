@@ -1,6 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import type { InferRouterOutputs } from '@orpc/server'
 import type { AppRouter } from '@/server/router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -71,7 +73,73 @@ export function DismissCallButton({ call }: { call: Call }) {
 }
 
 /** The form that answers a call, changes the answer or withdraws it. */
+/**
+ * The answer to a call that carries a request for help: taking the request, or helping on it once
+ * someone has. Letting go of it again happens on the task's page.
+ */
+function RequestAnswer({
+  call,
+  request,
+  onAnswered,
+}: {
+  call: Call
+  request: NonNullable<Call['request']>
+  onAnswered?: () => void
+}) {
+  const showToast = useToast()
+  const refresh = useRefreshCalls()
+  const router = useRouter()
+  const href = `/projects/${request.projectId}/tasks/${request.taskId}`
+  const take = useMutation({
+    ...orpc.calls.takeRequest.mutationOptions(),
+    onSuccess: (data) => {
+      showToast(data.message, 'success')
+      void refresh()
+      onAnswered?.()
+      router.push(href)
+    },
+    onError: (err) => {
+      showToast(errorText(err), 'error')
+      void refresh()
+    },
+  })
+  return (
+    <div className="mt-4">
+      {call.open && (request.canTake || request.canHelp) && (
+        <>
+          <Button
+            size="sm"
+            disabled={take.isPending}
+            onClick={() => take.mutate({ callId: call.id })}
+          >
+            {request.canTake ? 'Take this request' : 'Help on it'}
+          </Button>
+          <P className="text-text-light text-sm mt-2">
+            {`Answering shares your name and email address with ${call.senderName ?? 'the coordinator'}, and ${request.canTake ? 'makes the request yours' : 'makes you one of its helpers'}.`}
+          </P>
+        </>
+      )}
+      <P className="text-sm mt-2">
+        {request.mine
+          ? 'You are on this request. '
+          : !(request.canTake || request.canHelp)
+            ? 'Someone has this request in hand. '
+            : null}
+        <Link className="text-primary-text underline" href={href}>
+          Open the request
+        </Link>
+      </P>
+    </div>
+  )
+}
+
 export function CallAnswer({ call, onAnswered }: { call: Call; onAnswered?: () => void }) {
+  if (call.request)
+    return <RequestAnswer call={call} request={call.request} onAnswered={onAnswered} />
+  return <MessageAnswer call={call} onAnswered={onAnswered} />
+}
+
+function MessageAnswer({ call, onAnswered }: { call: Call; onAnswered?: () => void }) {
   const showToast = useToast()
   const refresh = useRefreshCalls()
   const [message, setMessage] = useState(call.myResponse?.message ?? '')

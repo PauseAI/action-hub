@@ -64,6 +64,8 @@ import HelpersWantedField, {
 import { TERMINAL_STATUSES } from '@/lib/project-status'
 import { SECTION_CARD } from '@/lib/ui-classes'
 import PersonName from '@/components/PersonName'
+import SendRequestAsCall from '@/components/SendRequestAsCall'
+import { canSendCalls } from '@/lib/permissions'
 
 /** "Waiting on 1 of 2.", or that everything it waits on is done; nothing once it is handed in. */
 function waitsOnSummary(waitsOn: WorkItemSummary[], status: string): string | null {
@@ -333,6 +335,18 @@ export default function TaskDetailPage({
               <>
                 {task.isRequest && task.createdByName && (
                   <P className="text-sm m-0 mb-1">Asked by {task.createdByName}</P>
+                )}
+                {task.isRequest && !handedIn(task.status) && canSendCalls(user) && (
+                  <div className="mb-2">
+                    <SendRequestAsCall
+                      request={{
+                        id: task.id,
+                        title: task.title,
+                        description: task.description,
+                        chapterId: task.projectChapterId,
+                      }}
+                    />
+                  </div>
                 )}
                 <TaskDatesSummary
                   className=""

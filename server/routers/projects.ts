@@ -3104,6 +3104,7 @@ export const projectsRouter = {
         projectTitle: project.title,
         projectOwnerId: project.assigneeId,
         isRequest: project.standingRequests,
+        projectChapterId: project.nationalChapterId,
         reviewerId: reviewerOf(project, task),
         projectStatus: project.status,
         projectCompletedAt: project.completedAt,

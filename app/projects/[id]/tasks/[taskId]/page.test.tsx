@@ -9,6 +9,7 @@ import {
   createProject,
   createTask,
   createChapter,
+  createCoordinator,
   createMember,
 } from '@/test/factories'
 import { clientAs } from '@/test/rpc'
@@ -62,6 +63,65 @@ describe('task detail page', () => {
     })
     await mount(own.projectId, own.id, asker)
     expect(within(await submitBox()).queryByText(/will look at it/)).toBeNull()
+  it('lets a coordinator send a request as a call, to its own chapter', async () => {
+    const chapter = await createChapter()
+    const asker = await createMember(chapter)
+    const coordinator = await createCoordinator(chapter)
+    const asked = await clientAs(asker).requests.ask({
+      title: 'Proofread the flyer',
+      description: 'Two pages',
+    })
+    // Whoever asked, not being a coordinator, gets no such button.
+    await mount(asked.projectId, asked.id, asker)
+    await screen.findByText(/^Asked by/)
+    expect(screen.queryByRole('button', { name: 'Send as a call' })).toBeNull()
+    cleanup()
+
+    await mount(asked.projectId, asked.id, coordinator)
+    await userEvent.click(await screen.findByRole('button', { name: 'Send as a call' }))
+    const dialog = within(await screen.findByRole('dialog', { name: 'Send as a call' }))
+    expect(dialog.getByLabelText('Title')).toHaveValue('Proofread the flyer')
+    expect(dialog.getByLabelText('What you are asking for')).toHaveValue('Two pages')
+    expect(await dialog.findByText(`Goes to ${chapter.name}, where it was asked.`)).toBeTruthy()
+    await userEvent.click(dialog.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Send as a call' }))
+    const again = within(await screen.findByRole('dialog', { name: 'Send as a call' }))
+    await userEvent.clear(again.getByLabelText('Title'))
+    await userEvent.type(again.getByLabelText('Title'), 'Proofreader wanted')
+    await userEvent.type(again.getByLabelText('What you are asking for'), ', by Friday')
+    await userEvent.click(again.getByRole('button', { name: 'Send call' }))
+    await screen.findByText('Your call is on its way to volunteers')
+    expect(await prisma.call.findFirstOrThrow({ where: { requestId: asked.id } })).toMatchObject({
+      title: 'Proofreader wanted',
+      body: 'Two pages, by Friday',
+      chapterIds: [chapter.id],
+    })
+  })
+
+  it('lets a coordinator send a global request to the chapters they choose', async () => {
+    const [uk, de] = [await createChapter(), await createChapter()]
+    const asker = await createMember(uk)
+    const coordinator = await createCoordinator(uk)
+    const asked = await clientAs(asker).requests.ask({ title: 'Translate a post', global: true })
+    await mount(asked.projectId, asked.id, coordinator)
+    await userEvent.click(await screen.findByRole('button', { name: 'Send as a call' }))
+    const dialog = within(await screen.findByRole('dialog', { name: 'Send as a call' }))
+    await userEvent.click(await dialog.findByRole('checkbox', { name: de.name }))
+    await userEvent.click(dialog.getByRole('checkbox', { name: uk.name }))
+    await userEvent.click(dialog.getByRole('checkbox', { name: uk.name }))
+    await userEvent.click(dialog.getByRole('button', { name: 'Send call' }))
+    await screen.findByText('Your call is on its way to volunteers')
+    expect(
+      (await prisma.call.findFirstOrThrow({ where: { requestId: asked.id } })).chapterIds,
+    ).toEqual([de.id])
+    // A request done meanwhile cannot be sent.
+    await prisma.workItem.update({ where: { id: asked.id }, data: { status: 'completed' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Send as a call' }))
+    const late = within(await screen.findByRole('dialog', { name: 'Send as a call' }))
+    await userEvent.click(late.getByRole('button', { name: 'Send call' }))
+    await screen.findByText('That request is not waiting for help')
   })
 
   it('lets the assignee start and submit their work from the box on the page', async () => {
