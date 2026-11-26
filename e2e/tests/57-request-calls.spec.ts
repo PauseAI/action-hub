@@ -36,6 +36,7 @@ test.describe('Requests sent as calls', () => {
     await answering.goto(`${baseUrl}/calls`)
     const received = answering.getByRole('region', { name: request })
     await expect(received.getByText(/makes the request yours/)).toBeVisible({ timeout: 10_000 })
+    await snap(answering, 'request call on Calls')
     await received.getByRole('button', { name: 'Take this request' }).click()
     await expect(answering.getByRole('heading', { name: request, level: 1 })).toBeVisible({
       timeout: 10_000,
