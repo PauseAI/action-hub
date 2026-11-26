@@ -12,6 +12,9 @@ import {
   createVolunteer,
 } from '@/test/factories'
 import { clientAs } from '@/test/rpc'
+import { hashEmail } from '@/lib/auth'
+import { emails, linkParam } from '@/test/fakes/email'
+import { rateLimit } from '@/test/fakes/rate-limit'
 
 describe('chapter transfers', () => {
   it("asks the destination chapter's staff, who approve the move", async () => {
@@ -384,5 +387,137 @@ describe('chapter moves staff ask for', () => {
     await expect(clientAs(lead).chapterTransfers.withdraw({ id: own.id })).rejects.toMatchObject({
       code: 'NOT_FOUND',
     })
+  })
+})
+
+describe('chapterTransfers.inviteToChapter', () => {
+  it('sends someone new a link to sign up with the chapter filled in', async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter, { name: 'Inviting Lead' })
+    expect(
+      await clientAs(lead).chapterTransfers.inviteToChapter({
+        chapterId: chapter.id,
+        email: ' New.Person@Example.org ',
+      }),
+    ).toEqual({ message: 'Invite sent to new.person@example.org', existing: null })
+    const sent = emails.lastTo('new.person@example.org')
+    expect(sent?.subject).toBe(
+      `Inviting Lead invited you to join the PauseAI ${chapter.name} chapter`,
+    )
+    expect(linkParam(sent!, 'email')).toBe('new.person@example.org')
+    expect(linkParam(sent!, 'country')).toBe(chapter.country)
+  })
+
+  it('names someone already elsewhere, and asks their chapter to let them come', async () => {
+    const [mine, theirs] = [await createChapter(), await createChapter()]
+    const deputy = await createChapterDeputy(mine, { name: 'Inviting Deputy' })
+    const homeLead = await createChapterLead(theirs)
+    const elsewhere = await createMember(theirs, {
+      name: 'Already Here',
+      email: 'here@example.org',
+    })
+    const invite = (bring = false) =>
+      clientAs(deputy).chapterTransfers.inviteToChapter({
+        chapterId: mine.id,
+        email: 'HERE@example.org',
+        bring,
+        reason: bring ? 'They live here now' : undefined,
+      })
+
+    const sent = emails.sent.length
+    expect(await invite()).toEqual({
+      message: `Already Here is already on Action Hub, in the ${theirs.name} chapter`,
+      existing: { name: 'Already Here', chapterName: theirs.name },
+    })
+    expect(emails.sent.length).toBe(sent)
+    expect(
+      await prisma.chapterTransferRequest.count({ where: { volunteerId: elsewhere.id } }),
+    ).toBe(0)
+
+    // The deputy cannot see their profile, and needs not to.
+    expect((await invite(true)).message).toBe(
+      `Asked: ${mine.name}'s move for Already Here is waiting for an answer`,
+    )
+    expect(
+      await prisma.chapterTransferRequest.findFirst({ where: { volunteerId: elsewhere.id } }),
+    ).toMatchObject({ kind: 'BRING', requestedById: deputy.id, reason: 'They live here now' })
+    const [request] = await clientAs(homeLead).chapterTransfers.list()
+    expect(request.volunteer.id).toBe(elsewhere.id)
+
+    // Someone in the pool is named as being there.
+    await createVolunteer({ name: 'Pool Person', email: 'pool@example.org' })
+    expect(
+      await clientAs(deputy).chapterTransfers.inviteToChapter({
+        chapterId: mine.id,
+        email: 'pool@example.org',
+      }),
+    ).toMatchObject({ existing: { name: 'Pool Person', chapterName: null } })
+  })
+
+  it('names nobody it cannot move, and sends no link that sign-up would refuse', async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter)
+    const other = await createChapter()
+    const invite = (email: string) =>
+      clientAs(lead).chapterTransfers.inviteToChapter({ chapterId: chapter.id, email })
+    const cannotMove = { message: 'This address already has an account that cannot be moved yet' }
+
+    await createMember(other, { email: 'applying@example.org', approvalStatus: 'pending' })
+    await expect(invite('applying@example.org')).rejects.toMatchObject(cannotMove)
+    const kept = await createMember(other)
+    await createMember(other, { email: 'second@example.org', duplicateOfId: kept.id })
+    await expect(invite('second@example.org')).rejects.toMatchObject(cannotMove)
+    await createMember(other, { email: 'closed@example.org', deletedAt: new Date() })
+    await expect(invite('closed@example.org')).rejects.toMatchObject({
+      message: 'This address belonged to an account that has been closed',
+    })
+    await prisma.anonymisedEmail.create({ data: { emailHash: hashEmail('turned@example.org') } })
+    await expect(invite('turned@example.org')).rejects.toMatchObject({
+      message: 'This address was turned down before; a global admin can let them apply again',
+    })
+    await prisma.anonymisedEmail.update({
+      where: { emailHash: hashEmail('turned@example.org') },
+      data: { reapplyAllowedAt: new Date() },
+    })
+    expect((await invite('turned@example.org')).message).toBe('Invite sent to turned@example.org')
+
+    // A send that fails is reported, not passed off as sent.
+    emails.failNext()
+    await expect(invite('unlucky@example.org')).rejects.toMatchObject({
+      message: 'The invite email could not be sent; try again later',
+    })
+
+    // A global admin cannot ask to bring themselves in.
+    const admin = await createAdmin({ nationalChapterId: other.id, country: other.country })
+    await expect(
+      clientAs(admin).chapterTransfers.inviteToChapter({
+        chapterId: chapter.id,
+        email: admin.email as string,
+        bring: true,
+      }),
+    ).rejects.toMatchObject({ message: 'Ask to move yourself from your settings' })
+  })
+
+  it("refuses someone already in the chapter, and anyone who doesn't run it", async () => {
+    const [mine, other] = [await createChapter(), await createChapter()]
+    const lead = await createChapterLead(mine)
+    await createMember(mine, { name: 'Already Ours', email: 'ours@example.org' })
+    const invite = (who: Parameters<typeof clientAs>[0], email = 'someone@example.org') =>
+      clientAs(who).chapterTransfers.inviteToChapter({ chapterId: mine.id, email })
+    await expect(invite(lead, 'ours@example.org')).rejects.toMatchObject({
+      message: `Already Ours is already a member of ${mine.name}`,
+    })
+    await expect(invite(await createChapterLead(other))).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    })
+    await expect(invite(await createMember(mine))).rejects.toMatchObject({ code: 'FORBIDDEN' })
+    await expect(
+      clientAs(await createAdmin()).chapterTransfers.inviteToChapter({
+        chapterId: 999_999,
+        email: 'x@example.org',
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    rateLimit.denyNext()
+    await expect(invite(lead)).rejects.toMatchObject({ code: 'TOO_MANY_REQUESTS' })
   })
 })

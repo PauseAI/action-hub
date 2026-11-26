@@ -13,6 +13,7 @@ import { AccountMergeEmail } from './emails/AccountMergeEmail'
 import { OutreachLoginEmail } from './emails/OutreachLoginEmail'
 import { AdminInviteEmail, type ChapterRoleInvite, roleTitle } from './emails/AdminInviteEmail'
 import { WelcomeEmail } from './emails/WelcomeEmail'
+import { ChapterMemberInviteEmail } from './emails/ChapterMemberInviteEmail'
 import { ProjectNotificationEmail } from './emails/ProjectNotificationEmail'
 import { AdminAlertEmail } from './emails/AdminAlertEmail'
 import { LocalGroupSuggestionEmail } from './emails/LocalGroupSuggestionEmail'
@@ -365,6 +366,48 @@ export async function sendAdminInviteEmail({
     to,
     chapterInviteSubject(invitedBy, invite),
     await buildAdminInviteHtml(inviteUrl, invitedBy, invite),
+  )
+}
+
+export const chapterMemberInviteSubject = (invitedBy: string, chapterName: string) =>
+  `${invitedBy} invited you to join the PauseAI ${chapterName} chapter`
+
+/** The sign-up page, with the invited address and the chapter's country filled in. */
+export const chapterSignupUrl = (email: string, country: string) =>
+  `${env.APP_URL}/signup?${new URLSearchParams({ email, country })}`
+
+export function buildChapterMemberInviteHtml(
+  signupUrl: string,
+  invitedBy: string,
+  chapterName: string,
+): Promise<string> {
+  return render(
+    <ChapterMemberInviteEmail
+      signupUrl={signupUrl}
+      invitedBy={invitedBy}
+      chapterName={chapterName}
+      appUrl={env.APP_URL}
+    />,
+  )
+}
+
+export async function sendChapterMemberInviteEmail({
+  to,
+  invitedBy,
+  chapter,
+}: {
+  to: string
+  invitedBy: string
+  chapter: { name: string; country: string }
+}): Promise<boolean> {
+  return sendEmail(
+    to,
+    chapterMemberInviteSubject(invitedBy, chapter.name),
+    await buildChapterMemberInviteHtml(
+      chapterSignupUrl(to, chapter.country),
+      invitedBy,
+      chapter.name,
+    ),
   )
 }
 

@@ -290,6 +290,41 @@ test.describe('National chapters', () => {
     }
   })
 
+  test('A chapter lead invites someone already in another chapter, and asks to bring them in', async ({
+    browser,
+    baseUrl,
+    snap,
+  }) => {
+    const chapterId = await ensureChapter(baseUrl, COUNTRY)
+    // Austria's chapter is this spec's, shared only with the move above.
+    await ensureChapter(baseUrl, 'Austria')
+    const lead = await createApprovedVolunteer(baseUrl, { country: COUNTRY })
+    await makeChapterStaff(baseUrl, lead.id, chapterId, 'LEAD')
+    const elsewhere = await createApprovedVolunteer(baseUrl, { country: 'Austria' })
+
+    const page = await signedInPage(browser, lead.token)
+    try {
+      await page.goto(`${baseUrl}/admin/chapters/${chapterId}`)
+      const section = page.getByRole('region', { name: 'Invite someone to join' })
+      await section.getByLabel('Their email').fill(elsewhere.email, { timeout: 10_000 })
+      await section.getByRole('button', { name: 'Invite to join' }).click()
+      await expect(section.getByRole('status')).toContainText(
+        `${elsewhere.name} is already on Action Hub, in the Austria chapter.`,
+        { timeout: 10_000 },
+      )
+      await snap(page, 'invite finds someone in another chapter')
+      await section
+        .getByRole('button', { name: `Ask to bring ${elsewhere.name} into Germany` })
+        .click()
+      await expect(getAlert(page)).toContainText(
+        `Asked: Germany's move for ${elsewhere.name} is waiting for an answer`,
+        { timeout: 10_000 },
+      )
+    } finally {
+      await page.context().close()
+    }
+  })
+
   test("A chapter lead verifies a member's skill and invites them to a project from their profile", async ({
     browser,
     baseUrl,

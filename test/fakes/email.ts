@@ -73,7 +73,8 @@ export class MemoryEmailTransport extends EmailTransport {
 
 /** The value of a `?param=` query parameter in the first link of `email` that carries one. */
 export function linkParam(email: OutgoingEmail, param: string): string {
-  const match = email.html.match(new RegExp(`[?&]${param}=([^"&<\\s]+)`))
+  // Rendered HTML writes a link's later `&` as `&amp;`.
+  const match = email.html.match(new RegExp(`(?:\\?|&(?:amp;)?)${param}=([^"&<\\s]+)`))
   if (!match) throw new Error(`no ${param}= link in email "${email.subject}"`)
   return decodeURIComponent(match[1])
 }
