@@ -63,6 +63,8 @@ describe('task detail page', () => {
     })
     await mount(own.projectId, own.id, asker)
     expect(within(await submitBox()).queryByText(/will look at it/)).toBeNull()
+  })
+
   it('lets a coordinator send a request as a call, to its own chapter', async () => {
     const chapter = await createChapter()
     const asker = await createMember(chapter)
