@@ -63,7 +63,7 @@ describe('asking for help', () => {
     const project = await prisma.workItem.findUniqueOrThrow({ where: { id: posted.projectId } })
     expect(project).toMatchObject({ nationalChapterId: null, title: 'Global requests' })
 
-    const feed = await clientAs(elsewhere.taker).quickTasks.available()
+    const feed = await clientAs(elsewhere.taker).requests.feed()
     expect(feed).toContainEqual(
       expect.objectContaining({
         kind: 'request',
@@ -90,7 +90,7 @@ describe('asking for help', () => {
     const elsewhere = await chapterWithPeople()
     const posted = await ask(asker)
     const ids = async (who: { id: number }) =>
-      (await clientAs(who as never).quickTasks.available()).map((t) => t.id)
+      (await clientAs(who as never).requests.feed()).map((t) => t.id)
     expect(await ids(taker)).toContain(posted.id)
     expect(await ids(asker)).not.toContain(posted.id)
     expect(await ids(elsewhere.taker)).not.toContain(posted.id)
@@ -103,7 +103,7 @@ describe('asking for help', () => {
   it('lists a request with helper places once, as a request', async () => {
     const { asker, taker } = await chapterWithPeople()
     const posted = await ask(asker, 'Run a stall', { helpersWanted: 2 })
-    const listed = (await clientAs(taker).quickTasks.available()).filter((t) => t.id === posted.id)
+    const listed = (await clientAs(taker).requests.feed()).filter((t) => t.id === posted.id)
     expect(listed.map((t) => t.kind)).toEqual(['request'])
   })
 

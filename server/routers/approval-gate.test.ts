@@ -57,18 +57,11 @@ describe('a pending volunteer', () => {
     ).rejects.toMatchObject({ code: 'FORBIDDEN' })
   })
 
-  it('cannot claim a quick task', async () => {
-    const qt = await createQuickTask()
-    await expect(clientAs(await pending()).quickTasks.claim({ id: qt.id })).rejects.toMatchObject({
-      code: 'FORBIDDEN',
-    })
-  })
-
   it('cannot browse or view an open quick task, nor read its comments', async () => {
     const qt = await createQuickTask()
     const c = clientAs(await pending())
-    await expect(c.quickTasks.available()).rejects.toMatchObject({ code: 'FORBIDDEN' })
-    await expect(c.quickTasks.get({ id: qt.id })).rejects.toMatchObject({ code: 'FORBIDDEN' })
+    await expect(c.requests.feed()).rejects.toMatchObject({ code: 'FORBIDDEN' })
+    await expect(c.requests.locate({ id: qt.id })).rejects.toMatchObject({ code: 'FORBIDDEN' })
     // The comment thread is a public procedure; the open-and-unclaimed carve-out
     // in canViewWorkItem is what keeps it from leaking.
     await expect(c.workItemComments.list({ workItemId: qt.id })).rejects.toMatchObject({
@@ -139,14 +132,6 @@ describe('an admin, on a pending volunteer', () => {
         taskId: task.id,
         assigneeId: me.id,
       }),
-    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
-  })
-
-  it('cannot assign them a quick task', async () => {
-    const qt = await createQuickTask()
-    const me = await pending()
-    await expect(
-      clientAs(await createAdmin()).quickTasks.assign({ id: qt.id, volunteerId: me.id }),
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
   })
 })

@@ -488,22 +488,7 @@ export const PlatformSettingsSchema = z.object({
   maintenanceMode: z.boolean({ message: 'maintenanceMode must be a boolean' }).optional(),
 })
 
-// ─── Quick tasks ──────────────────────────────────────────────────────────────
-
-export const CreateQuickTaskSchema = WorkItemSchema.pick({
-  title: true,
-  description: true,
-  skillId: true,
-  contextProjectId: true,
-  estimatedHours: true,
-  deadline: true,
-})
-  .partial({ skillId: true, contextProjectId: true, estimatedHours: true, deadline: true })
-  .extend({ ...SUBMISSION_ASK_FIELDS, ...PROJECT_CHAPTER_FIELD })
-
-export const AssignQuickTaskSchema = z.object({
-  volunteerId: z.number().int({ message: 'volunteerId is required' }),
-})
+// ─── Handing in and reviewing work ─────────────────────────────────────────────
 
 /** Handing in a task. At least one of the two is required; `submissionData` checks that. */
 export const SubmitWorkSchema = z.object({
@@ -513,14 +498,6 @@ export const SubmitWorkSchema = z.object({
 
 export const RequestChangesSchema = z.object({
   message: z.string().trim().min(1, { message: 'Say what needs changing' }).max(5000),
-})
-
-export const ReviewQuickTaskSchema = z.object({
-  reviewRating: z.enum(['excellent', 'good', 'needs_improvement'], {
-    error: 'reviewRating must be excellent, good, or needs_improvement',
-  }),
-  reviewNotes: z.string().optional().nullable(),
-  comment: z.string().optional().nullable(),
 })
 
 // ─── Bug reports ──────────────────────────────────────────────────────────────

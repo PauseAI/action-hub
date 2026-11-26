@@ -13,7 +13,7 @@ import {
   createAdmin,
   createProject,
   createTask,
-  createQuickTask,
+  createRequest,
   createSkill,
   createLocalGroup,
   chapterFor,
@@ -167,14 +167,14 @@ describe('volunteer profile', () => {
     })
     const plain = await createSkill({ name: 'Unverified skill' })
     await prisma.volunteerSkill.create({ data: { volunteerId: vol.id, skillId: plain.id } })
-    await createQuickTask({
+    await createRequest(null, {
       title: 'Done task',
       assigneeId: vol.id,
       status: 'completed',
       reviewRating: 'good',
       skillId: skill.id,
     })
-    await createQuickTask({
+    await createRequest(null, {
       title: 'Plain task',
       assigneeId: vol.id,
       status: 'completed',

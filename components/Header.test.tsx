@@ -215,7 +215,7 @@ describe('Header', () => {
   })
 
   it.each([
-    ['/quick-tasks/5', 'Tasks'],
+    ['/tasks', 'Tasks'],
     ['/teams/2', 'People'],
     ['/suggest-team', 'People'],
     ['/templates', 'Projects'],

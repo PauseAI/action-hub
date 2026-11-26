@@ -50,7 +50,6 @@ function AskForHelpDialog({
     onSuccess: (data) => {
       showToast(data.message, 'success')
       void queryClient.invalidateQueries({ queryKey: orpc.requests.key() })
-      void queryClient.invalidateQueries({ queryKey: orpc.quickTasks.available.key() })
       router.push(`/projects/${data.projectId}/tasks/${data.id}`)
     },
     onError: (err: unknown) =>

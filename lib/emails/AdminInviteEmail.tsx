@@ -29,7 +29,7 @@ export function AdminInviteEmail({ inviteUrl, invitedBy, invite, appUrl }: Admin
       <ul>
         <li>Approve new volunteers who sign up in your country</li>
         <li>Review and approve projects your members propose, and start your own</li>
-        <li>Run your chapter&apos;s teams, local groups and Quick Tasks</li>
+        <li>Run your chapter&apos;s teams and local groups</li>
         <li>Start projects from templates shared by every chapter</li>
         {invite.role === 'LEAD' && <li>Appoint deputies to help you</li>}
       </ul>

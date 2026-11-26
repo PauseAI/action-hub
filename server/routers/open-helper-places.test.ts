@@ -29,7 +29,7 @@ async function projectIn(chapter: { id: number; country: string }, title = 'Brie
 }
 
 const places = async (who: { id: number }) =>
-  (await clientAs(who as never).quickTasks.available()).filter((t) => t.kind === 'helper_place')
+  (await clientAs(who as never).requests.feed()).filter((t) => t.kind === 'helper_place')
 
 describe('tasks with open helper places', () => {
   it('lists them on Quick Tasks and Home, with who is asking and who has offered', async () => {
@@ -205,7 +205,7 @@ describe('a featured task that also wants helpers', () => {
     const { project } = await projectIn(uk)
     const me = await createMember(uk)
     const task = await createTask(project.id, { featuredAsQuickTask: true, helpersWanted: 2 })
-    const listed = (await clientAs(me).quickTasks.available()).filter((t) => t.id === task.id)
-    expect(listed.map((t) => t.kind)).toEqual(['project_task'])
+    const listed = (await clientAs(me).requests.feed()).filter((t) => t.id === task.id)
+    expect(listed.map((t) => t.kind)).toEqual(['featured'])
   })
 })

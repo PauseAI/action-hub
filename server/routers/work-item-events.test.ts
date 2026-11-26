@@ -1,12 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { prisma } from '@/lib/prisma'
-import {
-  createAdmin,
-  createProject,
-  createQuickTask,
-  createTask,
-  createVolunteer,
-} from '@/test/factories'
+import { createAdmin, createProject, createTask, createVolunteer } from '@/test/factories'
 import { clientAs } from '@/test/rpc'
 
 /** Every event recorded on a work item, oldest first. */
@@ -392,44 +386,5 @@ describe('schedule writes record an event', () => {
       },
     ])
     expect(await eventsOf(project.id)).toMatchObject([{ kind: 'rescheduled' }])
-  })
-})
-
-describe('Quick Task writes record an event', () => {
-  it('update, assign, unassign, claim, submit, request changes and review', async () => {
-    const admin = await createAdmin()
-    const vol = await createVolunteer()
-    const qt = await createQuickTask({ title: 'Leaflets' })
-    const as = clientAs(admin).quickTasks
-    await as.update({ id: qt.id, title: 'Posters' })
-    await as.assign({ id: qt.id, volunteerId: vol.id })
-    await as.unassign({ id: qt.id })
-    await clientAs(vol).quickTasks.claim({ id: qt.id })
-    await clientAs(vol).quickTasks.submit({ id: qt.id, note: 'Done' })
-    await as.requestChanges({ id: qt.id, message: 'More colour' })
-    await clientAs(vol).quickTasks.submit({ id: qt.id, note: 'Brighter' })
-    await as.review({ id: qt.id, reviewRating: 'good' })
-    expect((await eventsOf(qt.id)).map((e) => [e.actorId, e.kind])).toEqual([
-      [admin.id, 'edited'],
-      [admin.id, 'assigned'],
-      [admin.id, 'released'],
-      [vol.id, 'claimed'],
-      [vol.id, 'submitted'],
-      [admin.id, 'changes_requested'],
-      [vol.id, 'submitted'],
-      [admin.id, 'accepted'],
-    ])
-  })
-
-  it('a lost claim records nothing', async () => {
-    const vol = await createVolunteer()
-    const qt = await createQuickTask({
-      status: 'in_progress',
-      assigneeId: (await createVolunteer()).id,
-    })
-    await expect(clientAs(vol).quickTasks.claim({ id: qt.id })).rejects.toMatchObject({
-      code: 'BAD_REQUEST',
-    })
-    expect(await eventsOf(qt.id)).toEqual([])
   })
 })

@@ -3,6 +3,7 @@ import { hashPassword } from '@/lib/auth'
 import { ApprovalStatus, WorkItemType, ProjectStatus } from '@/generated/prisma/enums'
 import type { Prisma } from '@/generated/prisma/client'
 import { globalAdminEmail } from './admin-emails'
+import { requestsProjectFor } from '@/lib/requests'
 
 let seq = 0
 export const nextSeq = () => ++seq
@@ -69,6 +70,15 @@ export async function createTask(
       ...overrides,
     },
   })
+}
+
+/** A request for help in `chapterId`'s standing project (null: Global requests). */
+export async function createRequest(
+  chapterId: number | null,
+  overrides: Partial<Prisma.WorkItemUncheckedCreateInput> = {},
+) {
+  const project = await prisma.$transaction((tx) => requestsProjectFor(tx, chapterId))
+  return createTask(project.id, overrides)
 }
 
 export async function createQuickTask(

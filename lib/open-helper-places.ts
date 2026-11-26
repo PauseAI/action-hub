@@ -6,7 +6,7 @@ import type { ClaimViewer } from './action-labels'
 
 /**
  * A task with a helper place someone could take now: one item of the list of work open to a
- * volunteer, which Quick Tasks and the Home page show beside other kinds (`kind` tells them
+ * volunteer, which the Tasks page and Home show beside other kinds (`kind` tells them
  * apart).
  */
 export type OpenHelperPlace = {

@@ -2640,9 +2640,9 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                             {task.featuredAsQuickTask && (
                               <span
                                 className="text-xs whitespace-nowrap"
-                                title="Also shown on the quick tasks page"
+                                title="Also shown on the Tasks page"
                               >
-                                ⚡ Quick task
+                                ⚡ Featured
                               </span>
                             )}
                             <DueChip

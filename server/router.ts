@@ -14,7 +14,6 @@ import { localGroupsRouter } from './routers/localGroups'
 import { localGroupSuggestionsRouter } from './routers/localGroupSuggestions'
 import { teamsRouter } from './routers/teams'
 import { teamSuggestionsRouter } from './routers/teamSuggestions'
-import { quickTasksRouter } from './routers/quickTasks'
 import { requestsRouter } from './routers/requests'
 import { dependenciesRouter } from './routers/dependencies'
 import { scheduleRouter } from './routers/schedule'
@@ -77,7 +76,6 @@ export const appRouter = {
   localGroupSuggestions: localGroupSuggestionsRouter,
   teams: teamsRouter,
   teamSuggestions: teamSuggestionsRouter,
-  quickTasks: quickTasksRouter,
   requests: requestsRouter,
   dependencies: dependenciesRouter,
   schedule: scheduleRouter,

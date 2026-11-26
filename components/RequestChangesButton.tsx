@@ -33,8 +33,7 @@ export default function RequestChangesButton({
       showToast(`Sent back to ${assigneeName ?? 'the assignee'} with your message.`, 'success')
       close()
       for (const key of [
-        orpc.quickTasks.get.key(),
-        orpc.quickTasks.list.key(),
+        orpc.requests.key(),
         orpc.projects.getTask.key(),
         orpc.dashboard.get.key(),
       ]) {
@@ -44,16 +43,14 @@ export default function RequestChangesButton({
     onError: (err: unknown) =>
       showToast(err instanceof Error ? err.message : 'Failed to ask for changes', 'error'),
   }
-  const quick = useMutation({ ...orpc.quickTasks.requestChanges.mutationOptions(), ...options })
   const project = useMutation({ ...orpc.projects.requestTaskChanges.mutationOptions(), ...options })
-  const busy = quick.isPending || project.isPending
+  const busy = project.isPending
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     const text = message.trim()
     if (!text) return
-    if (target.kind === 'quick') quick.mutate({ id: target.taskId, message: text })
-    else project.mutate({ projectId: target.projectId, taskId: target.taskId, message: text })
+    project.mutate({ projectId: target.projectId, taskId: target.taskId, message: text })
   }
 
   return (

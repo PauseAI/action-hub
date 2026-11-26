@@ -426,7 +426,7 @@ describe('project page — owner', () => {
     })
     // An owner is not told that only the owner can change the dates later.
     expect(screen.queryByText(/Only the project owner can change these dates/)).toBeNull()
-    await userEvent.click(screen.getByRole('checkbox', { name: /quick task/i }))
+    await userEvent.click(screen.getByRole('checkbox', { name: /Tasks page/ }))
     await userEvent.type(screen.getByLabelText('What to submit (optional)'), 'Where you put it')
     await userEvent.click(screen.getByRole('checkbox', { name: 'Ask for a link to the work' }))
     await userEvent.type(screen.getByLabelText('Helpers wanted (optional)'), '4')
