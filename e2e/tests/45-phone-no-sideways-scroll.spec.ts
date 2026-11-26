@@ -61,7 +61,7 @@ test.describe('Phone layout', () => {
       `/projects/${projectId}`,
       `/projects/${projectId}#people`,
       `/projects/${projectId}/tasks/${taskId}`,
-      '/quick-tasks',
+      '/tasks',
       '/volunteers',
       '/inbox',
       '/settings',

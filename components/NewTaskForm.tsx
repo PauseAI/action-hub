@@ -47,7 +47,7 @@ export default function NewTaskForm({
   /** A line under the dates, such as who can change them later. */
   datesNote?: string
   autoFocus?: boolean
-  /** Offers the quick tasks page; off where the project is not yet approved. */
+  /** Offers featuring it on the Tasks page; off where the project is not yet approved. */
   allowQuickTask?: boolean
   className?: string
 }) {
@@ -128,8 +128,8 @@ export default function NewTaskForm({
           <HelpersWantedField id="new-task" value={helpers} onChange={setHelpers} />
           {allowQuickTask && (
             <Checkbox checked={featured} onChange={(e) => setFeatured(e.target.checked)}>
-              Add this task to the quick tasks page so volunteers can find and claim it without
-              first clicking into this project
+              Add this task to the Tasks page so volunteers can find and take it without first
+              opening this project
             </Checkbox>
           )}
         </div>

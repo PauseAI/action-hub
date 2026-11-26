@@ -122,7 +122,7 @@ describe('moving quick tasks into Requests for help', () => {
 
     // Anyone in the chapter can now take the open one, and old links find it.
     const someone = await createMember(chapter)
-    expect((await clientAs(someone).quickTasks.available()).map((t) => t.id)).toContain(open.id)
+    expect((await clientAs(someone).requests.feed()).map((t) => t.id)).toContain(open.id)
     expect(await clientAs(someone).requests.locate({ id: open.id })).toEqual({
       projectId: project.id,
       taskId: open.id,

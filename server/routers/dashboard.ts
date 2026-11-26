@@ -1,5 +1,6 @@
 import { NOT_STANDING } from '@/lib/requests'
 import { openHelperPlaces } from '@/lib/open-helper-places'
+import { openRequests } from '@/lib/requests'
 import { askingFor, offeredSummary } from '@/lib/helper-summary'
 import { prisma } from '@/lib/prisma'
 import { isStaff, type ChapterAccess } from '@/lib/chapter-access'
@@ -7,7 +8,7 @@ import { loadTaskStatusViews, projectScopeWhere, type ProjectViewer } from '@/li
 import type { TaskDisplayStatus, TaskRef } from '@/lib/task-status'
 import { authedProcedure } from '../procedures'
 import { ADVERTISABLE_STATUSES, TERMINAL_STATUSES, projectStatusLabel } from '@/lib/project-status'
-import { QUICK_TASK_STATUS_LABELS, TASK_STATUS_LABELS } from '@/lib/status-labels'
+import { TASK_STATUS_LABELS } from '@/lib/status-labels'
 import { daysQuiet } from '@/lib/staleness'
 import { lateProjects, pastPlanTasks } from '@/lib/project-schedule'
 import { pastPlanDetail } from '@/lib/replan'
@@ -21,7 +22,6 @@ import {
   ContactRequestStatus,
   InterestStatus,
   ProjectStatus,
-  QuickTaskStatus,
   TaskStatus,
   TeamMembershipRole,
   WorkItemType,
@@ -119,9 +119,8 @@ const HELD_TASK_STATUSES: TaskStatus[] = [TaskStatus.not_started, TaskStatus.in_
 
 type Viewer = ProjectViewer & { id: number; localGroupId: number | null; access: ChapterAccess }
 
-/** Where a claimed task is worked on; a project task with no project has nowhere better. */
-function taskHref(t: { id: number; type: string; parentId: number | null }): string {
-  if (t.type === WorkItemType.QUICK_TASK) return `/quick-tasks/${t.id}`
+/** Where a claimed task is worked on; a task with no project has nowhere better. */
+function taskHref(t: { id: number; parentId: number | null }): string {
   return t.parentId ? `/projects/${t.parentId}/tasks/${t.id}` : '/dashboard'
 }
 
@@ -154,10 +153,8 @@ async function attentionFor(viewer: Viewer): Promise<AttentionItem[]> {
         where: {
           assigneeId: viewer.id,
           changesRequestedNote: null,
-          OR: [
-            { type: WorkItemType.TASK, status: { in: HELD_TASK_STATUSES } },
-            { type: WorkItemType.QUICK_TASK, status: QuickTaskStatus.in_progress },
-          ],
+          type: WorkItemType.TASK,
+          status: { in: HELD_TASK_STATUSES },
         },
         select: { id: true, type: true, title: true, parentId: true, updatedAt: true },
       }),
@@ -165,25 +162,28 @@ async function attentionFor(viewer: Viewer): Promise<AttentionItem[]> {
         where: { volunteerId: viewer.id, type: 'mention', readAt: null },
         orderBy: { createdAt: 'desc' },
       }),
-      // Quick Tasks I set, or any nobody set when I'm an admin over them (a global admin, or my
-      // chapter's staff); tasks on projects I own or am a deputy on.
+      // Requests for help I asked for, or any nobody asked for when I'm an admin over them (a
+      // global admin, or my chapter's staff); tasks on projects I own or am a deputy on.
       prisma.workItem.findMany({
         where: {
-          status: QuickTaskStatus.under_review,
+          type: WorkItemType.TASK,
+          status: TaskStatus.under_review,
           OR: [
+            { creatorId: viewer.id, parent: { standingRequests: true } },
+            ...(viewer.access.globalAdmin
+              ? [{ creatorId: null, parent: { standingRequests: true } }]
+              : isStaff(viewer.access)
+                ? [
+                    {
+                      creatorId: null,
+                      parent: {
+                        standingRequests: true,
+                        nationalChapterId: viewer.access.chapterId,
+                      },
+                    },
+                  ]
+                : []),
             {
-              type: WorkItemType.QUICK_TASK,
-              OR: [
-                { creatorId: viewer.id },
-                ...(viewer.access.globalAdmin
-                  ? [{ creatorId: null }]
-                  : isStaff(viewer.access)
-                    ? [{ creatorId: null, nationalChapterId: viewer.access.chapterId }]
-                    : []),
-              ],
-            },
-            {
-              type: WorkItemType.TASK,
               parent: {
                 OR: [{ assigneeId: viewer.id }, { deputies: { some: { volunteerId: viewer.id } } }],
               },
@@ -197,16 +197,15 @@ async function attentionFor(viewer: Viewer): Promise<AttentionItem[]> {
           parentId: true,
           submittedAt: true,
           creatorId: true,
+          parent: { select: { standingRequests: true } },
         },
       }),
       prisma.workItem.findMany({
         where: {
           assigneeId: viewer.id,
           changesRequestedNote: { not: null },
-          OR: [
-            { type: WorkItemType.TASK, status: TaskStatus.in_progress },
-            { type: WorkItemType.QUICK_TASK, status: QuickTaskStatus.in_progress },
-          ],
+          type: WorkItemType.TASK,
+          status: TaskStatus.in_progress,
         },
         select: {
           id: true,
@@ -376,8 +375,8 @@ async function attentionFor(viewer: Viewer): Promise<AttentionItem[]> {
       action: 'Review',
       notificationId: null,
       at: t.submittedAt,
-      // A Quick Task nobody set is the chapter's to review.
-      ...(t.type === WorkItemType.QUICK_TASK && t.creatorId === null && { asStaff: true }),
+      // A request nobody asked for is the chapter's to review.
+      ...(t.creatorId === null && t.parent?.standingRequests && { asStaff: true }),
     })
   }
 
@@ -442,11 +441,6 @@ async function workFor(viewer: Viewer): Promise<WorkRow[]> {
             assigneeId: viewer.id,
             type: WorkItemType.TASK,
             status: { in: [...HELD_TASK_STATUSES, TaskStatus.under_review] },
-          },
-          {
-            assigneeId: viewer.id,
-            type: WorkItemType.QUICK_TASK,
-            status: { in: [QuickTaskStatus.in_progress, QuickTaskStatus.under_review] },
           },
           // Tasks I help on beside their lead.
           {
@@ -532,20 +526,20 @@ async function workFor(viewer: Viewer): Promise<WorkRow[]> {
       ])
     ).map((p) => [p.id, p.daysPast]),
   )
-  const projectTasks = tasks.filter((t) => t.type === WorkItemType.TASK)
-  const loaded = await loadTaskStatusViews(projectTasks)
-  const views = new Map(projectTasks.map((t, i) => [t.id, loaded[i]]))
+  const views = await loadTaskStatusViews(tasks)
   const today = new Date()
-  const taskRows: WorkRow[] = tasks.map((t) => {
-    const view = views.get(t.id)
-    const shown = view?.displayStatus ?? t.status
-    const row: WorkRow = {
+  const taskRows: WorkRow[] = tasks.map((t, i) => {
+    const view = views[i]
+    const shown = view.displayStatus
+    return {
       key: `task-${t.id}`,
       kind: 'task',
       title: t.title,
       href: taskHref(t),
       role: t.assigneeId === viewer.id ? 'Task' : 'Helper',
-      status: QUICK_TASK_STATUS_LABELS[t.status],
+      status: TASK_STATUS_LABELS[view.displayStatus],
+      displayStatus: view.displayStatus,
+      blockedBy: view.blockedBy,
       context: t.parent?.title ?? null,
       done: false,
       deadline: t.deadline,
@@ -568,13 +562,6 @@ async function workFor(viewer: Viewer): Promise<WorkRow[]> {
         { deadline: t.deadline, estimatedHours: t.estimatedHours, done: handedIn(shown) },
         today,
       ),
-    }
-    if (!view) return row
-    return {
-      ...row,
-      status: TASK_STATUS_LABELS[view.displayStatus],
-      displayStatus: view.displayStatus,
-      blockedBy: view.blockedBy,
     }
   })
 
@@ -599,7 +586,7 @@ async function workFor(viewer: Viewer): Promise<WorkRow[]> {
 }
 
 // What a volunteer could pick up: live, unfinished projects they may see and are not already
-// part of, those using their skills, those in their chapter, and their chapter's open quick tasks.
+// part of, those using their skills, and those in their chapter.
 async function findWheres(viewer: Viewer, skillIds: number[]) {
   // Any interest, including a declined or withdrawn one, means it is not new to them.
   const involved = await prisma.workItemInterest.findMany({
@@ -629,13 +616,7 @@ async function findWheres(viewer: Viewer, skillIds: number[]) {
     ...open,
     nationalChapterId: viewer.nationalChapterId,
   }
-  const quickWhere: Prisma.WorkItemWhereInput = {
-    type: WorkItemType.QUICK_TASK,
-    status: QuickTaskStatus.open,
-    assigneeId: null,
-    nationalChapterId: viewer.nationalChapterId,
-  }
-  return { matchWhere, nearWhere, quickWhere }
+  return { matchWhere, nearWhere }
 }
 
 /**
@@ -643,26 +624,26 @@ async function findWheres(viewer: Viewer, skillIds: number[]) {
  * work is stays behind the approval gate.
  */
 async function waitingFor(viewer: Viewer, skillIds: number[]) {
-  const { matchWhere, nearWhere, quickWhere } = await findWheres(viewer, skillIds)
+  const { matchWhere, nearWhere } = await findWheres(viewer, skillIds)
   const hasChapter = viewer.nationalChapterId !== null
   // The matches are a share of the chapter's projects, so they are counted within it too.
-  const [projects, matching, quickTasks] = await Promise.all([
+  const [projects, matching, requests] = await Promise.all([
     hasChapter ? prisma.workItem.count({ where: nearWhere }) : 0,
     hasChapter && skillIds.length > 0
       ? prisma.workItem.count({
           where: { ...matchWhere, nationalChapterId: viewer.nationalChapterId },
         })
       : 0,
-    prisma.workItem.count({ where: quickWhere }),
+    openRequests(viewer).then((r) => r.length),
   ])
-  return { projects, matching, quickTasks }
+  return { projects, matching, requests }
 }
 
 async function findFor(
   viewer: Viewer,
   skillIds: number[],
-): Promise<{ quickTasks: FindRow; helpersWanted: FindRow; matches: FindRow; nearYou: FindRow }> {
-  const { matchWhere, nearWhere, quickWhere } = await findWheres(viewer, skillIds)
+): Promise<{ requests: FindRow; helpersWanted: FindRow; matches: FindRow; nearYou: FindRow }> {
+  const { matchWhere, nearWhere } = await findWheres(viewer, skillIds)
   const hasChapter = viewer.nationalChapterId !== null
   const nearSelect = {
     id: true,
@@ -672,15 +653,9 @@ async function findFor(
     chapter: { select: { name: true } },
   } satisfies Prisma.WorkItemSelect
 
-  const [places, quickCount, quick, matchCount, matches, nearCount, near] = await Promise.all([
+  const [places, requests, matchCount, matches, nearCount, near] = await Promise.all([
     openHelperPlaces(viewer, { limit: FIND_ROW_SIZE }),
-    prisma.workItem.count({ where: quickWhere }),
-    prisma.workItem.findMany({
-      where: quickWhere,
-      include: { skill: { select: { name: true } } },
-      orderBy: { createdAt: 'desc' },
-      take: FIND_ROW_SIZE,
-    }),
+    openRequests(viewer),
     skillIds.length > 0 ? prisma.workItem.count({ where: matchWhere }) : 0,
     skillIds.length > 0
       ? prisma.workItem.findMany({
@@ -720,13 +695,13 @@ async function findFor(
           .join(' · '),
       })),
     },
-    quickTasks: {
-      count: quickCount,
-      items: quick.map((t) => ({
+    requests: {
+      count: requests.length,
+      items: requests.slice(0, FIND_ROW_SIZE).map((t) => ({
         id: t.id,
         title: t.title,
-        href: `/quick-tasks/${t.id}`,
-        reason: t.skill ? `Skill: ${t.skill.name}` : null,
+        href: `/projects/${t.projectId}/tasks/${t.id}`,
+        reason: t.askedBy ? `Asked by ${t.askedBy.name}` : null,
       })),
     },
     matches: {
@@ -789,7 +764,7 @@ export const dashboardRouter = {
       prisma.workItem.count({
         where: {
           assigneeId: volunteer.id,
-          type: { in: [WorkItemType.TASK, WorkItemType.QUICK_TASK] },
+          type: WorkItemType.TASK,
         },
       }),
     ])

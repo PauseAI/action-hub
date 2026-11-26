@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import { loadTaskStatusViews, serializeSubmissionAsk } from '@/lib/work-item'
+import { loadTaskStatusViews } from '@/lib/work-item'
 import { authedProcedure } from '../procedures'
 import { InterestStatus, TaskStatus, WorkItemType } from '@/generated/prisma/enums'
 
@@ -32,40 +32,6 @@ export const myRouter = {
       role: t.assigneeId === me ? ('Lead' as const) : ('Helper' as const),
       status: t.status,
       ...views[i],
-      updatedAt: t.updatedAt,
-    }))
-  }),
-
-  quickTasks: authedProcedure.handler(async ({ context }) => {
-    const tasks = await prisma.workItem.findMany({
-      where: { type: WorkItemType.QUICK_TASK, assigneeId: context.volunteer.id },
-      include: {
-        skill: true,
-        contextProject: { select: { title: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    })
-
-    return tasks.map((t) => ({
-      id: t.id,
-      projectId: t.contextProjectId,
-      title: t.title,
-      description: t.description,
-      skillId: t.skillId,
-      skillName: t.skill?.name ?? null,
-      projectTitle: t.contextProject?.title ?? null,
-      assignedToId: t.assigneeId,
-      assignedById: t.creatorId,
-      status: t.status,
-      reviewRating: t.reviewRating,
-      reviewNotes: t.reviewNotes,
-      reviewedById: t.reviewedById,
-      reviewedAt: t.reviewedAt,
-      changesRequested: t.changesRequestedNote,
-      ...serializeSubmissionAsk(t),
-      estimatedHours: t.estimatedHours,
-      deadline: t.deadline,
-      createdAt: t.createdAt,
       updatedAt: t.updatedAt,
     }))
   }),

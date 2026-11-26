@@ -1,6 +1,8 @@
 import { ORPCError } from '@orpc/server'
 import type { Prisma } from '@/generated/prisma/client'
-import { ProjectStatus, WorkItemType } from '@/generated/prisma/enums'
+import { ProjectStatus, TaskStatus, WorkItemType } from '@/generated/prisma/enums'
+import { prisma } from './prisma'
+import { CLAIM_BLOCKING_INTEREST } from './work-item'
 
 /**
  * Requests for help: tasks anyone approved can ask for, held in a standing project per national
@@ -59,4 +61,68 @@ export async function requestsProjectFor(tx: Tx, chapterId: number | null) {
       reviewedAt: new Date(),
     },
   })
+}
+
+export type OpenRequest = {
+  kind: 'request'
+  id: number
+  title: string
+  description: string | null
+  projectId: number
+  projectTitle: string
+  askedBy: { id: number; name: string } | null
+  global: boolean
+  helpersWanted: number | null
+  estimatedHours: number | null
+  deadline: Date | null
+  createdAt: Date | null
+}
+
+/**
+ * Requests for help nobody has taken yet that `viewer` could take: in their chapter's standing
+ * project or the global one, not their own, and not on a project that turned them away.
+ */
+export async function openRequests(viewer: {
+  id: number
+  nationalChapterId: number | null
+}): Promise<OpenRequest[]> {
+  const tasks = await prisma.workItem.findMany({
+    where: {
+      type: WorkItemType.TASK,
+      status: TaskStatus.not_started,
+      assigneeId: null,
+      requestedById: null,
+      OR: [{ creatorId: null }, { creatorId: { not: viewer.id } }],
+      parent: {
+        standingRequests: true,
+        OR: [{ nationalChapterId: viewer.nationalChapterId }, { nationalChapterId: null }],
+        interests: { none: { volunteerId: viewer.id, ...CLAIM_BLOCKING_INTEREST } },
+      },
+    },
+    include: {
+      creator: { select: { id: true, name: true } },
+      parent: { select: { id: true, title: true, nationalChapterId: true } },
+    },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+  })
+  return tasks.flatMap((t) =>
+    t.parent
+      ? [
+          {
+            kind: 'request' as const,
+            id: t.id,
+            title: t.title,
+            description: t.description,
+            projectId: t.parent.id,
+            projectTitle: t.parent.title,
+            askedBy: t.creator,
+            global: t.parent.nationalChapterId === null,
+            helpersWanted: t.helpersWanted,
+            estimatedHours: t.estimatedHours,
+            deadline: t.deadline,
+            createdAt: t.createdAt,
+          },
+        ]
+      : [],
+  )
 }

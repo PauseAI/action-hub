@@ -62,8 +62,8 @@ export default function AdminRolesPage() {
         state: nothing on a completed or archived project changes until it is reopened.
       </P>
       <P className="text-text-light">
-        Chapters, teams, volunteers and quick tasks are not described here yet: their rules are
-        still written into the pages that use them.
+        Chapters, teams and volunteers are not described here yet: their rules are still written
+        into the pages that use them.
       </P>
 
       <section aria-labelledby="by-role" className="mt-6">

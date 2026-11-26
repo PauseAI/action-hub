@@ -29,7 +29,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   everyone: 'Everyone',
   project_lead: 'If you lead a project, or are its deputy',
   team_lead: 'If you lead a team',
-  quick_task_poster: 'If you ask for help or post Quick Tasks',
+  quick_task_poster: 'If you ask for help',
   coordinator: 'Coordinators',
   staff: 'Chapter staff and admins',
   technical: 'Technical admins',

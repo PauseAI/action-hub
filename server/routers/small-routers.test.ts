@@ -172,28 +172,6 @@ describe('my.projectTasks', () => {
   })
 })
 
-describe('my.quickTasks', () => {
-  it('lists the tasks assigned to me with skill and project names', async () => {
-    const me = await createVolunteer()
-    const skill = await createSkill()
-    const project = await createProject()
-    await createQuickTask({ assigneeId: me.id, skillId: skill.id, contextProjectId: project.id })
-    await createQuickTask({ assigneeId: me.id })
-    await createQuickTask()
-    const tasks = await clientAs(me).my.quickTasks()
-    expect(tasks).toHaveLength(2)
-    expect(tasks.find((t) => t.skillId === skill.id)).toMatchObject({
-      skillName: skill.name,
-      projectTitle: project.title,
-      projectId: project.id,
-    })
-    expect(tasks.find((t) => t.skillId === null)).toMatchObject({
-      skillName: null,
-      projectTitle: null,
-    })
-  })
-})
-
 describe('admin.rejectedApplications', () => {
   it('lists rejections with their reapply status, and allows reapplication', async () => {
     const c = clientAs(await createSuperAdmin())

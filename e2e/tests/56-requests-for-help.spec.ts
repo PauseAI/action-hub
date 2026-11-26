@@ -11,7 +11,7 @@ test.describe('Requests for help', () => {
     const page = volunteer.page
     const title = fake.quickTaskTitle()
 
-    await page.goto(`${baseUrl}/quick-tasks`)
+    await page.goto(`${baseUrl}/tasks`)
     await page.getByRole('button', { name: '+ Ask for help' }).click()
     const dialog = page.getByRole('dialog', { name: 'Ask for help' })
     await dialog.getByLabel('What do you need?').fill(title)
@@ -36,7 +36,9 @@ test.describe('Requests for help', () => {
     expect(taken.body).toMatchObject({ requested: false })
     await takerApi.projects.submitTask({ body: { ...ids, note: 'Proofread it' } })
 
+    // The old address still finds the page.
     await page.goto(`${baseUrl}/quick-tasks`)
+    await page.waitForURL('**/tasks')
     const mine = page.getByRole('region', { name: 'Your requests for help' })
     await expect(mine.getByRole('article').filter({ hasText: title })).toContainText(
       `Taken by ${taker.name}`,

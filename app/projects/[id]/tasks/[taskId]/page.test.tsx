@@ -454,7 +454,7 @@ describe('task detail page', () => {
     expect(screen.getByText(/Starts when “Predecessor” is done/)).toBeInTheDocument()
     expect(screen.queryByText(/follow|lag|milestone/i)).toBeNull()
     await userEvent.click(screen.getByRole('checkbox', { name: /exact dates/ }))
-    await userEvent.click(screen.getByRole('checkbox', { name: /quick task/i }))
+    await userEvent.click(screen.getByRole('checkbox', { name: /Tasks page/ }))
     await userEvent.type(screen.getByLabelText('What to submit (optional)'), 'Photos of the stall')
     await userEvent.click(screen.getByRole('checkbox', { name: 'Ask for a link to the work' }))
     await userEvent.type(screen.getByLabelText('Helpers wanted (optional)'), '3')
