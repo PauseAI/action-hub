@@ -21,6 +21,7 @@ import {
   submissionData,
 } from '@/lib/work-item'
 import { openHelperPlaces } from '@/lib/open-helper-places'
+import { openRequests } from './requests'
 import { recordChange, updateWorkItem } from '@/lib/work-item-events'
 import { approvedProcedure, authedProcedure, staffProcedure } from '../procedures'
 import { TERMINAL_STATUSES } from '@/lib/project-status'
@@ -147,6 +148,8 @@ export const quickTasksRouter = {
           // Only from projects the volunteer may see: their chapter's, outside any team of
           // which they are not a member.
           parent: {
+            // A request is listed as one, featured or not.
+            standingRequests: false,
             status: { notIn: TERMINAL_STATUSES },
             AND: [projectScopeWhere({ ...context.volunteer, isAdmin: false })],
           },
@@ -159,6 +162,7 @@ export const quickTasksRouter = {
               teamId: true,
               assigneeId: true,
               alwaysAskToJoin: true,
+              standingRequests: true,
             },
           },
         },
@@ -169,8 +173,10 @@ export const quickTasksRouter = {
       projectTasks.flatMap((t) => (t.parent ? [t.parent] : [])),
       context.volunteer,
     )
-    // A featured task already listed to claim is not listed again for its helper places.
-    const listed = new Set(projectTasks.map((t) => t.id))
+    const requests = await openRequests(context.volunteer)
+    // A request, or a featured task, already listed to take is not listed again for its helper
+    // places.
+    const listed = new Set([...requests, ...projectTasks].map((t) => t.id))
     const helperPlaces = (await openHelperPlaces(context.volunteer)).items.filter(
       (t) => !listed.has(t.id),
     )
@@ -188,6 +194,7 @@ export const quickTasksRouter = {
         deadline: t.deadline,
         createdAt: t.createdAt,
       })),
+      ...requests,
       ...projectTasks.flatMap((t) =>
         t.parent
           ? [

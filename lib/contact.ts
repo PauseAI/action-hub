@@ -33,7 +33,11 @@ export function seesFullProfile(
   )
 }
 
-/** The projects a volunteer owns or is on. */
+/**
+ * The projects a volunteer owns or is on. Taking one request does not put someone alongside
+ * everyone else in the chapter's Requests for help project: there a request stands for its own
+ * project (as minus its id), shared by whoever asked and whoever took it.
+ */
 export async function projectIdsOf(volunteerIds: number[]): Promise<Map<number, Set<number>>> {
   const [owned, interests, tasks] = await Promise.all([
     prisma.workItem.findMany({
@@ -44,17 +48,26 @@ export async function projectIdsOf(volunteerIds: number[]): Promise<Map<number, 
       where: {
         volunteerId: { in: volunteerIds },
         status: InterestStatus.accepted,
-        workItem: { type: WorkItemType.PROJECT },
+        workItem: { type: WorkItemType.PROJECT, standingRequests: false },
       },
       select: { workItemId: true, volunteerId: true },
     }),
     prisma.workItem.findMany({
       where: {
         type: WorkItemType.TASK,
-        assigneeId: { in: volunteerIds },
         parentId: { not: null },
+        OR: [
+          { assigneeId: { in: volunteerIds } },
+          { creatorId: { in: volunteerIds }, parent: { standingRequests: true } },
+        ],
       },
-      select: { parentId: true, assigneeId: true },
+      select: {
+        id: true,
+        parentId: true,
+        assigneeId: true,
+        creatorId: true,
+        parent: { select: { standingRequests: true } },
+      },
     }),
   ])
   const byVolunteer = new Map<number, Set<number>>(volunteerIds.map((id) => [id, new Set()]))
@@ -63,7 +76,12 @@ export async function projectIdsOf(volunteerIds: number[]): Promise<Map<number, 
   }
   for (const p of owned) add(p.assigneeId, p.id)
   for (const i of interests) add(i.volunteerId, i.workItemId)
-  for (const t of tasks) add(t.assigneeId, t.parentId)
+  for (const t of tasks) {
+    if (t.parent?.standingRequests) {
+      add(t.assigneeId, -t.id)
+      add(t.creatorId, -t.id)
+    } else add(t.assigneeId, t.parentId)
+  }
   return byVolunteer
 }
 

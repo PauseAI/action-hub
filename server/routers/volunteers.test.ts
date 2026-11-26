@@ -529,7 +529,14 @@ describe('volunteers.getById manage', () => {
   it("gives a chapter's deputy only the account controls, and its lead the deputy control too", async () => {
     const chapter = await createChapter()
     const member = await createMember(chapter)
-    const noRoles = { chapterDeputy: null, chapterLead: null, coordinator: null, moveChapter: null }
+    const noRoles = {
+      chapterDeputy: null,
+      chapterLead: null,
+      coordinator: null,
+      moveChapter: null,
+      work: true,
+      fastTrack: { on: false },
+    }
     expect(await manageOf(await createChapterDeputy(chapter), member.id)).toEqual(noRoles)
     expect(await manageOf(await createChapterLead(chapter), member.id)).toEqual({
       ...noRoles,
@@ -552,6 +559,8 @@ describe('volunteers.getById manage', () => {
       },
       coordinator: { isCoordinator: false, remit: null },
       moveChapter: { chapterId: chapter.id },
+      work: true,
+      fastTrack: { on: false },
     })
     expect(await manageOf(admin, lead.id)).toMatchObject({
       chapterDeputy: null,
@@ -574,7 +583,10 @@ describe('volunteers.getById manage', () => {
       chapterDeputy: null,
       chapterLead: null,
       coordinator: null,
+      work: false,
     })
+    const applicant = await createMember(chapter, { approvalStatus: 'pending' })
+    expect((await manageOf(admin, applicant.id))?.work).toBe(false)
     const unconfirmed = await createMember(chapter, { emailConfirmed: false })
     expect((await manageOf(admin, unconfirmed.id))?.coordinator).toBeNull()
     const leadless = await createChapter()

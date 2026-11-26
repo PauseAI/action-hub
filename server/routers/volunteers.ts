@@ -42,6 +42,7 @@ async function manageControls(
     duplicateOfId: number | null
     approvalStatus: ApprovalStatus | null
     emailConfirmed: boolean | null
+    fastTrack: boolean
   },
 ) {
   const chapterId = vol.nationalChapterId
@@ -83,6 +84,13 @@ async function manageControls(
         ? { isCoordinator: Boolean(coordinator), remit: coordinator?.remit ?? null }
         : null,
     moveChapter: access.globalAdmin ? { chapterId } : null,
+    /**
+     * The Work group: verify skills, fast track, invite or add to a project. Only for an
+     * approved account that is not a duplicate, so the work lands on the record in use.
+     */
+    work: !duplicate && vol.approvalStatus === ApprovalStatus.approved,
+    /** Whether they are on fast track, for the control that puts them on or takes them off. */
+    fastTrack: { on: vol.fastTrack },
   }
 }
 
@@ -403,11 +411,8 @@ export const volunteersRouter = {
         activeRecently: isActiveRecently(vol.lastActiveAt),
         chapter: vol.chapter,
         manage,
-        // lib/fast-track.ts says who sees it.
-        fastTrack:
-          vol.id === currentVolunteer.id || isAdmin
-            ? { on: vol.fastTrack, canSet: isAdmin && vol.id !== currentVolunteer.id }
-            : null,
+        // lib/fast-track.ts says who sees it; staff change it from `manage`.
+        fastTrack: vol.id === currentVolunteer.id || isAdmin ? { on: vol.fastTrack } : null,
         projects: projectHistory(projects, input.id),
         completedTasks: completedTasks.map((t) => ({
           title: t.title,

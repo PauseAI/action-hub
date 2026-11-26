@@ -297,6 +297,20 @@ export const CreateProjectTaskSchema = WorkItemSchema.pick({
     ...SUBMISSION_ASK_FIELDS,
   })
 
+/** Asking for help: a task in a Requests for help project (lib/requests.ts). */
+export const AskForHelpSchema = CreateProjectTaskSchema.pick({
+  title: true,
+  description: true,
+  estimatedHours: true,
+  deadline: true,
+  helpersWanted: true,
+  submissionPrompt: true,
+  submissionAsksLink: true,
+}).extend({
+  /** Ask everyone, in every chapter, rather than your own chapter. */
+  global: z.boolean().optional(),
+})
+
 export const UpdateProjectTaskSchema = WorkItemSchema.pick({
   title: true,
   description: true,

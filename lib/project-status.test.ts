@@ -40,6 +40,9 @@ describe('isSeekingOwner', () => {
     expect(isSeekingOwner({ status: 'ready', assigneeId: 3 })).toBe(false)
     expect(isSeekingOwner({ status: 'pending_review', assigneeId: null })).toBe(false)
     expect(isSeekingOwner({ status: 'completed', assigneeId: null })).toBe(false)
+    expect(isSeekingOwner({ status: 'ready', assigneeId: null, standingRequests: true })).toBe(
+      false,
+    )
   })
 })
 
@@ -47,7 +50,7 @@ describe('status sets', () => {
   it('advertisable excludes unapproved and terminal statuses', () => {
     expect(ADVERTISABLE_STATUSES).toEqual(['ready', 'in_progress', 'on_hold'])
     expect(SEEKING_OWNER_SQL).toBe(
-      "(assignee_id IS NULL AND status IN ('ready', 'in_progress', 'on_hold'))",
+      "(assignee_id IS NULL AND NOT standing_requests AND status IN ('ready', 'in_progress', 'on_hold'))",
     )
     expect(ADVERTISABLE_STATUSES_SQL).toBe(
       "status NOT IN ('draft', 'pending_review', 'needs_discussion', 'completed', 'archived')",

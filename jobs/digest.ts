@@ -4,6 +4,7 @@ import { WorkItemType } from '@/generated/prisma/enums'
 import { env } from '@/lib/env'
 import { logger } from '@/lib/logger'
 import { suppressionOf } from '@/lib/email-suppression'
+import { NOT_STANDING } from '@/lib/requests'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 /**
@@ -35,6 +36,7 @@ export async function runDigestJob(): Promise<Record<string, unknown>> {
   const rawProjects = await prisma.workItem.findMany({
     where: {
       type: WorkItemType.PROJECT,
+      ...NOT_STANDING,
       status: { notIn: ['draft', 'archived', 'pending_review', 'needs_discussion'] },
       // A team's projects are its own, and not advertised.
       teamId: null,

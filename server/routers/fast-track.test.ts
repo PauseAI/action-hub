@@ -69,9 +69,13 @@ describe('putting someone on fast track', () => {
     // Shown to Sam and his chapter's staff, never to other volunteers.
     const profile = (who: { id: number }) =>
       clientAs(who as never).volunteers.getById({ id: sam.id })
-    expect((await profile(sam)).fastTrack).toEqual({ on: true, canSet: false })
-    expect((await profile(lead)).fastTrack).toEqual({ on: true, canSet: true })
-    expect((await profile(member)).fastTrack).toBeNull()
+    // Staff change it from the Manage panel; Sam only sees it.
+    expect(await profile(sam)).toMatchObject({ fastTrack: { on: true }, manage: null })
+    expect(await profile(lead)).toMatchObject({
+      fastTrack: { on: true },
+      manage: { fastTrack: { on: true } },
+    })
+    expect(await profile(member)).toMatchObject({ fastTrack: null, manage: null })
   })
 
   it('is set for someone with no chapter by a global admin only', async () => {

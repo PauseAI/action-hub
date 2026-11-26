@@ -1,3 +1,4 @@
+import { NOT_STANDING } from '@/lib/requests'
 import { openHelperPlaces } from '@/lib/open-helper-places'
 import { askingFor, offeredSummary } from '@/lib/helper-summary'
 import { prisma } from '@/lib/prisma'
@@ -422,7 +423,7 @@ async function workFor(viewer: Viewer): Promise<WorkRow[]> {
       where: {
         volunteerId: viewer.id,
         status: { in: [InterestStatus.accepted, InterestStatus.pending] },
-        workItem: { type: WorkItemType.PROJECT },
+        workItem: { type: WorkItemType.PROJECT, ...NOT_STANDING },
       },
       include: { workItem: { select: projectSelect } },
     }),
@@ -609,6 +610,7 @@ async function findWheres(viewer: Viewer, skillIds: number[]) {
 
   const open: Prisma.WorkItemWhereInput = {
     type: WorkItemType.PROJECT,
+    ...NOT_STANDING,
     status: { in: ADVERTISABLE_STATUSES },
     id: { notIn: excluded },
     AND: [

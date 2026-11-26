@@ -9,6 +9,7 @@ import {
   ProjectStatus,
   WorkItemType,
 } from '@/generated/prisma/enums'
+import { NOT_STANDING } from '@/lib/requests'
 
 export const adminStatsRouter = {
   /** The caller's chapter in numbers; a global admin's are everyone's, or one chapter's or the pool's. */
@@ -18,7 +19,7 @@ export const adminStatsRouter = {
     )
     .handler(async ({ input, context }) => {
       const nationalChapterId = chapterFilter(context.access, input?.chapter)
-      const project = { type: WorkItemType.PROJECT, nationalChapterId }
+      const project = { type: WorkItemType.PROJECT, nationalChapterId, ...NOT_STANDING }
       // Excludes rejected applicants; those never became volunteers.
       const NON_REJECTED_STATUSES = [
         ApprovalStatus.approved,

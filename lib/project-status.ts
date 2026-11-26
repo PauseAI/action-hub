@@ -85,14 +85,19 @@ export const SEEKING_OWNER_STATUSES: string[] = [
  * precisely when it hasn't got one and is live. Storing it as a flag meant every mutation
  * that touched ownership had to remember to update it, and several didn't.
  */
-export function isSeekingOwner(p: { status: string; assigneeId: number | null }): boolean {
-  return p.assigneeId === null && SEEKING_OWNER_STATUSES.includes(p.status)
+export function isSeekingOwner(p: {
+  status: string
+  assigneeId: number | null
+  standingRequests?: boolean
+}): boolean {
+  // A Requests for help project has no owner by design (lib/requests.ts).
+  return p.assigneeId === null && !p.standingRequests && SEEKING_OWNER_STATUSES.includes(p.status)
 }
 
 const quoted = (values: string[]) => values.map((v) => `'${v}'`).join(', ')
 
 /** `isSeekingOwner` as a raw SQL predicate, for the hand-written projects.list query. */
-export const SEEKING_OWNER_SQL = `(assignee_id IS NULL AND status IN (${quoted(SEEKING_OWNER_STATUSES)}))`
+export const SEEKING_OWNER_SQL = `(assignee_id IS NULL AND NOT standing_requests AND status IN (${quoted(SEEKING_OWNER_STATUSES)}))`
 
 /** Advertisable = approved and not finished. Guards recommendations and admin counts. */
 export const ADVERTISABLE_STATUSES_SQL = `status NOT IN (${quoted([...UNAPPROVED_STATUSES, ...TERMINAL_STATUSES])})`
