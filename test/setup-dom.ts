@@ -11,7 +11,7 @@ vi.mock('next/font/google', async () => (await import('./next-stubs')).fontGoogl
 
 // Only `.test.tsx` files get jsdom (see vitest.config.mts); everything below needs a window.
 if (typeof window !== 'undefined') {
-  const { installRpcFetch, resetRpcFetch } = await import('./rpc-fetch')
+  const { installRpcFetch, resetRpcFetch, settleRpcFetch } = await import('./rpc-fetch')
   // Before anything loads lib/client.ts, whose link keeps the `fetch` it finds.
   installRpcFetch()
   const { cleanup, configure } = await import('@testing-library/react')
@@ -35,11 +35,17 @@ if (typeof window !== 'undefined') {
     if (error.message !== 'Not implemented: navigation to another Document') report?.(error)
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanup()
-    queryClient.clear()
-    localStorage.clear()
-    navigation.reset()
-    resetRpcFetch()
+    try {
+      // A request still in flight would answer in the next test, and a 401 there, once this
+      // test's session is cleared below, would sign that test's page out.
+      await settleRpcFetch()
+    } finally {
+      queryClient.clear()
+      localStorage.clear()
+      navigation.reset()
+      resetRpcFetch()
+    }
   })
 }

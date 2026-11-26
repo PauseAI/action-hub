@@ -68,6 +68,9 @@ or waiting for one network response when several were fired. Wait for the UI sta
 depends on (a button appearing, a row re-rendering), not for a side effect of it. Fold the fix
 into whatever you are already working on.
 
+A component test's race often needs CI's load to show. `TEST_RPC_JITTER_MS=200` delays each of its
+requests at random so they land out of order, which usually reproduces it in a few runs of one file.
+
 ## Testing and coverage
 
 `npm run test:unit` runs vitest with coverage; CI fails below 100% line and statement coverage for `app/**`, `components/**`, `lib/**` and `server/**` (branch coverage will follow). Coverage is a floor on what is exercised, not a licence to reshape code:

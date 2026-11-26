@@ -20,6 +20,7 @@ import ProjectDetailPage from './page'
 import { queryClient } from '@/lib/query-client'
 import { orpc } from '@/lib/orpc'
 import { diffInDays } from '@/lib/schedule'
+import { dismissToast } from '@/test/toast'
 
 const drags = await vi.hoisted(() => import('@/test/dnd').then((m) => m.captureDrags()))
 vi.mock('@dnd-kit/core', (importOriginal) => drags.mockDndKit(importOriginal))
@@ -654,9 +655,9 @@ describe('project page — owner', () => {
     await screen.findByText('Project not found')
     await openTab(/^People/)
     await userEvent.click(screen.getByRole('button', { name: 'Accept' }))
-    await screen.findByText('Not authorized')
+    await dismissToast('Not authorized')
     await userEvent.click(screen.getByRole('button', { name: 'Cancel invite' }))
-    await waitFor(() => expect(screen.getAllByText('Not authorized')).toHaveLength(2))
+    await screen.findByText('Not authorized')
     await userEvent.click(screen.getByRole('button', { name: 'Volunteer to invite' }))
     await userEvent.click((await screen.findAllByRole('option', { name: 'Hana Helper' }))[0])
     await userEvent.click(screen.getByRole('button', { name: 'Invite' }))
@@ -1669,8 +1670,8 @@ describe('project page — timeline tab', () => {
     expect(within(panel()).queryByRole('checkbox', { name: /Key date/ })).toBeNull()
     expect(within(panel()).queryByLabelText('Add a dependency')).toBeNull()
     expect(within(panel()).getByRole('link', { name: 'Alpha' })).toBeInTheDocument()
-    // Beta was linked to Gamma above, so Gamma is what it unblocks.
-    expect(within(panel()).getByRole('link', { name: 'Gamma' })).toBeInTheDocument()
+    // Beta was linked to Gamma above, so Gamma is what it unblocks, once the link's refetch lands.
+    expect(await within(panel()).findByRole('link', { name: 'Gamma' })).toBeInTheDocument()
     await userEvent.click(within(panel()).getByRole('button', { name: 'Plan “Beta”' }))
     const plan = await screen.findByRole('dialog', { name: 'Plan “Beta”' })
     const makeKey = within(plan).getByRole('button', { name: 'Make this the key date' })

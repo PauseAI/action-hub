@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { createAdmin, createVolunteer, createTeam } from '@/test/factories'
 import { fullText, renderApp } from '@/test/render'
 import AdminTeamsPage from './page'
+import { dismissToast } from '@/test/toast'
 
 const article = (name: string) =>
   screen.getByText(name, { selector: 'span' }).closest<HTMLElement>('article')!
@@ -202,12 +203,11 @@ describe('admin teams', () => {
     await prisma.teamSuggestion.delete({ where: { id: sug.id } })
     await userEvent.click(screen.getByRole('button', { name: 'Review' }))
     await userEvent.click(screen.getByRole('button', { name: 'Confirm' }))
-    await screen.findByText('Not found')
+    await dismissToast('Not found')
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     await userEvent.click(screen.getByRole('button', { name: 'Delete' }))
     await userEvent.click(screen.getAllByRole('button', { name: 'Delete' }).at(-1)!)
-    // The review's toast is still showing, so wait for the delete's own.
-    await waitFor(() => expect(screen.getAllByText('Not found')).toHaveLength(2))
+    await screen.findByText('Not found')
     expect(screen.queryByRole('heading', { name: 'Confirm delete' })).toBeNull()
   })
 })

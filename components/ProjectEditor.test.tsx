@@ -16,6 +16,7 @@ import {
 import { renderApp } from '@/test/render'
 import { navigation } from '@/test/next-navigation'
 import ProjectEditor from './ProjectEditor'
+import { dismissToast } from '@/test/toast'
 
 const mount = (
   props: React.ComponentProps<typeof ProjectEditor>,
@@ -119,7 +120,8 @@ describe('ProjectEditor — new volunteer proposal', () => {
     await userEvent.type(screen.getByLabelText('Task title'), 'First task')
     await userEvent.click(screen.getByRole('button', { name: 'Add task' }))
     expect(await screen.findByText('A title is required, even for a draft.')).toBeInTheDocument()
-    await userEvent.type(screen.getByLabelText('Project title'), 'With task')
+    // Too short to autosave, so the timer cannot start a create under the Add task click.
+    await userEvent.type(screen.getByLabelText('Project title'), 'Go')
     await userEvent.click(screen.getByRole('button', { name: 'More details' }))
     await userEvent.type(screen.getByLabelText('Details (optional)'), 'detail')
     await userEvent.type(screen.getByLabelText('Helpers wanted (optional)'), '3')
@@ -127,10 +129,8 @@ describe('ProjectEditor — new volunteer proposal', () => {
     // An unapproved proposal's tasks can't go on the quick tasks page.
     expect(screen.queryByRole('checkbox', { name: /quick task/i })).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: 'Add task' }))
-    const draft = await waitFor(
-      async () =>
-        prisma.workItem.findFirstOrThrow({ where: { creatorId: me.id, type: 'PROJECT' } }),
-      { timeout: 5000 },
+    const draft = await waitFor(async () =>
+      prisma.workItem.findFirstOrThrow({ where: { creatorId: me.id, type: 'PROJECT' } }),
     )
     await waitFor(async () =>
       expect(await prisma.workItem.count({ where: { parentId: draft.id } })).toBe(1),
@@ -266,9 +266,9 @@ describe('ProjectEditor — new volunteer proposal', () => {
     await userEvent.click(
       await screen.findByRole('button', { name: 'Add task' }, { timeout: 20_000 }),
     )
-    // Once the new draft has loaded, Submit is the draft's own button, enabled once the
-    // task's own save has landed (Delete draft only renders for a saved draft).
-    await screen.findByRole('button', { name: 'Delete draft' }, { timeout: 20_000 })
+    // Submit before the task's save lands would read the draft before the task is in it.
+    // Delete task only renders for a saved task.
+    await screen.findByRole('button', { name: 'Delete task' }, { timeout: 20_000 })
     const submit = await screen.findByRole('button', { name: 'Submit' })
     await waitFor(() => expect(submit).toBeEnabled())
     await userEvent.click(submit)
@@ -316,17 +316,16 @@ describe('ProjectEditor — new volunteer proposal', () => {
 
     await userEvent.type(screen.getByLabelText('Task title'), 'T1')
     await userEvent.click(screen.getByRole('button', { name: 'Add task' }))
-    // Publish counts the saved tasks; the warning goes once the editor holds the saved one.
-    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull(), { timeout: 5000 })
+    // Publish counts the saved tasks, so it waits for the saved task's row.
+    await screen.findByRole('button', { name: 'Delete task' })
+    expect(screen.queryByRole('alert')).toBeNull()
     const draft = await prisma.workItem.findFirstOrThrow({
       where: { creatorId: admin.id, type: 'PROJECT' },
     })
     expect(draft.isOrgProposed).toBe(true)
     await userEvent.click(await screen.findByRole('button', { name: 'Publish' }))
     // The dialog opens only once a fresh copy of the project has been fetched.
-    expect(
-      await screen.findByText('Publish this project?', {}, { timeout: 5000 }),
-    ).toBeInTheDocument()
+    expect(await screen.findByText('Publish this project?')).toBeInTheDocument()
     await userEvent.click(screen.getAllByRole('button', { name: 'Publish' })[1])
     await waitFor(async () => expect((await row(draft.id)).status).toBe('ready'))
     expect(await screen.findByText('Project published!')).toBeInTheDocument()
@@ -642,11 +641,11 @@ describe('ProjectEditor — editing an existing project', () => {
     await mount({ variant: 'volunteer' }, me)
     await waitFor(() => expect(localStorage.getItem('authToken')).toBeTruthy())
     await userEvent.type(screen.getByLabelText('Project title'), 'Third')
-    expect(await screen.findByText(/already have 2 drafts/)).toBeInTheDocument()
+    await dismissToast(/already have 2 drafts/)
     // The status line says so and stops trying until Retry is pressed.
     expect(screen.getByRole('status')).toHaveTextContent("Couldn't save.")
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
-    await waitFor(() => expect(screen.getAllByText(/already have 2 drafts/)).toHaveLength(2))
+    await screen.findByText(/already have 2 drafts/)
     expect(await prisma.workItem.count({ where: { creatorId: me.id, type: 'PROJECT' } })).toBe(2)
   })
 })

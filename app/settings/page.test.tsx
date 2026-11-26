@@ -10,6 +10,7 @@ import { emails, linkParam } from '@/test/fakes/email'
 import { rateLimit } from '@/test/fakes/rate-limit'
 import { SET_PASSWORD_SUBJECT } from '@/lib/email'
 import SettingsPage from './page'
+import { dismissToast } from '@/test/toast'
 
 const me = (id: number) => prisma.volunteer.findUniqueOrThrow({ where: { id } })
 
@@ -40,7 +41,7 @@ describe('settings — profile tab', () => {
     await userEvent.type(screen.getByLabelText('Other skills'), 'juggling')
     await userEvent.click(await screen.findByLabelText(skill.name))
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
-    await screen.findByText('Profile updated!')
+    await dismissToast('Profile updated!')
     expect(await me(vol.id)).toMatchObject({
       name: 'Samantha',
       discordHandle: 'sam#1',
@@ -62,7 +63,7 @@ describe('settings — profile tab', () => {
     await userEvent.click(await screen.findByRole('option', { name: 'Settings Town' }))
     expect(screen.queryByLabelText('City / area')).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: 'Save location' }))
-    await waitFor(() => expect(screen.getAllByText('Profile updated!')).toHaveLength(2))
+    await screen.findByText('Profile updated!')
     await waitFor(async () =>
       expect(await me(vol.id)).toMatchObject({
         country: 'UK',
@@ -298,7 +299,7 @@ describe('settings — notifications and privacy tabs', () => {
     expect(screen.getByRole('radio', { name: 'Email and in-app' })).toBeChecked()
     await userEvent.click(screen.getByRole('radio', { name: 'In-app only' }))
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
-    await screen.findByText('Profile updated!')
+    await dismissToast('Profile updated!')
     // The toast shows while onSuccess is still refetching; the button reads "Saving…" until then.
     await screen.findByRole('button', { name: 'Save changes' })
     expect(await me(vol.id)).toMatchObject({
@@ -330,7 +331,7 @@ describe('settings — notifications and privacy tabs', () => {
     await userEvent.click(screen.getByLabelText(/Allow Google Analytics/))
     // The toast lands while the first save is still refetching, its button still "Saving…".
     await userEvent.click(await screen.findByRole('button', { name: 'Save changes' }))
-    await waitFor(() => expect(screen.getAllByText('Profile updated!')).toHaveLength(2))
+    await screen.findByText('Profile updated!')
     expect(await me(vol.id)).toMatchObject({
       consentMakeProfileVisibleInDirectory: false,
       cookieConsentAnalytics: false,
