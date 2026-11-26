@@ -259,6 +259,42 @@ export const adminVolunteersRouter = {
     }),
 
   /**
+   * What has been done to the member, newest first, from the chapter audit log: their roles,
+   * moves, and anything staff did to their account. For their chapter's staff or a global admin.
+   */
+  history: staffProcedure
+    .input(z.object({ volunteerId: z.number().int() }))
+    .handler(async ({ input, context }) => {
+      const { access } = context
+      await assertRunsVolunteer(access, input.volunteerId)
+      const events = await prisma.chapterAuditEvent.findMany({
+        where: {
+          targetVolunteerId: input.volunteerId,
+          // Chapter staff see what happened in their own chapter, as its log shows them,
+          // including the move that brought the member in; a global admin sees all.
+          ...(access.globalAdmin ? {} : { nationalChapterId: access.chapterId }),
+        },
+        include: {
+          actor: { select: { id: true, name: true, deletedAt: true } },
+          chapter: { select: { name: true } },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: MAX_DETAIL_ROWS + 1,
+      })
+      return {
+        events: events.slice(0, MAX_DETAIL_ROWS).map((e) => ({
+          id: e.id,
+          action: e.action,
+          at: e.createdAt,
+          // A deleted actor keeps their name on record but has no profile to link to.
+          actor: e.actor && { id: e.actor.deletedAt ? null : e.actor.id, name: e.actor.name },
+          chapterName: e.chapter?.name ?? null,
+        })),
+        more: events.length > MAX_DETAIL_ROWS,
+      }
+    }),
+
+  /**
    * The live projects of the member's chapter (the pool's, for someone in it) that the caller,
    * as its staff, may invite them to or add them to: not ones they own, are already on, or have
    * asked to own. Each

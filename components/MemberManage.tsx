@@ -13,6 +13,9 @@ import { H2, H3 } from '@/components/Heading'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
+import PersonName from '@/components/PersonName'
+import { formatDate } from '@/lib/format-date'
+import type { ChapterAuditAction } from '@/generated/prisma/enums'
 import Textarea from '@/components/ui/Textarea'
 
 export type Manage = NonNullable<InferRouterOutputs<AppRouter>['volunteers']['getById']['manage']>
@@ -244,6 +247,77 @@ function CoordinatorControl({
         onClose={dialog.close}
       />
     </>
+  )
+}
+
+/** Each audit action as it reads about the member it was done to; `chapter` is where. */
+const DONE_TO_THEM: Record<ChapterAuditAction, (chapter: string) => string> = {
+  CHAPTER_CREATED: () => 'opened a chapter',
+  CHAPTER_UPDATED: () => 'changed a chapter',
+  LEAD_APPOINTED: (c) => `made them lead of ${c}`,
+  LEAD_REMOVED: (c) => `removed them as lead of ${c}`,
+  DEPUTY_APPOINTED: (c) => `made them a deputy of ${c}`,
+  DEPUTY_REMOVED: (c) => `removed them as a deputy of ${c}`,
+  VOLUNTEER_REASSIGNED: (c) => `moved them to ${c}`,
+  TRANSFER_APPROVED: (c) => `approved their move to ${c}`,
+  TRANSFER_DECLINED: (c) => `declined their move to ${c}`,
+  PROJECT_CHAPTER_CHANGED: () => 'moved one of their projects',
+  TEAM_CHAPTER_CHANGED: () => 'moved one of their teams',
+  ROLE_INVITE_SENT: (c) => `invited them to help run ${c}`,
+  ROLE_INVITE_ACCEPTED: (c) => `accepted a role running ${c}`,
+  JOINED_FROM_POOL: (c) => `joined ${c} from the holding pool`,
+  COORDINATOR_APPOINTED: () => 'made them a coordinator',
+  COORDINATOR_REMOVED: () => 'removed them as a coordinator',
+  PROFILE_PICTURE_REMOVED: () => 'took down their profile picture',
+  APPLICATION_REVIEW_STARTED: () => 'started reviewing their application',
+  APPLICATION_INFO_REQUESTED: () => 'asked them for more about their application',
+  APPLICATION_REJECTED: () => 'rejected their application',
+  APPLICATION_REOPENED: () => 'reopened their application',
+  APPLICATION_APPROVED: () => 'approved their application',
+}
+
+const INTO_POOL = new Set<ChapterAuditAction>([
+  'VOLUNTEER_REASSIGNED',
+  'TRANSFER_APPROVED',
+  'TRANSFER_DECLINED',
+])
+
+/** What has been done to the member, read only once opened. */
+function MemberHistory({ member }: { member: Member }) {
+  const [open, setOpen] = useState(false)
+  const { data, isError } = useQuery({
+    ...orpc.admin.volunteers.history.queryOptions({ input: { volunteerId: member.id } }),
+    enabled: open,
+  })
+  return (
+    <details className="mt-4" onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary className="cursor-pointer font-semibold">History</summary>
+      {isError ? (
+        <p className="text-sm m-0 mt-2">Their history could not be loaded.</p>
+      ) : !data ? (
+        <p className="text-sm m-0 mt-2 text-text-light">Loading…</p>
+      ) : data.events.length === 0 ? (
+        <p className="text-sm m-0 mt-2 text-text-light">Nothing recorded yet.</p>
+      ) : (
+        <ul className="list-none p-0 m-0 mt-2 grid gap-1 text-sm">
+          {data.events.map((e) => (
+            <li key={e.id}>
+              <span className="text-text-light">{formatDate(e.at)}</span>{' '}
+              {e.actor ? <PersonName id={e.actor.id} name={e.actor.name} /> : 'Action Hub'}{' '}
+              {DONE_TO_THEM[e.action](
+                e.chapterName
+                  ? `the ${e.chapterName} chapter`
+                  : // Only a move can be to the pool; anything else lost its chapter since.
+                    INTO_POOL.has(e.action)
+                    ? 'the holding pool'
+                    : 'a chapter since closed',
+              )}
+            </li>
+          ))}
+          {data.more && <li className="text-text-light">Older entries are not shown.</li>}
+        </ul>
+      )}
+    </details>
   )
 }
 
@@ -612,6 +686,7 @@ export default function MemberManage({
           {hasPicture && <RemovePicture member={member} />}
         </div>
       </div>
+      <MemberHistory member={member} />
     </section>
   )
 }

@@ -234,6 +234,7 @@ model ChapterAuditEvent {
   workItem        WorkItem?        @relation(fields: [workItemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([nationalChapterId, createdAt], map: "idx_chapter_audit_chapter_created")
+  @@index([targetVolunteerId, createdAt], map: "idx_chapter_audit_target_created")
   @@map("chapter_audit_events")
 }
 
