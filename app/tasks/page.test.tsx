@@ -16,6 +16,9 @@ import { navigation } from '@/test/next-navigation'
 import { clientAs } from '@/test/rpc'
 import TasksPage from './page'
 
+/** The page picks its opening tab once every list has loaded, after the tab labels show. */
+const opensOn = (name: string) =>
+  waitFor(() => expect(screen.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'true'))
 const row = (id: number) => prisma.workItem.findUniqueOrThrow({ where: { id } })
 const card = async (title: string) =>
   within(
@@ -83,10 +86,7 @@ describe('the Tasks page', () => {
 
     // What they took is theirs under Mine.
     await renderApp(<TasksPage />, { as: taker })
-    expect(await screen.findByRole('tab', { name: 'Mine (1)' })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    )
+    await opensOn('Mine (1)')
     const doing = (await screen.findByRole('heading', { name: "You're doing" })).closest('section')!
     expect(within(doing).getByRole('link', { name: 'Proofread the flyer' })).toBeInTheDocument()
     cleanup()
@@ -132,10 +132,7 @@ describe('the Tasks page', () => {
     const done = await clientAs(asker).requests.ask({ title: 'Long done' })
     await prisma.workItem.update({ where: { id: done.id }, data: { status: 'completed' } })
     await renderApp(<TasksPage />, { as: asker })
-    expect(await screen.findByRole('tab', { name: 'Open' })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    )
+    await opensOn('Open')
     await userEvent.click(screen.getByRole('tab', { name: 'Mine' }))
     expect(await screen.findByText('Long done')).toBeInTheDocument()
   })
@@ -159,10 +156,7 @@ describe('the Tasks page', () => {
 
     await renderApp(<TasksPage />, { as: taker })
     // Done work stays listed but is not counted as on their plate.
-    expect(await screen.findByRole('tab', { name: 'Mine (2)' })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    )
+    await opensOn('Mine (2)')
     expect((await card('Waiting on review')).getByRole('status')).toHaveTextContent('In review')
     expect((await card('Sent back')).getByText('Add the date')).toBeInTheDocument()
     expect((await card('Accepted')).getByRole('status')).toHaveTextContent('Done')
