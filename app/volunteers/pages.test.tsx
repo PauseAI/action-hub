@@ -768,6 +768,26 @@ describe('volunteer profile', () => {
     expect(screen.queryByRole('button', { name: 'Sign out everywhere' })).toBeNull()
   })
 
+  it("lets a chapter's lead suspend a member with a reason, and lift it", async () => {
+    const chapter = await createChapter()
+    const member = await createMember(chapter, { name: 'To Pause' })
+    await openProfile(member, await createChapterLead(chapter, { name: 'Pausing Lead' }))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Suspend' }))
+    const dialog = dialogNamed('Suspend To Pause?')
+    expect(within(dialog).getByRole('button', { name: 'Suspend' })).toBeDisabled()
+    await userEvent.type(within(dialog).getByLabelText(/Why/), 'Spam in messages')
+    await confirmIn(dialog, 'Suspend')
+    await screen.findByText('To Pause is suspended')
+    const status = await screen.findByText(/^Suspended/, { selector: 'strong' })
+    expect(status.closest('p')).toHaveTextContent('by Pausing Lead: Spam in messages')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lift suspension' }))
+    await confirmIn(dialogNamed("Lift To Pause's suspension?"), 'Lift suspension')
+    await screen.findByText('To Pause is no longer suspended')
+    await screen.findByRole('button', { name: 'Suspend' })
+  })
+
   it("lets a chapter's deputy ask another chapter to take a member, then withdraw it", async () => {
     const [home, other] = [await createChapter(), await createChapter()]
     const member = await createMember(home, { name: 'Sent On' })
@@ -940,6 +960,8 @@ describe('volunteer profile', () => {
       'APPLICATION_REOPENED',
       'APPLICATION_APPROVED',
       'SESSIONS_REVOKED',
+      'MEMBER_SUSPENDED',
+      'MEMBER_UNSUSPENDED',
       'TRANSFER_REQUESTED',
     ] as const
     await prisma.chapterAuditEvent.createMany({
@@ -986,6 +1008,8 @@ describe('volunteer profile', () => {
       'reopened their application',
       'approved their application',
       'signed them out everywhere',
+      'suspended them',
+      'lifted their suspension',
       `asked, for ${at}, to move them`,
       'approved their move to the holding pool',
       'removed them as a deputy of a chapter since closed',

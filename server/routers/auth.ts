@@ -4,6 +4,7 @@ import { randomBytes } from 'crypto'
 import { z } from 'zod'
 import { logger } from '@/lib/logger'
 import { prisma } from '@/lib/prisma'
+import { SUSPENDED_MESSAGE } from '@/lib/suspension'
 import { chapterCarers } from '@/lib/chapter-access-server'
 import {
   verifyPassword,
@@ -242,6 +243,8 @@ export const authRouter = {
       if (!volunteer?.passwordHash || !verifyPassword(input.password, volunteer.passwordHash)) {
         throw new ORPCError('UNAUTHORIZED', { message: 'Invalid email or password' })
       }
+      // Refused before anything about the account changes.
+      if (volunteer.suspendedAt) throw new ORPCError('FORBIDDEN', { message: SUSPENDED_MESSAGE })
 
       const wasPromoted = await promoteIfEntitled(volunteer)
 
@@ -544,7 +547,8 @@ export const authRouter = {
       const successMsg = "If an account exists with this email, you'll receive a reset link."
       const email = input.email.toLowerCase().trim()
       const volunteer = await prisma.volunteer.findFirst({
-        where: { email, deletedAt: null },
+        // A suspended account gets no email; the reply is the same as for any address.
+        where: { email, deletedAt: null, suspendedAt: null },
         select: { id: true, name: true, email: true, passwordHash: true },
       })
       if (!volunteer?.email) return { message: successMsg }
@@ -591,7 +595,7 @@ export const authRouter = {
         token: input.token,
         usedAt: null,
         expiresAt: { gt: new Date() },
-        volunteer: { deletedAt: null },
+        volunteer: { deletedAt: null, suspendedAt: null },
       },
       select: { id: true, volunteerId: true },
     })
@@ -625,12 +629,17 @@ export const authRouter = {
               email: true,
               emailConfirmed: true,
               approvalStatus: true,
+              suspendedAt: true,
             },
           },
         },
       })
       if (!record)
         throw new ORPCError('BAD_REQUEST', { message: 'Invalid or expired confirmation link' })
+      // Before the token is claimed, so nothing about a suspended account changes.
+      if (record.volunteer.suspendedAt) {
+        throw new ORPCError('FORBIDDEN', { message: SUSPENDED_MESSAGE })
+      }
       if (record.usedAt)
         throw new ORPCError('BAD_REQUEST', {
           message: 'This confirmation link has already been used',
@@ -720,7 +729,7 @@ export const authRouter = {
       if (!email) return { message: okMsg }
 
       const volunteer = await prisma.volunteer.findFirst({
-        where: { email, emailConfirmed: false, deletedAt: null },
+        where: { email, emailConfirmed: false, deletedAt: null, suspendedAt: null },
         select: { id: true, name: true, email: true },
       })
       if (!volunteer?.email) return { message: okMsg }
@@ -847,6 +856,7 @@ export const authRouter = {
       email = email.toLowerCase().trim()
 
       const found = await prisma.volunteer.findFirst({ where: { email, deletedAt: null } })
+      if (found?.suspendedAt) throw new ORPCError('FORBIDDEN', { message: SUSPENDED_MESSAGE })
       if (found) {
         // Google vouches for the address, which may have been unconfirmed since a
         // password signup. That signup need not have been this person's.

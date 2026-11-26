@@ -145,6 +145,20 @@ describe('mergeAccounts', () => {
     ])
   })
 
+  it('refuses while either account is suspended', async () => {
+    const kept = await createVolunteer()
+    const merged = await createVolunteer({ suspendedAt: new Date() })
+    const admin = await createVolunteer()
+    for (const [a, b] of [
+      [kept.id, merged.id],
+      [merged.id, kept.id],
+    ]) {
+      await expect(mergeAccounts(a, b, admin.id)).rejects.toMatchObject({
+        message: 'One of these accounts is suspended. Lift the suspension before merging.',
+      })
+    }
+  })
+
   it('clears a mark that pointed the kept account at the merged one', async () => {
     const merged = await createVolunteer()
     const kept = await createVolunteer({ duplicateOfId: merged.id })
@@ -291,6 +305,7 @@ describe('mergeProfiles', () => {
     passwordHash: null,
     emailConfirmed: true,
     deletedAt: null,
+    suspendedAt: null,
     country: null,
     nationalChapterId: null,
     localGroupId: null,

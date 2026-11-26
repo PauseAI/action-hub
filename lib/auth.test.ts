@@ -69,6 +69,14 @@ describe('sessions', () => {
     expect(await getCurrentVolunteer(t3)).toBeNull()
   })
 
+  it('opens no session for a suspended account, and ends the ones it had', async () => {
+    const vol = await createVolunteer()
+    const token = await createSession(vol.id)
+    await prisma.volunteer.update({ where: { id: vol.id }, data: { suspendedAt: new Date() } })
+    expect(await getCurrentVolunteer(`Bearer ${token}`)).toBeNull()
+    await expect(createSession(vol.id)).rejects.toMatchObject({ code: 'FORBIDDEN' })
+  })
+
   it('revokes API tokens and a pre-session token too, counting only what was live', async () => {
     const vol = await createVolunteer()
     await createSession(vol.id)

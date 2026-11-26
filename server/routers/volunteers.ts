@@ -4,7 +4,7 @@ import { saveDeliveries, unchoosableTypes } from '@/lib/notification-preferences
 import { Prisma, type Volunteer } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
 import { groupIn, placement } from '@/lib/chapter-placement'
-import { redactVolunteer } from '@/lib/auth'
+import { isSuperAdmin, redactVolunteer } from '@/lib/auth'
 import { TimeZoneSchema, UpdateVolunteerSchema } from '@/lib/schemas'
 import { projectScopeWhere } from '@/lib/work-item'
 import { historySelect, historyWhere, projectHistory } from '@/lib/volunteer-history'
@@ -17,7 +17,7 @@ import {
   type ChapterAccess,
 } from '@/lib/chapter-access'
 import { peopleInfo, viewableVolunteers } from '@/lib/people'
-import { chapterFilter, mayUnseat, outranks } from '@/lib/chapter-access-server'
+import { chapterFilter, mayUnseat, outranks, staffRoleOf } from '@/lib/chapter-access-server'
 import { isActiveRecently } from '@/lib/activity'
 import { askingChapter, decidingChapter } from '@/lib/chapter-transfers'
 import { NOT_NOW_MESSAGE, dismissFastTrack, setFastTrack } from '@/lib/fast-track'
@@ -61,6 +61,9 @@ async function manageControls(
     | 'nationalChapterId'
     | 'duplicateOfId'
     | 'approvalStatus'
+    | 'suspendedAt'
+    | 'suspendedById'
+    | 'suspensionReason'
     | 'fastTrack'
   >,
 ) {
@@ -76,9 +79,7 @@ async function manageControls(
             deputies: { where: { volunteerId: vol.id }, select: { id: true } },
           },
         }),
-    access.globalAdmin
-      ? prisma.coordinator.findUnique({ where: { volunteerId: vol.id }, select: { remit: true } })
-      : null,
+    prisma.coordinator.findUnique({ where: { volunteerId: vol.id }, select: { remit: true } }),
   ])
   // Those who outrank the viewer are left alone: no sign-out, no picture taken down.
   const outranked = await outranks(access, vol, chapter?.lead?.id ?? null)
@@ -89,8 +90,11 @@ async function manageControls(
   const canCoordinate =
     !duplicate && vol.approvalStatus === ApprovalStatus.approved && Boolean(vol.emailConfirmed)
 
+  // No role for someone suspended (lib/chapter-roles.ts); lift it first.
+  const suspended = vol.suspendedAt !== null
   return {
     chapterDeputy:
+      !suspended &&
       chapterId !== null &&
       canAppointDeputies(access, chapterId) &&
       !isLead &&
@@ -98,16 +102,21 @@ async function manageControls(
         ? { chapterId, isDeputy }
         : null,
     chapterLead:
-      chapterId !== null && access.globalAdmin && (isLead || !duplicate)
+      !suspended && chapterId !== null && access.globalAdmin && (isLead || !duplicate)
         ? { chapterId, isLead, currentLead: isLead ? null : (chapter?.lead ?? null) }
         : null,
     coordinator:
-      access.globalAdmin && (coordinator || canCoordinate)
+      !suspended && access.globalAdmin && (coordinator || canCoordinate)
         ? { isCoordinator: Boolean(coordinator), remit: coordinator?.remit ?? null }
         : null,
     moveChapter: access.globalAdmin ? { chapterId } : null,
     removePicture: !outranked,
     signOutEverywhere: signIn,
+    // Only someone who runs nothing, anywhere, as admin.volunteers.setSuspended requires.
+    suspend:
+      !isSuperAdmin(vol) && !coordinator && (await staffRoleOf(vol.id)) === null
+        ? { suspension: vol.suspendedAt ? await suspensionOf(vol) : null }
+        : null,
     /**
      * The Work group: verify skills, fast track, invite or add to a project. Only for an
      * approved account that is not a duplicate, so the work lands on the record in use.
@@ -116,6 +125,21 @@ async function manageControls(
     /** Whether they are on fast track, for the control that puts them on or takes them off. */
     fastTrack: { on: vol.fastTrack },
   }
+}
+
+/** When and by whom a member was suspended, and why, for the staff who may lift it. */
+async function suspensionOf(vol: {
+  suspendedAt: Date | null
+  suspendedById: number | null
+  suspensionReason: string | null
+}) {
+  const by = vol.suspendedById
+    ? await prisma.volunteer.findUnique({
+        where: { id: vol.suspendedById },
+        select: { name: true },
+      })
+    : null
+  return { at: vol.suspendedAt as Date, byName: by?.name ?? null, reason: vol.suspensionReason }
 }
 
 /**
@@ -260,6 +284,8 @@ export const volunteersRouter = {
 
       const where: Record<string, unknown> = {
         deletedAt: null,
+        // Out of every list and picker; its staff find it on the chapter's page.
+        suspendedAt: null,
         nationalChapterId: chapterFilter(context.access, input.chapter, seesAll),
         ...(seesHidden ? {} : { consentMakeProfileVisibleInDirectory: true }),
         approvalStatus: ApprovalStatus.approved,

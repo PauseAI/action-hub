@@ -1,6 +1,8 @@
 import { randomBytes, pbkdf2Sync, timingSafeEqual, createHash } from 'crypto'
 import type { Prisma, Volunteer } from '@/generated/prisma/client'
+import { ORPCError } from '@orpc/server'
 import { prisma } from './prisma'
+import { SUSPENDED_MESSAGE } from './suspension'
 import { acceptChapterInvite } from './chapter-roles'
 import { env } from './env'
 import { ApprovalStatus, InviteStatus } from '@/generated/prisma/enums'
@@ -57,7 +59,12 @@ export function hashEmail(email: string): string {
   return createHash('sha256').update(email.toLowerCase().trim()).digest('hex')
 }
 
+/** Opens a session, the only way into an account, so a suspended one is refused here. */
 export async function createSession(volunteerId: number): Promise<string> {
+  const suspended = await prisma.volunteer.count({
+    where: { id: volunteerId, suspendedAt: { not: null } },
+  })
+  if (suspended) throw new ORPCError('FORBIDDEN', { message: SUSPENDED_MESSAGE })
   const token = generateAuthToken()
   await prisma.session.create({
     data: { volunteerId, tokenHash: hashToken(token), expiresAt: authTokenExpiry() },
@@ -108,7 +115,7 @@ export async function getCurrentVolunteer(authorization: string | null | undefin
     include: { volunteer: true },
   })
   if (session) {
-    if (session.volunteer.deletedAt) return null
+    if (session.volunteer.deletedAt || session.volunteer.suspendedAt) return null
     // Fire-and-forget: a failed lastUsedAt touch shouldn't fail the request it came with.
     prisma.session
       .update({ where: { id: session.id }, data: { lastUsedAt: new Date() } })
@@ -121,7 +128,12 @@ export async function getCurrentVolunteer(authorization: string | null | undefin
   // without forcing a re-login, then never touch the legacy columns again — new logins
   // no longer write to them, so this path stops firing once those tokens expire.
   const legacyVolunteer = await prisma.volunteer.findFirst({
-    where: { authToken: token, deletedAt: null, authTokenExpiresAt: { gt: new Date() } },
+    where: {
+      authToken: token,
+      deletedAt: null,
+      suspendedAt: null,
+      authTokenExpiresAt: { gt: new Date() },
+    },
   })
   if (!legacyVolunteer) return null
   await prisma.session

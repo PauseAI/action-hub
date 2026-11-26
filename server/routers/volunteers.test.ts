@@ -547,6 +547,7 @@ describe('volunteers.getById manage', () => {
       moveChapter: null,
       removePicture: true,
       signOutEverywhere: { signedIn: true, apiTokens: 0 },
+      suspend: { suspension: null },
       work: true,
       fastTrack: { on: false },
     }
@@ -557,11 +558,13 @@ describe('volunteers.getById manage', () => {
     expect((await manageOf(deputy, lead.id))?.signOutEverywhere).toBeNull()
     const admin = await createAdmin({ nationalChapterId: chapter.id, country: chapter.country })
     expect((await manageOf(lead, admin.id))?.signOutEverywhere).toBeNull()
+    // A lead signs out a deputy, but suspending one is a global admin's.
     expect(await manageOf(lead, deputy.id)).toMatchObject({
       removePicture: true,
       signOutEverywhere: { signedIn: false, apiTokens: 0 },
+      suspend: null,
     })
-    expect((await manageOf(deputy, lead.id))?.removePicture).toBe(false)
+    expect(await manageOf(deputy, lead.id)).toMatchObject({ removePicture: false, suspend: null })
     expect(await manageOf(lead, member.id)).toEqual({
       ...noRoles,
       chapterDeputy: { chapterId: chapter.id, isDeputy: false },
@@ -585,6 +588,7 @@ describe('volunteers.getById manage', () => {
       moveChapter: { chapterId: chapter.id },
       removePicture: true,
       signOutEverywhere: { signedIn: false, apiTokens: 0 },
+      suspend: { suspension: null },
       work: true,
       fastTrack: { on: false },
     })

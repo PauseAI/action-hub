@@ -146,6 +146,7 @@ export const adminChaptersRouter = {
         name: true,
         email: true,
         approvalStatus: true,
+        suspendedAt: true,
         duplicateOf: { select: { id: true, name: true } },
       },
       orderBy: { name: 'asc' },

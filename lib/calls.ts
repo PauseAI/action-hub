@@ -6,9 +6,10 @@ export const CALL_ANSWERED = 'call_answered'
 
 type Audience = { senderId: number | null; chapterIds: number[] }
 
-/** The accounts any call may reach: approved, confirmed, live and not marked a duplicate. */
+/** The accounts any call may reach: approved, confirmed, live, not suspended, not a duplicate. */
 export const ADDRESSABLE = {
   deletedAt: null,
+  suspendedAt: null,
   duplicateOfId: null,
   approvalStatus: ApprovalStatus.approved,
   emailConfirmed: true,

@@ -95,6 +95,35 @@ describe('runNudgesJob', () => {
     expect(emails.sent.length).toBe(sent)
   })
 
+  it("keeps a suspended assignee's task to the same clock, emailing them nothing", async () => {
+    const quiet = await claimedTask('paused-quiet', TASK_REMINDER_AFTER_DAYS)
+    const warned = await claimedTask('paused-warned', TASK_FINAL_WARNING_AFTER_DAYS)
+    const gone = await claimedTask('paused-gone', TASK_RELEASE_AFTER_DAYS)
+    // A suspended owner hears nothing either.
+    const ownerless = await claimedTask('owner-paused', TASK_RELEASE_AFTER_DAYS)
+    await prisma.volunteer.updateMany({
+      where: {
+        id: {
+          in: [quiet.assignee.id, warned.assignee.id, gone.assignee.id, ownerless.owner.id],
+        },
+      },
+      data: { suspendedAt: new Date() },
+    })
+
+    expect(await runNudgesJob()).toEqual({ nudgesSent: 0, warningsSent: 0, surrendered: 2 })
+    for (const { assignee } of [quiet, warned, gone]) {
+      expect(emails.to(assignee.email!)).toEqual([])
+    }
+    expect((await row(quiet.task.id)).nudgeSentAt).not.toBeNull()
+    expect((await row(warned.task.id)).finalWarningSentAt).not.toBeNull()
+    expect(await row(gone.task.id)).toMatchObject({ assigneeId: null })
+    expect(emails.lastTo(gone.owner.email!)?.subject).toBe(subjects.releasedOwner('paused-gone'))
+    expect(emails.to(ownerless.owner.email!)).toEqual([])
+    expect(emails.lastTo(ownerless.assignee.email!)?.subject).toBe(
+      subjects.releasedAssignee('owner-paused'),
+    )
+  })
+
   it('tells the released volunteer in the app, once, with a link to the task', async () => {
     const gone = await claimedTask('released', TASK_RELEASE_AFTER_DAYS + 3)
     await runNudgesJob()

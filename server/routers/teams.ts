@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { ORPCError } from '@orpc/server'
 import { prisma } from '@/lib/prisma'
+import { assertActive, assertActiveById } from '@/lib/suspension'
 import type { Prisma } from '@/generated/prisma/client'
 import { canAdminChapter, inChapter, type ChapterAccess } from '@/lib/chapter-access'
 import { clearNotifications, notifyUser } from '@/lib/notify'
@@ -339,6 +340,7 @@ export const teamsRouter = {
       if (request.status !== TeamJoinRequestStatus.pending) {
         throw new ORPCError('BAD_REQUEST', { message: 'Request already reviewed' })
       }
+      if (input.action === 'accept') await assertActiveById(request.volunteerId)
 
       await prisma.$transaction([
         prisma.teamJoinRequest.update({
@@ -394,6 +396,7 @@ export const teamsRouter = {
       await assertCanManageTeam(await findTeam(input.teamId), context.volunteer, context.access)
       const volunteer = await prisma.volunteer.findUnique({ where: { id: input.volunteerId } })
       if (!volunteer) throw new ORPCError('NOT_FOUND', { message: 'Volunteer not found' })
+      assertActive(volunteer)
       const team = await prisma.team.findUniqueOrThrow({ where: { id: input.teamId } })
       if (!context.access.globalAdmin && volunteer.nationalChapterId !== team.nationalChapterId) {
         throw new ORPCError('BAD_REQUEST', { message: 'They are in another national chapter' })
@@ -431,6 +434,7 @@ export const teamsRouter = {
         where: { teamId_volunteerId: { teamId: input.teamId, volunteerId: input.volunteerId } },
       })
       if (!membership) throw new ORPCError('NOT_FOUND', { message: 'Not a team member' })
+      if (input.role === TeamMembershipRole.leader) await assertActiveById(input.volunteerId)
 
       await prisma.teamMembership.update({
         where: { id: membership.id },

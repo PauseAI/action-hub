@@ -255,6 +255,19 @@ describe('admin.bugReports', () => {
     })
   })
 
+  it('assigns no report to a suspended volunteer', async () => {
+    const admin = await createAdmin()
+    const reporter = await createVolunteer()
+    const paused = await createVolunteer({ name: 'Paused Dev', suspendedAt: new Date() })
+    const { id } = await clientAs(reporter).bugReports.create({
+      title: 'T',
+      description: 'Ten characters at least',
+    })
+    await expect(
+      clientAs(admin).admin.bugReports.assign({ id, volunteerId: paused.id }),
+    ).rejects.toMatchObject({ message: 'Paused Dev is suspended' })
+  })
+
   it('lists with filters, assigns to approved volunteers, and updates status', async () => {
     const admin = await createAdmin()
     const reporter = await createVolunteer()

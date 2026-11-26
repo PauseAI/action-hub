@@ -97,6 +97,8 @@ enum ChapterAuditAction {
   APPLICATION_INFO_REQUESTED
   APPLICATION_REOPENED
   SESSIONS_REVOKED
+  MEMBER_SUSPENDED
+  MEMBER_UNSUSPENDED
   TRANSFER_REQUESTED
 }
 
@@ -1219,6 +1221,14 @@ model Volunteer {
   createdAt                               DateTime?                @default(now()) @map("created_at")
   updatedAt                               DateTime?                @default(now()) @map("updated_at")
   deletedAt                               DateTime?                @map("deleted_at")
+  /// Set while staff have suspended the account: it cannot sign in, and is left out of the
+  /// directory, pickers, calls and email. Cleared to restore it; nothing else changes.
+  suspendedAt                             DateTime?                @map("suspended_at")
+  suspendedById                           Int?                     @map("suspended_by_id")
+  /// Why, for staff. Not in the email to the member, but in their own data export.
+  suspensionReason                        String?                  @map("suspension_reason")
+  suspendedBy                             Volunteer?               @relation("SuspendedBy", fields: [suspendedById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  suspensionsMade                         Volunteer[]              @relation("SuspendedBy")
   country                                 String?
   emailDigest                             String?                  @default("none") @map("email_digest") // TODO: enum — none, daily, weekly
   /// IANA time zone, from their browser or chosen in Settings; null falls back by chapter country.

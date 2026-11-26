@@ -2,6 +2,7 @@ import { suppressAddresses, suppressionKey } from '@/lib/email-suppression'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { logger } from '@/lib/logger'
 import { prisma } from '@/lib/prisma'
+import { SUSPENDED_MESSAGE } from '@/lib/suspension'
 import { createApiToken } from '@/lib/api-tokens'
 import {
   createVolunteer,
@@ -508,6 +509,46 @@ describe('forgotPassword / resetPassword', () => {
   })
 })
 
+describe('a suspended account and its emailed links', () => {
+  it('gets no reset or confirmation email, and its links do nothing', async () => {
+    const vol = await createVolunteer({ emailConfirmed: false })
+    const reset = await anon().auth.forgotPassword({ email: vol.email! })
+    const verify = await prisma.emailVerificationToken.create({
+      data: {
+        volunteerId: vol.id,
+        token: `tok-paused-${vol.id}`,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    })
+    await prisma.volunteer.update({ where: { id: vol.id }, data: { suspendedAt: new Date() } })
+    const sent = emails.sent.length
+
+    expect(await anon().auth.forgotPassword({ email: vol.email! })).toEqual({
+      message: "If an account exists with this email, you'll receive a reset link.",
+    })
+    expect(await anon().auth.resendVerification({ email: vol.email! })).toMatchObject({
+      message: expect.any(String),
+    })
+    expect(emails.sent.length).toBe(sent)
+    await expect(
+      anon().auth.resetPassword({
+        token: reset._devResetToken as string,
+        newPassword: 'brand-new-pass',
+      }),
+    ).rejects.toMatchObject({ message: 'Invalid or expired reset token' })
+    await expect(anon().auth.verifyEmail({ token: verify.token })).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+      message: SUSPENDED_MESSAGE,
+    })
+    expect(await prisma.volunteer.findUniqueOrThrow({ where: { id: vol.id } })).toMatchObject({
+      emailConfirmed: false,
+    })
+    expect(
+      await prisma.emailVerificationToken.findUniqueOrThrow({ where: { id: verify.id } }),
+    ).toMatchObject({ usedAt: null })
+  })
+})
+
 describe('verifyEmail / resendVerification', () => {
   const tokenFor = async (volunteerId: number, over: Record<string, unknown> = {}) =>
     prisma.emailVerificationToken.create({
@@ -922,6 +963,23 @@ describe('google sign-in (stubbed)', () => {
     denyNext()
     await expect(anon().auth.google({ stub: true })).rejects.toMatchObject({
       code: 'TOO_MANY_REQUESTS',
+    })
+  })
+
+  it('refuses a suspended account before Google changes anything about it', async () => {
+    const paused = await createVolunteer({
+      email: 'paused@example.com',
+      emailConfirmed: false,
+      suspendedAt: new Date(),
+    })
+    google.accept('paused', { email: 'paused@example.com', name: 'Paused' })
+    await expect(anon().auth.google({ credential: 'paused' })).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+      message: SUSPENDED_MESSAGE,
+    })
+    expect(await prisma.volunteer.findUniqueOrThrow({ where: { id: paused.id } })).toMatchObject({
+      emailConfirmed: false,
+      passwordHash: paused.passwordHash,
     })
   })
 

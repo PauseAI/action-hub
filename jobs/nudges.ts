@@ -69,6 +69,9 @@ export async function runNudgesJob(): Promise<Record<string, unknown>> {
     // A reminder or warning counts only for the quiet spell it was sent in: some updates restart
     // the clock without clearing them.
     const sinceUpdate = (sentAt: Date | null) => (sentAt && sentAt >= updatedAt ? sentAt : null)
+    // A suspended assignee is emailed nothing, but their task keeps to the same clock: the
+    // reminder and warning are recorded as given, so it is released on time.
+    const quiet = assignee.suspendedAt !== null
     const nudgedAt = sinceUpdate(task.nudgeSentAt)
     const warnedAt = sinceUpdate(task.finalWarningSentAt)
 
@@ -92,14 +95,16 @@ export async function runNudgesJob(): Promise<Record<string, unknown>> {
         `/projects/${task.parentId}/tasks/${task.id}`,
         task.id,
       )
-      await sendTaskSurrenderedAssigneeEmail({
-        to: assignee.email!,
-        name: assignee.name,
-        taskTitle: task.title,
-        projectTitle: project.title,
-        projectId: task.parentId!,
-      })
-      if (project.assignee?.email) {
+      if (!quiet) {
+        await sendTaskSurrenderedAssigneeEmail({
+          to: assignee.email!,
+          name: assignee.name,
+          taskTitle: task.title,
+          projectTitle: project.title,
+          projectId: task.parentId!,
+        })
+      }
+      if (project.assignee?.email && !project.assignee.suspendedAt) {
         await sendTaskSurrenderedOwnerEmail({
           to: project.assignee.email,
           ownerName: project.assignee.name,
@@ -120,41 +125,45 @@ export async function runNudgesJob(): Promise<Record<string, unknown>> {
           ),
         ),
       )
-      const sent = await sendTaskFinalWarningEmail({
-        to: assignee.email!,
-        name: assignee.name,
-        taskTitle: task.title,
-        projectTitle: project.title,
-        projectId: task.parentId!,
-        taskId: task.id,
-        daysInactive,
-        activityPhrase: 'you last updated',
-        lastActivityDate,
-        surrenderDate,
-      })
+      const sent =
+        quiet ||
+        (await sendTaskFinalWarningEmail({
+          to: assignee.email!,
+          name: assignee.name,
+          taskTitle: task.title,
+          projectTitle: project.title,
+          projectId: task.parentId!,
+          taskId: task.id,
+          daysInactive,
+          activityPhrase: 'you last updated',
+          lastActivityDate,
+          surrenderDate,
+        }))
       if (sent) {
         await prisma.workItem.update({
           where: { id: task.id },
           data: { finalWarningSentAt: now },
         })
-        warningsSent++
+        if (!quiet) warningsSent++
         console.log(`[CRON NUDGES] Final warning sent for task ${task.id} (${daysInactive} days)`)
       }
     } else if (daysInactive >= TASK_REMINDER_AFTER_DAYS && !nudgedAt && !warnedAt) {
-      const sent = await sendTaskNudgeEmail({
-        to: assignee.email!,
-        name: assignee.name,
-        taskTitle: task.title,
-        projectTitle: project.title,
-        projectId: task.parentId!,
-        taskId: task.id,
-        daysInactive,
-        activityPhrase: 'you last updated',
-        lastActivityDate,
-      })
+      const sent =
+        quiet ||
+        (await sendTaskNudgeEmail({
+          to: assignee.email!,
+          name: assignee.name,
+          taskTitle: task.title,
+          projectTitle: project.title,
+          projectId: task.parentId!,
+          taskId: task.id,
+          daysInactive,
+          activityPhrase: 'you last updated',
+          lastActivityDate,
+        }))
       if (sent) {
         await prisma.workItem.update({ where: { id: task.id }, data: { nudgeSentAt: now } })
-        nudgesSent++
+        if (!quiet) nudgesSent++
         console.log(`[CRON NUDGES] Nudge sent for task ${task.id} (${daysInactive} days)`)
       }
     }

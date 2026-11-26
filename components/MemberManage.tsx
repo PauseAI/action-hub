@@ -14,8 +14,8 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import Textarea from '@/components/ui/Textarea'
-import PersonName from '@/components/PersonName'
 import { formatDate } from '@/lib/format-date'
+import PersonName from '@/components/PersonName'
 import type { ChapterAuditAction } from '@/generated/prisma/enums'
 
 export type Manage = NonNullable<InferRouterOutputs<AppRouter>['volunteers']['getById']['manage']>
@@ -292,6 +292,91 @@ function SignOutEverywhere({
   )
 }
 
+/**
+ * Suspends a member, with the reason on record for staff, or shows the suspension and lifts it.
+ * The member is emailed either way, never the reason.
+ */
+function Suspend({ member, control }: { member: Member; control: NonNullable<Manage['suspend']> }) {
+  const [reason, setReason] = useState('')
+  const dialog = useDialog(() => setReason(''))
+  const set = useMutation({
+    ...orpc.admin.volunteers.setSuspended.mutationOptions(),
+    ...useManaged(dialog.close),
+  })
+  const { suspension } = control
+  if (suspension) {
+    return (
+      <div role="status" className="w-full text-sm">
+        <p className="m-0 mb-2">
+          <strong>Suspended</strong> on {formatDate(suspension.at)}
+          {suspension.byName && ` by ${suspension.byName}`}
+          {suspension.reason && `: ${suspension.reason}`}
+        </p>
+        <Button size="sm" variant="secondary" onClick={dialog.show}>
+          Lift suspension
+        </Button>
+        <ConfirmDialog
+          id="lift-suspension-dialog"
+          isOpen={dialog.open}
+          title={`Lift ${member.name}'s suspension?`}
+          body={`${member.name} can sign in again, with everything as they left it, and is emailed to say so.`}
+          confirmLabel="Lift suspension"
+          busy={set.isPending}
+          busyLabel="Saving…"
+          onConfirm={() => set.mutate({ volunteerId: member.id, suspended: false })}
+          onClose={dialog.close}
+        />
+      </div>
+    )
+  }
+  return (
+    <>
+      <Button variant="danger" size="sm" onClick={dialog.show}>
+        Suspend
+      </Button>
+      <ConfirmDialog
+        id="suspend-dialog"
+        isOpen={dialog.open}
+        title={`Suspend ${member.name}?`}
+        body={
+          <div className="grid gap-3">
+            <p className="m-0">
+              They are signed out and cannot sign in, and drop out of the directory, pickers, calls
+              and email. Nothing is deleted, and their tasks stay theirs until someone reassigns
+              them. They are emailed kindly, without your reason. Their chapter&apos;s staff and the
+              global admins are told, with it.
+            </p>
+            <div>
+              <FormLabel htmlFor="suspend-reason">Why</FormLabel>
+              <p id="suspend-reason-hint" className="m-0 mb-1 text-sm">
+                Kept on record. It is not in the email to them but, like an admin note, it is in
+                their copy of their own data if they ask for it.
+              </p>
+              <Textarea
+                id="suspend-reason"
+                aria-describedby="suspend-reason-hint"
+                rows={3}
+                maxLength={1000}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
+            </div>
+          </div>
+        }
+        confirmLabel="Suspend"
+        confirmDisabled={reason.trim().length < 3}
+        danger
+        busy={set.isPending}
+        busyLabel="Suspending…"
+        onConfirm={() =>
+          set.mutate({ volunteerId: member.id, suspended: true, reason: reason.trim() })
+        }
+        onClose={dialog.close}
+      />
+    </>
+  )
+}
+
 /** Each audit action as it reads about the member it was done to; `chapter` is where. */
 const DONE_TO_THEM: Record<ChapterAuditAction, (chapter: string) => string> = {
   CHAPTER_CREATED: () => 'opened a chapter',
@@ -317,6 +402,8 @@ const DONE_TO_THEM: Record<ChapterAuditAction, (chapter: string) => string> = {
   APPLICATION_REOPENED: () => 'reopened their application',
   APPLICATION_APPROVED: () => 'approved their application',
   SESSIONS_REVOKED: () => 'signed them out everywhere',
+  MEMBER_SUSPENDED: () => 'suspended them',
+  MEMBER_UNSUSPENDED: () => 'lifted their suspension',
   TRANSFER_REQUESTED: (c) => `asked, for ${c}, to move them`,
 }
 
@@ -889,6 +976,7 @@ export default function MemberManage({
             <Button href={`/admin/volunteers/${member.id}`} variant="secondary" size="sm">
               Admin record
             </Button>
+            {manage.suspend && <Suspend member={member} control={manage.suspend} />}
             {manage.signOutEverywhere && (
               <SignOutEverywhere member={member} control={manage.signOutEverywhere} />
             )}

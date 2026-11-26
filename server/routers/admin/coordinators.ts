@@ -41,6 +41,7 @@ export const adminCoordinatorsRouter = {
           id: input.volunteerId,
           deletedAt: null,
           duplicateOfId: null,
+          suspendedAt: null,
           approvalStatus: ApprovalStatus.approved,
           emailConfirmed: true,
         },

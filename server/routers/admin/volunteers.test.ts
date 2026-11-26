@@ -4,6 +4,7 @@ import {
   createVolunteer,
   createAdmin,
   createProject,
+  createTask,
   createQuickTask,
   createSkill,
   createChapter,
@@ -11,13 +12,20 @@ import {
   createChapterLead,
   createMember,
   createCoordinator,
+  TEST_PASSWORD,
 } from '@/test/factories'
-import { clientAs } from '@/test/rpc'
+import { anon, clientAs } from '@/test/rpc'
+import { SUSPENDED_MESSAGE } from '@/lib/suspension'
 import { createSession, getCurrentVolunteer } from '@/lib/auth'
 import { authenticateApiToken, createApiToken } from '@/lib/api-tokens'
 import { emails } from '@/test/fakes/email'
 import { rateLimit } from '@/test/fakes/rate-limit'
 import { withoutAdminRights } from '@/lib/view-as'
+
+const subjects = {
+  suspended: 'Your Action Hub account is suspended',
+  lifted: 'Your Action Hub account is no longer suspended',
+}
 
 describe('admin.volunteers', () => {
   it('getById returns the full admin view of a volunteer', async () => {
@@ -408,6 +416,233 @@ describe('admin.volunteers.signOutEverywhere', () => {
     expect(await attempt(await createAdmin(), pooled.id)).toMatchObject({
       message: expect.stringContaining('signed out everywhere'),
     })
+  })
+})
+
+describe('admin.volunteers.setSuspended', () => {
+  const suspend = (
+    who: Parameters<typeof clientAs>[0],
+    volunteerId: number,
+    reason = 'Abusive messages',
+  ) => clientAs(who).admin.volunteers.setSuspended({ volunteerId, suspended: true, reason })
+
+  it('signs a member out, keeps them out, and hides them, until it is lifted', async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter, { name: 'Suspending Lead' })
+    const deputy = await createChapterDeputy(chapter)
+    const admin = await createAdmin()
+    const member = await createMember(chapter, {
+      name: 'Paused Person',
+      consentMakeProfileVisibleInDirectory: true,
+    })
+    const token = await createSession(member.id)
+    const { token: apiToken } = await createApiToken(member.id, {
+      name: 'a',
+      scopes: [],
+      expiresAt: null,
+    })
+
+    expect(await suspend(lead, member.id)).toEqual({ message: 'Paused Person is suspended' })
+    expect(await getCurrentVolunteer(`Bearer ${token}`)).toBeNull()
+    expect(await authenticateApiToken(`Bearer ${apiToken}`)).toBeNull()
+    await expect(
+      anon().auth.login({ email: member.email as string, password: TEST_PASSWORD }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN', message: SUSPENDED_MESSAGE })
+    expect(
+      await prisma.chapterAuditEvent.findFirst({
+        where: { action: 'MEMBER_SUSPENDED', targetVolunteerId: member.id },
+      }),
+    ).toMatchObject({ actorId: lead.id, details: { reason: 'Abusive messages' } })
+
+    // Told kindly, never why; staff and global admins are told, the lead is not told of their own act.
+    const notice = emails.lastTo(member.email as string)
+    expect(notice?.subject).toBe(subjects.suspended)
+    expect(notice?.html).not.toContain('Abusive')
+    const told = await prisma.notification.findMany({
+      where: { type: 'member_suspended' },
+      select: { volunteerId: true, title: true, body: true },
+    })
+    expect(told.map((n) => n.volunteerId)).toEqual(expect.arrayContaining([deputy.id, admin.id]))
+    expect(told.map((n) => n.volunteerId)).not.toContain(lead.id)
+    expect(told[0]).toMatchObject({
+      title: 'Suspending Lead suspended Paused Person',
+      body: 'Abusive messages',
+    })
+
+    // Out of sight to other members and the directory; still there for its staff.
+    const fellow = await createMember(chapter)
+    await expect(clientAs(fellow).volunteers.getById({ id: member.id })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    })
+    const listed = await clientAs(fellow).volunteers.list({})
+    expect(listed.volunteers.map((v) => v.id)).not.toContain(member.id)
+    // Nor in any list or picker, staff's included; the chapter's own page marks them.
+    const forStaff = await clientAs(deputy).volunteers.list({})
+    expect(forStaff.volunteers.map((v) => v.id)).not.toContain(member.id)
+    const page = await clientAs(deputy).admin.chapters.get({ chapterId: chapter.id })
+    expect(page.members.find((m) => m.id === member.id)?.suspendedAt).toEqual(expect.any(Date))
+    expect((await clientAs(deputy).volunteers.getById({ id: member.id })).manage?.suspend).toEqual({
+      suspension: {
+        at: expect.any(Date),
+        byName: 'Suspending Lead',
+        reason: 'Abusive messages',
+      },
+    })
+
+    expect(
+      await clientAs(deputy).admin.volunteers.setSuspended({
+        volunteerId: member.id,
+        suspended: false,
+      }),
+    ).toEqual({ message: 'Paused Person is no longer suspended' })
+    expect(emails.lastTo(member.email as string)?.subject).toBe(subjects.lifted)
+    expect(
+      (await anon().auth.login({ email: member.email as string, password: TEST_PASSWORD })).token,
+    ).toBeTruthy()
+  })
+
+  it('suspends nobody who still holds a role, and refuses what makes no sense', async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter)
+    const deputy = await createChapterDeputy(chapter)
+    const coordinator = await createCoordinator(chapter)
+    const member = await createMember(chapter)
+    const admin = await createAdmin({ nationalChapterId: chapter.id, country: chapter.country })
+
+    // Not even a global admin suspends a lead, deputy or coordinator who keeps the role.
+    for (const who of [deputy, coordinator]) {
+      await expect(suspend(lead, who.id)).rejects.toMatchObject({ code: 'FORBIDDEN' })
+      await expect(suspend(await createAdmin(), who.id)).rejects.toMatchObject({
+        message: expect.stringContaining('Take the role away before suspending them.'),
+      })
+    }
+    await expect(suspend(deputy, lead.id)).rejects.toMatchObject({ code: 'FORBIDDEN' })
+    await expect(suspend(lead, admin.id)).rejects.toMatchObject({ code: 'FORBIDDEN' })
+    await expect(suspend(await createAdmin(), admin.id)).rejects.toMatchObject({
+      message: 'A global admin cannot be suspended here',
+    })
+    await expect(suspend(lead, lead.id)).rejects.toMatchObject({
+      message: 'You cannot suspend yourself',
+    })
+    await expect(suspend(lead, member.id, 'x')).rejects.toMatchObject({
+      message: 'Say why, for the record',
+    })
+    await expect(
+      clientAs(lead).admin.volunteers.setSuspended({ volunteerId: member.id, suspended: false }),
+    ).rejects.toMatchObject({ message: expect.stringContaining('is not suspended') })
+    await suspend(lead, member.id)
+    await expect(suspend(lead, member.id)).rejects.toMatchObject({
+      message: expect.stringContaining('is already suspended'),
+    })
+    await expect(
+      suspend(await createChapterLead(await createChapter()), member.id),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    await expect(suspend(await createMember(chapter), member.id)).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    })
+  })
+
+  it('holds back on repeats, and stands when the email fails or must not be sent', async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter)
+    const member = await createMember(chapter, { name: 'Unlucky' })
+    emails.failNext()
+    expect(await suspend(lead, member.id)).toEqual({ message: 'Unlucky is suspended' })
+    expect(await prisma.volunteer.findUniqueOrThrow({ where: { id: member.id } })).toMatchObject({
+      suspendedAt: expect.any(Date),
+    })
+    rateLimit.denyNext()
+    await expect(
+      clientAs(lead).admin.volunteers.setSuspended({ volunteerId: member.id, suspended: false }),
+    ).rejects.toMatchObject({ code: 'TOO_MANY_REQUESTS' })
+
+    // An address they never confirmed may not be theirs, so it is not told.
+    const unconfirmed = await createMember(chapter, { emailConfirmed: false })
+    const sent = emails.sent.length
+    await suspend(lead, unconfirmed.id)
+    expect(emails.sent.length).toBe(sent)
+  })
+
+  it('keeps a suspended member off any new work, even where they already are', async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter)
+    const member = await createMember(chapter, { name: 'Benched' })
+    const project = await createProject({ nationalChapterId: chapter.id, status: 'in_progress' })
+    const owned = await createProject({
+      nationalChapterId: chapter.id,
+      status: 'in_progress',
+      assigneeId: lead.id,
+    })
+    await prisma.workItemInterest.create({
+      data: {
+        workItemId: owned.id,
+        volunteerId: member.id,
+        status: 'accepted',
+        interestType: 'want_to_contribute',
+      },
+    })
+    const task = await createTask(owned.id)
+    await suspend(lead, member.id)
+    const isSuspended = { code: 'BAD_REQUEST', message: 'Benched is suspended' }
+    // Nor any role: chapter deputy or lead, project deputy, team leader or new team member.
+    await expect(
+      clientAs(lead).admin.chapters.appointDeputy({
+        chapterId: chapter.id,
+        volunteerId: member.id,
+      }),
+    ).rejects.toMatchObject(isSuspended)
+    await expect(
+      clientAs(await createAdmin()).admin.chapters.appointLead({
+        chapterId: chapter.id,
+        volunteerId: member.id,
+      }),
+    ).rejects.toMatchObject(isSuspended)
+    await expect(
+      clientAs(lead).projects.appointDeputy({ projectId: owned.id, volunteerId: member.id }),
+    ).rejects.toMatchObject(isSuspended)
+    const team = await prisma.team.create({
+      data: { name: 'Bench team', nationalChapterId: chapter.id },
+    })
+    await prisma.teamMembership.create({
+      data: { teamId: team.id, volunteerId: member.id, role: 'member' },
+    })
+    await expect(
+      clientAs(lead).teams.setMemberRole({
+        teamId: team.id,
+        volunteerId: member.id,
+        role: 'leader',
+      }),
+    ).rejects.toMatchObject(isSuspended)
+    const otherTeam = await prisma.team.create({
+      data: { name: 'Bench team two', nationalChapterId: chapter.id },
+    })
+    const ask = await prisma.teamJoinRequest.create({
+      data: { teamId: otherTeam.id, volunteerId: member.id },
+    })
+    await expect(
+      clientAs(lead).teams.reviewJoinRequest({ id: ask.id, action: 'accept' }),
+    ).rejects.toMatchObject(isSuspended)
+    // While suspended, the profile offers no role to give them.
+    expect(
+      (await clientAs(await createAdmin()).volunteers.getById({ id: member.id })).manage,
+    ).toMatchObject({
+      chapterDeputy: null,
+      chapterLead: null,
+      coordinator: null,
+    })
+    await expect(
+      clientAs(lead).projects.updateTask({
+        projectId: owned.id,
+        taskId: task.id,
+        data: { assigneeId: member.id },
+      }),
+    ).rejects.toMatchObject(isSuspended)
+    await expect(
+      clientAs(lead).projects.invite({ projectId: project.id, volunteerId: member.id }),
+    ).rejects.toMatchObject(isSuspended)
+    await expect(
+      clientAs(lead).projects.assign({ projectId: project.id, volunteerId: member.id }),
+    ).rejects.toMatchObject(isSuspended)
   })
 })
 

@@ -262,6 +262,10 @@ const TYPES: Record<string, TypeInfo> = {
   bug_report_resolved: { label: 'Your bug report is resolved', default: 'email' },
   chapter_joined: { label: 'Someone joins your chapter', default: 'in_app' },
   profile_picture_removed: { label: 'Your profile picture is taken down', default: 'in_app' },
+  member_suspended: {
+    label: 'A member of your chapter is suspended, or their suspension lifted',
+    default: 'in_app',
+  },
   signed_out_by_staff: {
     label: 'You are signed out on every device by someone who runs Action Hub',
     default: 'email',

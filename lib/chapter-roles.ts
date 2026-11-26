@@ -1,4 +1,5 @@
 import { ORPCError } from '@orpc/server'
+import { assertActive } from './suspension'
 import type { Prisma } from '@/generated/prisma/client'
 import {
   ApprovalStatus,
@@ -42,9 +43,11 @@ export function audit(
 async function memberOf(tx: Tx, chapterId: number, volunteerId: number) {
   const volunteer = await tx.volunteer.findFirst({
     where: { id: volunteerId, deletedAt: null },
-    select: { id: true, name: true, nationalChapterId: true },
+    select: { id: true, name: true, nationalChapterId: true, suspendedAt: true },
   })
   if (!volunteer) throw new ORPCError('NOT_FOUND', { message: 'Volunteer not found' })
+  // No role for someone suspended: they could not sign in to carry it.
+  assertActive(volunteer)
   if (volunteer.nationalChapterId !== chapterId) {
     throw new ORPCError('BAD_REQUEST', {
       message: `${volunteer.name} is not a member of this chapter`,

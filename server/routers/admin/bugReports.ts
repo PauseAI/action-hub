@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { ORPCError } from '@orpc/server'
 import { prisma } from '@/lib/prisma'
+import { assertActive } from '@/lib/suspension'
 import { ApprovalStatus } from '@/generated/prisma/enums'
 import { UpdateBugReportSchema } from '@/lib/schemas'
 import { adminProcedure } from '../../procedures'
@@ -94,6 +95,7 @@ export const adminBugReportsRouter = {
           message: 'Cannot assign a bug report to a volunteer who is not yet approved',
         })
       }
+      assertActive(assignee)
 
       await prisma.bugReport.update({ where: { id: input.id }, data: { assigneeId: assignee.id } })
 

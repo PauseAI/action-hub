@@ -28,6 +28,7 @@ export async function notifyMatchingVolunteers(projectId: number): Promise<void>
       emailDigest: 'match',
       email: { not: null },
       deletedAt: null,
+      suspendedAt: null,
       // A project is news only within its own chapter.
       nationalChapterId: project.nationalChapterId,
       skills: { some: { skillId: { in: requiredSkillIds } } },

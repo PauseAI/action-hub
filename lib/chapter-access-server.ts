@@ -140,6 +140,17 @@ export async function outranks(
   return leadId === target.id
 }
 
+/** The chapter role a volunteer holds, said as a sentence, or null. */
+export async function staffRoleOf(volunteerId: number): Promise<string | null> {
+  const led = await prisma.nationalChapter.findUnique({ where: { leadId: volunteerId } })
+  if (led) return `leads the ${led.name} chapter`
+  const deputy = await prisma.chapterDeputy.findUnique({
+    where: { volunteerId },
+    include: { chapter: { select: { name: true } } },
+  })
+  return deputy ? `is a deputy of the ${deputy.chapter.name} chapter` : null
+}
+
 /**
  * Whether `access` may take someone out of the staff role they hold: a lead only by a global
  * admin, who appoints leads; a deputy by their lead or a global admin, who appoint deputies.

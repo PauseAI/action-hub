@@ -32,6 +32,7 @@ const LIVE_INTEREST = {
  *    leader of a team the volunteer is in or has applied to, so they can assess the volunteer's
  *    skills before accepting them
  *  - anyone who may contact them (lib/contact.ts)
+ * A suspended account is seen only by its chapter's staff and global admins.
  */
 export async function viewableVolunteers(
   viewer: { id: number },
@@ -39,15 +40,17 @@ export async function viewableVolunteers(
   targetIds: number[],
 ): Promise<Set<number>> {
   const ids = [...new Set(targetIds)]
-  const rows = await prisma.volunteer.findMany({
+  const found = await prisma.volunteer.findMany({
     where: { id: { in: ids }, deletedAt: null },
     select: {
       id: true,
       nationalChapterId: true,
       consentMakeProfileVisibleInDirectory: true,
       approvalStatus: true,
+      suspendedAt: true,
     },
   })
+  const rows = found.filter((v) => !v.suspendedAt || canAdminChapter(access, v.nationalChapterId))
   const viewable = new Set<number>()
   const others = rows.filter((v) => {
     if (v.id === viewer.id || seesFullProfile(access, v)) viewable.add(v.id)
@@ -115,6 +118,8 @@ export type PersonInfo = {
   chapter: { name: string; country: string } | null
   /** Where their profile picture is served, or null to show initials. */
   picture: string | null
+  /** Suspended, said only as "inactive" so whoever works with them knows to reassign. */
+  inactive: boolean
 }
 
 /** What a name shown to the viewer links to and is badged with, for each of `targetIds`. */
@@ -139,6 +144,7 @@ export async function peopleInfo(
           select: { chapter: { select: { id: true, name: true, country: true } } },
         },
         profilePicture: { select: { publicId: true } },
+        suspendedAt: true,
       },
     }),
   ])
@@ -151,8 +157,10 @@ export async function peopleInfo(
       role: null,
       chapter: null,
       picture: null,
+      inactive: false,
     }
     if (!v) return info
+    info.inactive = v.suspendedAt !== null
     // A face is shown only to whoever may open the profile it belongs to.
     if (v.profilePicture && info.canView)
       info.picture = profilePictureUrl(v.profilePicture.publicId)
