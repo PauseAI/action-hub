@@ -542,8 +542,11 @@ export const projectInclude = {
   _count: {
     select: {
       interests: { where: { status: InterestStatus.pending } },
-      // Open (non-completed) child tasks — feeds the derived `needsTasks` badge.
-      children: { where: { type: WorkItemType.TASK, status: { not: TaskStatus.completed } } },
+      // Open (non-completed) child tasks — feeds the derived `needsTasks` badge. An outline item
+      // is not yet a task anyone can do.
+      children: {
+        where: { type: WorkItemType.TASK, status: { not: TaskStatus.completed }, isOutline: false },
+      },
     },
   },
 } satisfies Prisma.WorkItemInclude

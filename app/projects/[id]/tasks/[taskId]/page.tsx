@@ -332,6 +332,16 @@ export default function TaskDetailPage({
         />
       )}
 
+      {task.isOutline && (
+        <P
+          role="note"
+          className="rounded-lg border p-4 mb-4 bg-blue-100 text-blue-900 border-blue-300 dark:bg-blue-950 dark:text-blue-200 dark:border-blue-600"
+        >
+          This is a step from the project&apos;s rough outline, not yet a task anyone can take. The
+          owner plans it into one from the project&apos;s Tasks tab.
+        </P>
+      )}
+
       <div className={`${SECTION_CARD} overflow-hidden wrap-break-word mb-5`}>
         <WorkItemHeader
           title={task.title}

@@ -166,7 +166,8 @@ describe('admin.projects.review', () => {
     expect(
       await prisma.workItemComment.findFirst({ where: { workItemId: unowned.id } }),
     ).toMatchObject({ content: 'nice' })
-    expect(notifyMatchingVolunteers).toHaveBeenCalledWith(unowned.id)
+    // Into Planning: matching volunteers hear at Finish planning instead.
+    expect(notifyMatchingVolunteers).not.toHaveBeenCalledWith(unowned.id)
     expect(notifyTeamOfProject).toHaveBeenCalledWith(team.id, unowned.id, unowned.title)
     await vi.waitFor(async () =>
       expect(
@@ -189,10 +190,12 @@ describe('admin.projects.review', () => {
     const error = vi.spyOn(logger, 'error').mockImplementation(() => logger)
     vi.mocked(notifyMatchingVolunteers).mockRejectedValueOnce(new Error('m'))
     vi.mocked(notifyTeamOfProject).mockRejectedValueOnce(new Error('t'))
+    // Planned before it was sent back, so approval puts it straight live and tells matches.
     const owned = await createProject({
       status: 'pending_review',
       assigneeId: creator.id,
       teamId: team.id,
+      plannedAt: new Date(),
     })
     await c.admin.projects.review({ id: owned.id, status: 'approved', comment: '  ' })
     await vi.waitFor(() => {
@@ -352,9 +355,12 @@ describe('admin.projects.triage / staleInProgress', () => {
     await createTask(done.id, { status: 'completed' })
     const busy = await createProject({ status: 'in_progress', assigneeId: owner.id })
     await createTask(busy.id)
+    // An outline item is not yet work anyone can do.
+    const rough = await createProject({ status: 'in_progress', assigneeId: owner.id })
+    await createTask(rough.id, { isOutline: true })
     expect((await c.admin.projects.triage()).map((p) => p.id)).toContain(pending.id)
     const staleIds = (await c.admin.projects.staleInProgress()).map((p) => p.id)
-    expect(staleIds).toEqual(expect.arrayContaining([stale.id, done.id]))
+    expect(staleIds).toEqual(expect.arrayContaining([stale.id, done.id, rough.id]))
     expect(staleIds).not.toContain(busy.id)
   })
 })

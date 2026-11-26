@@ -1112,3 +1112,15 @@ describe('task detail page — offering to help before joining', () => {
     await screen.findByRole('button', { name: 'Offer to help' })
   })
 })
+
+describe('task detail page — an outline item', () => {
+  it('says it is a rough step waiting to be planned, with no way to take it', async () => {
+    const me = await createVolunteer()
+    const project = await createProject({ plannedAt: null })
+    const task = await createTask(project.id, { title: 'Find a venue', isOutline: true })
+    await mount(project.id, task.id, me)
+    await screen.findByRole('heading', { name: 'Find a venue' })
+    expect(screen.getByRole('note')).toHaveTextContent("a step from the project's rough outline")
+    expect(screen.queryByRole('button', { name: /take this|Claim|Offer to help/i })).toBeNull()
+  })
+})
