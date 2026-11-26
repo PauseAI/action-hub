@@ -2,6 +2,7 @@ import { suppressAddresses, suppressionKey } from '@/lib/email-suppression'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { logger } from '@/lib/logger'
 import { prisma } from '@/lib/prisma'
+import { createApiToken } from '@/lib/api-tokens'
 import {
   createVolunteer,
   createAdmin,
@@ -325,11 +326,14 @@ describe('sessions: logout, logoutOtherSessions, me', () => {
     const vol = await createVolunteer()
     const t1 = (await anon().auth.login({ email: vol.email!, password: TEST_PASSWORD })).token
     const t2 = (await anon().auth.login({ email: vol.email!, password: TEST_PASSWORD })).token
+    await createApiToken(vol.id, { name: 'script', scopes: [], expiresAt: null })
     expect(await clientAs(vol, { token: t1 }).auth.logoutOtherSessions()).toEqual({
       message: 'Signed out of all other sessions',
     })
     expect(await prisma.session.count({ where: { volunteerId: vol.id } })).toBe(1)
     expect(await prisma.session.count({ where: { tokenHash: hashToken(t2) } })).toBe(0)
+    // Other sessions include API tokens: signing out elsewhere ends those too.
+    expect(await prisma.apiToken.count({ where: { volunteerId: vol.id } })).toBe(0)
     await expect(clientAs(vol, { token: null }).auth.logoutOtherSessions()).rejects.toMatchObject({
       code: 'UNAUTHORIZED',
     })
@@ -358,6 +362,7 @@ describe('changePassword / changeEmail', () => {
   it('changes the password, invalidating other sessions', async () => {
     const vol = await createVolunteer()
     const old = (await anon().auth.login({ email: vol.email!, password: TEST_PASSWORD })).token
+    await createApiToken(vol.id, { name: 'script', scopes: [], expiresAt: null })
     const c = clientAs(vol)
     await expect(
       c.auth.changePassword({ currentPassword: 'wrong', newPassword: 'another-long-one' }),
@@ -372,7 +377,10 @@ describe('changePassword / changeEmail', () => {
     })
     expect(res.message).toBe('Password changed successfully')
     expect(await prisma.session.count({ where: { tokenHash: hashToken(old) } })).toBe(0)
-    expect(await prisma.session.count({ where: { tokenHash: hashToken(res.token) } })).toBe(1)
+    // Only the fresh session handed back survives.
+    expect(res.token).toBeTruthy()
+    expect(await prisma.session.count({ where: { volunteerId: vol.id } })).toBe(1)
+    expect(await prisma.apiToken.count({ where: { volunteerId: vol.id } })).toBe(0)
     expect(
       (await anon().auth.login({ email: vol.email!, password: 'another-long-one' })).token,
     ).toBeTruthy()

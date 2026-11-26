@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "ChapterAuditAction" ADD VALUE IF NOT EXISTS 'SESSIONS_REVOKED';

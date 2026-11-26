@@ -16,6 +16,7 @@ import {
 } from '@/test/factories'
 import { clientAs } from '@/test/rpc'
 import { withoutAdminRights } from '@/lib/view-as'
+import { createSession } from '@/lib/auth'
 import type { InterestStatus } from '@/generated/prisma/enums'
 
 describe('volunteers.list', () => {
@@ -534,16 +535,34 @@ describe('volunteers.getById manage', () => {
   it("gives a chapter's deputy only the account controls, and its lead the deputy control too", async () => {
     const chapter = await createChapter()
     const member = await createMember(chapter)
+    await createSession(member.id)
+    // An expired session is not counted.
+    await prisma.session.create({
+      data: { volunteerId: member.id, tokenHash: `expired-${member.id}`, expiresAt: new Date(0) },
+    })
     const noRoles = {
       chapterDeputy: null,
       chapterLead: null,
       coordinator: null,
       moveChapter: null,
+      removePicture: true,
+      signOutEverywhere: { signedIn: true, apiTokens: 0 },
       work: true,
       fastTrack: { on: false },
     }
     expect(await manageOf(await createChapterDeputy(chapter), member.id)).toEqual(noRoles)
-    expect(await manageOf(await createChapterLead(chapter), member.id)).toEqual({
+    // Nor may they sign out anyone who outranks them: a deputy their lead, staff a global admin.
+    const lead = await createChapterLead(chapter)
+    const deputy = await createChapterDeputy(chapter)
+    expect((await manageOf(deputy, lead.id))?.signOutEverywhere).toBeNull()
+    const admin = await createAdmin({ nationalChapterId: chapter.id, country: chapter.country })
+    expect((await manageOf(lead, admin.id))?.signOutEverywhere).toBeNull()
+    expect(await manageOf(lead, deputy.id)).toMatchObject({
+      removePicture: true,
+      signOutEverywhere: { signedIn: false, apiTokens: 0 },
+    })
+    expect((await manageOf(deputy, lead.id))?.removePicture).toBe(false)
+    expect(await manageOf(lead, member.id)).toEqual({
       ...noRoles,
       chapterDeputy: { chapterId: chapter.id, isDeputy: false },
     })
@@ -564,6 +583,8 @@ describe('volunteers.getById manage', () => {
       },
       coordinator: { isCoordinator: false, remit: null },
       moveChapter: { chapterId: chapter.id },
+      removePicture: true,
+      signOutEverywhere: { signedIn: false, apiTokens: 0 },
       work: true,
       fastTrack: { on: false },
     })

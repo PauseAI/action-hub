@@ -115,6 +115,32 @@ export function globalAdminWhere(): Prisma.VolunteerWhereInput {
 }
 
 /**
+ * Whether `target` stands above the caller in running their chapter, so the caller may not act
+ * on them: a global admin (an address in ADMIN_EMAILS) over anyone but another global admin, and
+ * a chapter's lead over its deputies. Who may act on a member at all is still `canAdminChapter`.
+ * Pass `chapterLeadId` when the target's chapter is already read, to save reading it again.
+ */
+export async function outranks(
+  access: ChapterAccess,
+  target: Pick<Volunteer, 'id' | 'email' | 'emailConfirmed' | 'nationalChapterId'>,
+  chapterLeadId?: number | null,
+): Promise<boolean> {
+  if (access.globalAdmin) return false
+  if (isSuperAdmin(target)) return true
+  if (access.role !== 'DEPUTY' || target.nationalChapterId === null) return false
+  const leadId =
+    chapterLeadId !== undefined
+      ? chapterLeadId
+      : (
+          await prisma.nationalChapter.findUnique({
+            where: { id: target.nationalChapterId },
+            select: { leadId: true },
+          })
+        )?.leadId
+  return leadId === target.id
+}
+
+/**
  * Whether `access` may take someone out of the staff role they hold: a lead only by a global
  * admin, who appoints leads; a deputy by their lead or a global admin, who appoint deputies.
  * Anyone with no staff role may be moved by whoever may move them at all.

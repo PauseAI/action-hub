@@ -1,5 +1,5 @@
 import { randomBytes, pbkdf2Sync, timingSafeEqual, createHash } from 'crypto'
-import type { Volunteer } from '@/generated/prisma/client'
+import type { Prisma, Volunteer } from '@/generated/prisma/client'
 import { prisma } from './prisma'
 import { acceptChapterInvite } from './chapter-roles'
 import { env } from './env'
@@ -69,19 +69,34 @@ export async function deleteSession(token: string): Promise<void> {
   await prisma.session.deleteMany({ where: { tokenHash: hashToken(token) } })
 }
 
-// "Sign out everywhere" / password change / account deletion.
-export async function deleteAllSessions(volunteerId: number): Promise<void> {
-  await prisma.session.deleteMany({ where: { volunteerId } })
-}
+type Db = Pick<Prisma.TransactionClient, 'session' | 'apiToken' | 'volunteer'>
 
-// "Sign out of all other devices" — keeps the session the request came in on.
-export async function deleteOtherSessions(
+/**
+ * Ends every way an account is signed in: its sessions (all but `keepHash`, the hashed token
+ * of the request asking, when it stays signed in), its API tokens, and a token on the pre-session
+ * columns. Every sign-out, password change and reset goes through here, so "everywhere" means
+ * the same thing on each. Returns how many of each were still live.
+ */
+export async function revokeAccess(
   volunteerId: number,
-  currentToken: string,
-): Promise<void> {
-  await prisma.session.deleteMany({
-    where: { volunteerId, tokenHash: { not: hashToken(currentToken) } },
+  { keepHash, db = prisma }: { keepHash?: string; db?: Db } = {},
+): Promise<{ sessions: number; apiTokens: number }> {
+  const now = new Date()
+  const others = keepHash ? { tokenHash: { not: keepHash } } : {}
+  const [sessions, legacy, apiTokens] = await Promise.all([
+    db.session.count({ where: { volunteerId, expiresAt: { gt: now }, ...others } }),
+    db.volunteer.count({ where: { id: volunteerId, authTokenExpiresAt: { gt: now } } }),
+    db.apiToken.count({
+      where: { volunteerId, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+    }),
+  ])
+  await db.session.deleteMany({ where: { volunteerId, ...others } })
+  await db.apiToken.deleteMany({ where: { volunteerId } })
+  await db.volunteer.update({
+    where: { id: volunteerId },
+    data: { authToken: null, authTokenExpiresAt: null },
   })
+  return { sessions: sessions + legacy, apiTokens }
 }
 
 export async function getCurrentVolunteer(authorization: string | null | undefined) {
@@ -252,11 +267,8 @@ export async function isEntitledToAdmin(volunteer: EmailIdentity): Promise<boole
 // Whoever first registered an address need not be the person who later proves it, so
 // before that proof grants anything, the password and sessions set up beforehand go.
 export async function revokeCredentials(volunteerId: number): Promise<void> {
-  await prisma.volunteer.update({
-    where: { id: volunteerId },
-    data: { passwordHash: null, authToken: null, authTokenExpiresAt: null },
-  })
-  await deleteAllSessions(volunteerId)
+  await prisma.volunteer.update({ where: { id: volunteerId }, data: { passwordHash: null } })
+  await revokeAccess(volunteerId)
 }
 
 /** Runs both promotion checks; true if either granted global admin or a chapter role. */

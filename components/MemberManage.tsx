@@ -251,6 +251,47 @@ function CoordinatorControl({
   )
 }
 
+/** Ends every session a member has, for when their account may be in someone else's hands. */
+function SignOutEverywhere({
+  member,
+  control,
+}: {
+  member: Member
+  control: NonNullable<Manage['signOutEverywhere']>
+}) {
+  const dialog = useDialog()
+  const signOut = useMutation({
+    ...orpc.admin.volunteers.signOutEverywhere.mutationOptions(),
+    ...useManaged(dialog.close),
+  })
+  const signedIn = control.signedIn
+    ? `${member.name} is signed in.`
+    : `${member.name} is not signed in anywhere right now.`
+  const tokens =
+    control.apiTokens > 0
+      ? ` Their ${control.apiTokens === 1 ? 'API token stops' : `${control.apiTokens} API tokens stop`} working too.`
+      : ''
+  return (
+    <>
+      <Button variant="secondary" size="sm" onClick={dialog.show}>
+        Sign out everywhere
+      </Button>
+      <ConfirmDialog
+        id="sign-out-dialog"
+        isOpen={dialog.open}
+        title={`Sign ${member.name} out everywhere?`}
+        body={`${signedIn}${tokens} Every session ends at once, as when an account may be in someone else's hands, and they are emailed to say so. It does not change their password: if someone else may know it, they should change it once they sign in again.`}
+        confirmLabel="Sign out everywhere"
+        danger
+        busy={signOut.isPending}
+        busyLabel="Signing out…"
+        onConfirm={() => signOut.mutate({ volunteerId: member.id })}
+        onClose={dialog.close}
+      />
+    </>
+  )
+}
+
 /** Each audit action as it reads about the member it was done to; `chapter` is where. */
 const DONE_TO_THEM: Record<ChapterAuditAction, (chapter: string) => string> = {
   CHAPTER_CREATED: () => 'opened a chapter',
@@ -275,6 +316,7 @@ const DONE_TO_THEM: Record<ChapterAuditAction, (chapter: string) => string> = {
   APPLICATION_REJECTED: () => 'rejected their application',
   APPLICATION_REOPENED: () => 'reopened their application',
   APPLICATION_APPROVED: () => 'approved their application',
+  SESSIONS_REVOKED: () => 'signed them out everywhere',
   TRANSFER_REQUESTED: (c) => `asked, for ${c}, to move them`,
 }
 
@@ -847,7 +889,10 @@ export default function MemberManage({
             <Button href={`/admin/volunteers/${member.id}`} variant="secondary" size="sm">
               Admin record
             </Button>
-            {hasPicture && <RemovePicture member={member} />}
+            {manage.signOutEverywhere && (
+              <SignOutEverywhere member={member} control={manage.signOutEverywhere} />
+            )}
+            {hasPicture && manage.removePicture && <RemovePicture member={member} />}
           </div>
         </div>
       )}

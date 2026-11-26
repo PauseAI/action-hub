@@ -11,8 +11,8 @@ import {
   generateAuthToken,
   createSession,
   deleteSession,
-  deleteAllSessions,
-  deleteOtherSessions,
+  revokeAccess,
+  hashToken,
   promoteIfEntitled,
   isEntitledToAdmin,
   revokeCredentials,
@@ -388,7 +388,7 @@ export const authRouter = {
 
   logoutOtherSessions: authedProcedure.handler(async ({ context }) => {
     if (!context.token) throw new ORPCError('UNAUTHORIZED')
-    await deleteOtherSessions(context.volunteer.id, context.token)
+    await revokeAccess(context.volunteer.id, { keepHash: hashToken(context.token) })
     return { message: 'Signed out of all other sessions' }
   }),
 
@@ -461,7 +461,7 @@ export const authRouter = {
           updatedAt: new Date(),
         },
       })
-      await deleteAllSessions(context.volunteer.id)
+      await revokeAccess(context.volunteer.id)
       const token = await createSession(context.volunteer.id)
       return { message: 'Password changed successfully', token }
     }),
@@ -604,7 +604,7 @@ export const authRouter = {
         updatedAt: new Date(),
       },
     })
-    await deleteAllSessions(tokenRecord.volunteerId)
+    await revokeAccess(tokenRecord.volunteerId)
     await prisma.passwordResetToken.update({
       where: { id: tokenRecord.id },
       data: { usedAt: new Date() },
@@ -766,7 +766,7 @@ export const authRouter = {
         },
       })
       await sendAccountDeletionNotifications(context.volunteer.id, context.volunteer.name)
-      await deleteAllSessions(context.volunteer.id)
+      await revokeAccess(context.volunteer.id)
       // Only an address they proved is theirs: anyone can sign up with someone else's.
       if (context.volunteer.email && context.volunteer.emailConfirmed) {
         await liftSuppression(context.volunteer.email)

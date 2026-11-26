@@ -10,8 +10,14 @@ import {
   createChapterDeputy,
   createChapterLead,
   createMember,
+  createCoordinator,
 } from '@/test/factories'
 import { clientAs } from '@/test/rpc'
+import { createSession, getCurrentVolunteer } from '@/lib/auth'
+import { authenticateApiToken, createApiToken } from '@/lib/api-tokens'
+import { emails } from '@/test/fakes/email'
+import { rateLimit } from '@/test/fakes/rate-limit'
+import { withoutAdminRights } from '@/lib/view-as'
 
 describe('admin.volunteers', () => {
   it('getById returns the full admin view of a volunteer', async () => {
@@ -267,6 +273,140 @@ describe('admin.emailPreview', () => {
     }
     await expect(c.admin.emailPreview.preview({ type: 'nope' })).rejects.toMatchObject({
       code: 'NOT_FOUND',
+    })
+  })
+})
+
+describe('admin.volunteers.signOutEverywhere', () => {
+  const signedIn = async (token: string) => Boolean(await getCurrentVolunteer(`Bearer ${token}`))
+
+  it("ends every session of a member for their chapter's staff, and logs it", async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter)
+    const member = await createMember(chapter, { name: 'Taken Over' })
+    const [phone, laptop] = [await createSession(member.id), await createSession(member.id)]
+    // An expired session is cleared but not counted.
+    await prisma.session.create({
+      data: { volunteerId: member.id, tokenHash: `old-${member.id}`, expiresAt: new Date(0) },
+    })
+    const { token: apiToken } = await createApiToken(member.id, {
+      name: 'script',
+      scopes: [],
+      expiresAt: null,
+    })
+
+    expect(
+      await clientAs(lead).admin.volunteers.signOutEverywhere({ volunteerId: member.id }),
+    ).toEqual({ message: 'Taken Over is signed out everywhere and their API token is revoked' })
+    expect(await signedIn(phone)).toBe(false)
+    expect(await signedIn(laptop)).toBe(false)
+    expect(await authenticateApiToken(`Bearer ${apiToken}`)).toBeNull()
+    expect(await prisma.session.count({ where: { volunteerId: member.id } })).toBe(0)
+    const notice = emails.lastTo(member.email as string)
+    expect(notice?.subject).toBe('You were signed out of Action Hub on every device')
+    expect(notice?.html).toContain('please change your password')
+    expect(notice?.html).not.toContain(lead.name)
+    expect(
+      await prisma.chapterAuditEvent.findFirst({
+        where: { action: 'SESSIONS_REVOKED', targetVolunteerId: member.id },
+      }),
+    ).toMatchObject({
+      actorId: lead.id,
+      nationalChapterId: chapter.id,
+      details: { sessions: 2, apiTokens: 1 },
+    })
+
+    // A deputy may too; with nothing to end, nothing is logged and nobody is emailed.
+    const sent = emails.sent.length
+    expect(
+      await clientAs(await createChapterDeputy(chapter)).admin.volunteers.signOutEverywhere({
+        volunteerId: member.id,
+      }),
+    ).toEqual({ message: 'Taken Over was not signed in anywhere' })
+    expect(emails.sent.length).toBe(sent)
+    expect(
+      await prisma.chapterAuditEvent.count({
+        where: { action: 'SESSIONS_REVOKED', targetVolunteerId: member.id },
+      }),
+    ).toBe(1)
+
+    // Signing the same person out over and over is held back.
+    await createSession(member.id)
+    rateLimit.denyNext()
+    await expect(
+      clientAs(lead).admin.volunteers.signOutEverywhere({ volunteerId: member.id }),
+    ).rejects.toMatchObject({ code: 'TOO_MANY_REQUESTS' })
+    expect(await prisma.session.count({ where: { volunteerId: member.id } })).toBe(1)
+  })
+
+  it('names every API token it revokes, and treats ADMIN_EMAILS as who outranks whom', async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter)
+    const member = await createMember(chapter, { name: 'Two Scripts' })
+    for (const name of ['a', 'b']) {
+      await createApiToken(member.id, { name, scopes: [], expiresAt: null })
+    }
+    expect(
+      await clientAs(lead).admin.volunteers.signOutEverywhere({ volunteerId: member.id }),
+    ).toEqual({
+      message: 'Two Scripts is signed out everywhere and their 2 API tokens are revoked',
+    })
+    // Listed in ADMIN_EMAILS but not yet marked isAdmin: still a global admin.
+    const unmarked = await createAdmin({
+      nationalChapterId: chapter.id,
+      country: chapter.country,
+      isAdmin: false,
+    })
+    await expect(
+      clientAs(lead).admin.volunteers.signOutEverywhere({ volunteerId: unmarked.id }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' })
+  })
+
+  it('is refused to everyone else', async () => {
+    const chapter = await createChapter()
+    const member = await createMember(chapter)
+    const token = await createSession(member.id)
+    const attempt = (viewer: Parameters<typeof clientAs>[0], id = member.id) =>
+      clientAs(viewer).admin.volunteers.signOutEverywhere({ volunteerId: id })
+
+    await expect(attempt(await createMember(chapter))).rejects.toMatchObject({ code: 'FORBIDDEN' })
+    await expect(attempt(await createCoordinator(chapter))).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    })
+    await expect(attempt(await createChapterLead(await createChapter()))).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    })
+    const admin = await createAdmin({ nationalChapterId: chapter.id, country: chapter.country })
+    await expect(
+      clientAs(withoutAdminRights(admin), {
+        viewingAsVolunteer: true,
+      }).admin.volunteers.signOutEverywhere({ volunteerId: member.id }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' })
+    const lead = await createChapterLead(chapter)
+    await expect(attempt(lead, lead.id)).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+      message: 'Sign yourself out of other devices from your settings',
+    })
+    const gone = await createMember(chapter, { deletedAt: new Date() })
+    await expect(attempt(lead, gone.id)).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    // A deputy cannot sign out their lead, nor chapter staff a global admin in their chapter.
+    const deputy = await createChapterDeputy(chapter)
+    await expect(attempt(deputy, lead.id)).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+      message: `Only a global admin can sign ${lead.name} out`,
+    })
+    await expect(attempt(lead, admin.id)).rejects.toMatchObject({ code: 'FORBIDDEN' })
+    expect(await signedIn(token)).toBe(true)
+
+    // A global admin may for anyone, another global admin and the holding pool included.
+    expect(await attempt(await createAdmin(), admin.id)).toMatchObject({
+      message: expect.stringContaining('was not signed in anywhere'),
+    })
+    expect(await attempt(await createAdmin(), lead.id)).toBeDefined()
+    const pooled = await createVolunteer()
+    await createSession(pooled.id)
+    expect(await attempt(await createAdmin(), pooled.id)).toMatchObject({
+      message: expect.stringContaining('signed out everywhere'),
     })
   })
 })

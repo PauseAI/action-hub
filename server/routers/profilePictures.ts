@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { ORPCError } from '@orpc/server'
 import { prisma } from '@/lib/prisma'
+import { outranks } from '@/lib/chapter-access-server'
 import { canAdminChapter } from '@/lib/chapter-access'
 import { audit } from '@/lib/chapter-roles'
 import { notifyUser } from '@/lib/notify'
@@ -46,10 +47,13 @@ export const profilePicturesRouter = {
     .handler(async ({ input, context }) => {
       const target = await prisma.volunteer.findFirst({
         where: { id: input.volunteerId, deletedAt: null },
-        select: { id: true, nationalChapterId: true },
+        select: { id: true, email: true, emailConfirmed: true, nationalChapterId: true },
       })
       if (!target || !canAdminChapter(context.access, target.nationalChapterId)) {
         throw new ORPCError('NOT_FOUND', { message: 'Volunteer not found' })
+      }
+      if (await outranks(context.access, target)) {
+        throw new ORPCError('FORBIDDEN', { message: 'Only a global admin can take this one down' })
       }
       const removed = await prisma.$transaction(async (tx) => {
         const { count } = await tx.profilePicture.deleteMany({ where: { volunteerId: target.id } })

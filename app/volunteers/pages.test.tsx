@@ -23,6 +23,8 @@ import { clientAs } from '@/test/rpc'
 import { queryClient } from '@/lib/query-client'
 import { navigation } from '@/test/next-navigation'
 import { emails } from '@/test/fakes/email'
+import { createSession } from '@/lib/auth'
+import { createApiToken } from '@/lib/api-tokens'
 import VolunteersPage from './page'
 import VolunteerDetailPage from './[id]/page'
 
@@ -712,6 +714,60 @@ describe('volunteer profile', () => {
     expect(screen.queryByRole('heading', { name: 'Manage' })).toBeNull()
   })
 
+  it("lets a chapter's staff sign a member out on every device", async () => {
+    const chapter = await createChapter()
+    const member = await createMember(chapter, { name: 'Lost Phone' })
+    await createSession(member.id)
+    await createSession(member.id)
+    await openProfile(member, await createChapterDeputy(chapter))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out everywhere' }))
+    const dialog = dialogNamed('Sign Lost Phone out everywhere?')
+    expect(dialog).toHaveTextContent('Lost Phone is signed in. Every session ends')
+    await confirmIn(dialog, 'Sign out everywhere')
+    await screen.findByText('Lost Phone is signed out everywhere')
+    expect(await prisma.session.count({ where: { volunteerId: member.id } })).toBe(0)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out everywhere' }))
+    await waitFor(() =>
+      expect(dialogNamed('Sign Lost Phone out everywhere?')).toHaveTextContent(
+        'Lost Phone is not signed in anywhere right now.',
+      ),
+    )
+  })
+
+  it("warns that a member's API tokens stop working too", async () => {
+    const chapter = await createChapter()
+    const member = await createMember(chapter, { name: 'Token Holder' })
+    await createApiToken(member.id, { name: 'a', scopes: [], expiresAt: null })
+    await openProfile(member, await createChapterLead(chapter))
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out everywhere' }))
+    expect(dialogNamed('Sign Token Holder out everywhere?')).toHaveTextContent(
+      'Token Holder is not signed in anywhere right now. Their API token stops working too.',
+    )
+    cleanup()
+    const holder = await createMember(chapter, { name: 'Two Tokens' })
+    await createApiToken(holder.id, { name: 'a', scopes: [], expiresAt: null })
+    await createApiToken(holder.id, { name: 'b', scopes: [], expiresAt: null })
+    await openProfile(holder, await createAdmin())
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out everywhere' }))
+    expect(dialogNamed('Sign Two Tokens out everywhere?')).toHaveTextContent(
+      'Their 2 API tokens stop working too.',
+    )
+  })
+
+  it("hides Remove picture from a deputy on their lead's profile", async () => {
+    const chapter = await createChapter()
+    const lead = await createChapterLead(chapter, { name: 'Pictured Lead' })
+    await prisma.profilePicture.create({
+      data: { volunteerId: lead.id, publicId: `picture-${lead.id}`, data: new Uint8Array([1]) },
+    })
+    await openProfile(lead, await createChapterDeputy(chapter))
+    expect(screen.getByRole('region', { name: 'Manage' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Remove picture' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Sign out everywhere' })).toBeNull()
+  })
+
   it("lets a chapter's deputy ask another chapter to take a member, then withdraw it", async () => {
     const [home, other] = [await createChapter(), await createChapter()]
     const member = await createMember(home, { name: 'Sent On' })
@@ -883,6 +939,7 @@ describe('volunteer profile', () => {
       'APPLICATION_REJECTED',
       'APPLICATION_REOPENED',
       'APPLICATION_APPROVED',
+      'SESSIONS_REVOKED',
       'TRANSFER_REQUESTED',
     ] as const
     await prisma.chapterAuditEvent.createMany({
@@ -928,6 +985,7 @@ describe('volunteer profile', () => {
       'rejected their application',
       'reopened their application',
       'approved their application',
+      'signed them out everywhere',
       `asked, for ${at}, to move them`,
       'approved their move to the holding pool',
       'removed them as a deputy of a chapter since closed',
