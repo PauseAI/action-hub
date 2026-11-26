@@ -220,17 +220,14 @@ describe('Finish planning', () => {
   })
 })
 
-describe('quick tasks', () => {
-  it('never offers an outline item, featured or wanting helpers', async () => {
+describe('the tasks feed', () => {
+  it('never offers a place helping on an outline item', async () => {
     const me = await createVolunteer()
     const project = await createProject({ nationalChapterId: me.nationalChapterId })
-    const outline = await createTask(project.id, { featuredAsQuickTask: true, isOutline: true })
-    const real = await createTask(project.id, { featuredAsQuickTask: true })
     const roughHelp = await createTask(project.id, { helpersWanted: 2, isOutline: true })
     const help = await createTask(project.id, { helpersWanted: 2 })
-    const offered = (await clientAs(me).quickTasks.available()).map((t) => t.id)
-    expect(offered).toEqual(expect.arrayContaining([real.id, help.id]))
-    expect(offered).not.toContain(outline.id)
+    const offered = (await clientAs(me).requests.feed()).map((t) => t.id)
+    expect(offered).toContain(help.id)
     expect(offered).not.toContain(roughHelp.id)
   })
 })
