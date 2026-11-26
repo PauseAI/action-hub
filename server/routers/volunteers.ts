@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { ORPCError } from '@orpc/server'
 import { saveDeliveries, unchoosableTypes } from '@/lib/notification-preferences'
-import { Prisma } from '@/generated/prisma/client'
+import { Prisma, type Volunteer } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
 import { groupIn, placement } from '@/lib/chapter-placement'
 import { redactVolunteer } from '@/lib/auth'
@@ -17,7 +17,7 @@ import {
   type ChapterAccess,
 } from '@/lib/chapter-access'
 import { peopleInfo, viewableVolunteers } from '@/lib/people'
-import { chapterFilter, mayUnseat } from '@/lib/chapter-access-server'
+import { chapterFilter, mayUnseat, outranks } from '@/lib/chapter-access-server'
 import { isActiveRecently } from '@/lib/activity'
 import { askingChapter, decidingChapter } from '@/lib/chapter-transfers'
 import { NOT_NOW_MESSAGE, dismissFastTrack, setFastTrack } from '@/lib/fast-track'
@@ -32,6 +32,18 @@ import {
   WorkItemType,
 } from '@/generated/prisma/enums'
 
+/** Whether someone is signed in anywhere, and holds API tokens, for the sign-out control. */
+async function signedInState(volunteerId: number) {
+  const now = new Date()
+  const [sessions, apiTokens] = await Promise.all([
+    prisma.session.count({ where: { volunteerId, expiresAt: { gt: now } } }),
+    prisma.apiToken.count({
+      where: { volunteerId, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+    }),
+  ])
+  return { signedIn: sessions > 0, apiTokens }
+}
+
 /**
  * What the viewer may do to this member from their profile, each key present only when they may;
  * null when nothing. The endpoints each control calls check again. A chapter's staff (or a global
@@ -40,14 +52,17 @@ import {
 async function manageControls(
   viewerId: number,
   access: ChapterAccess,
-  vol: {
-    id: number
-    nationalChapterId: number | null
-    duplicateOfId: number | null
-    approvalStatus: ApprovalStatus | null
-    emailConfirmed: boolean | null
-    fastTrack: boolean
-  },
+  vol: Pick<
+    Volunteer,
+    | 'id'
+    | 'email'
+    | 'emailConfirmed'
+    | 'isAdmin'
+    | 'nationalChapterId'
+    | 'duplicateOfId'
+    | 'approvalStatus'
+    | 'fastTrack'
+  >,
 ) {
   const chapterId = vol.nationalChapterId
   if (vol.id === viewerId || !canAdminChapter(access, chapterId)) return null
@@ -65,6 +80,9 @@ async function manageControls(
       ? prisma.coordinator.findUnique({ where: { volunteerId: vol.id }, select: { remit: true } })
       : null,
   ])
+  // Those who outrank the viewer are left alone: no sign-out, no picture taken down.
+  const outranked = await outranks(access, vol, chapter?.lead?.id ?? null)
+  const signIn = outranked ? null : await signedInState(vol.id)
   const isLead = chapter?.lead?.id === vol.id
   const isDeputy = Boolean(chapter?.deputies.length)
   const duplicate = vol.duplicateOfId !== null
@@ -88,6 +106,8 @@ async function manageControls(
         ? { isCoordinator: Boolean(coordinator), remit: coordinator?.remit ?? null }
         : null,
     moveChapter: access.globalAdmin ? { chapterId } : null,
+    removePicture: !outranked,
+    signOutEverywhere: signIn,
     /**
      * The Work group: verify skills, fast track, invite or add to a project. Only for an
      * approved account that is not a duplicate, so the work lands on the record in use.

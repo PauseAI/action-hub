@@ -190,6 +190,12 @@ describe('profile pictures', () => {
     expect(profile.manage).not.toBeNull()
     expect((await clientAs(member).volunteers.getById({ id: member.id })).manage).toBeNull()
 
+    // Nobody takes down the picture of someone who outranks them.
+    await clientAs(lead).profilePictures.upload({ pictureDataUrl: await photo() })
+    await expect(
+      clientAs(deputy).profilePictures.removeFor({ volunteerId: lead.id }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' })
+
     expect(await clientAs(deputy).profilePictures.removeFor({ volunteerId: member.id })).toEqual({
       message: 'Picture removed',
     })

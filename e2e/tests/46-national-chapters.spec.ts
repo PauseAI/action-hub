@@ -247,6 +247,39 @@ test.describe('National chapters', () => {
     await expect(adminPage.getByText('No national chapter yet')).toBeVisible({ timeout: 10_000 })
   })
 
+  test("A chapter lead signs a member out on every device from the member's profile", async ({
+    browser,
+    baseUrl,
+    snap,
+  }) => {
+    const chapterId = await ensureChapter(baseUrl, COUNTRY)
+    const lead = await createApprovedVolunteer(baseUrl, { country: COUNTRY })
+    await makeChapterStaff(baseUrl, lead.id, chapterId, 'LEAD')
+    const member = await createApprovedVolunteer(baseUrl, { country: COUNTRY })
+
+    const memberPage = await signedInPage(browser, member.token)
+    const leadPage = await signedInPage(browser, lead.token)
+    try {
+      await memberPage.goto(`${baseUrl}/dashboard`)
+      await leadPage.goto(`${baseUrl}/volunteers/${member.id}`)
+      await leadPage.getByRole('button', { name: 'Sign out everywhere' }).click({ timeout: 10_000 })
+      await snap(leadPage, 'sign out everywhere dialog')
+      await leadPage
+        .getByRole('dialog', { name: `Sign ${member.name} out everywhere?` })
+        .getByRole('button', { name: 'Sign out everywhere' })
+        .click()
+      await expect(getAlert(leadPage)).toContainText(`${member.name} is signed out everywhere`, {
+        timeout: 10_000,
+      })
+
+      await memberPage.reload()
+      await expect(memberPage).toHaveURL(/\/login/, { timeout: 10_000 })
+    } finally {
+      await memberPage.context().close()
+      await leadPage.context().close()
+    }
+  })
+
   test('A chapter lead asks another chapter to take a member, and its lead accepts', async ({
     browser,
     baseUrl,

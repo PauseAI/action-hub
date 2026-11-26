@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { prisma } from '@/lib/prisma'
+import { authenticateApiToken, createApiToken } from '@/lib/api-tokens'
 import { createVolunteer, createAdmin, createStaffInvite } from '@/test/factories'
 import {
   hashPassword,
@@ -10,8 +11,7 @@ import {
   hashToken,
   createSession,
   deleteSession,
-  deleteAllSessions,
-  deleteOtherSessions,
+  revokeAccess,
   getCurrentVolunteer,
   redactVolunteer,
   isSuperAdmin,
@@ -54,7 +54,10 @@ describe('sessions', () => {
     expect(await getCurrentVolunteer('Bearer nope')).toBeNull()
 
     const other = await createSession(vol.id)
-    await deleteOtherSessions(vol.id, token)
+    expect(await revokeAccess(vol.id, { keepHash: hashToken(token) })).toEqual({
+      sessions: 1,
+      apiTokens: 0,
+    })
     expect(await getCurrentVolunteer(other)).toBeNull()
     expect((await getCurrentVolunteer(token))?.id).toBe(vol.id)
 
@@ -62,8 +65,38 @@ describe('sessions', () => {
     expect(await getCurrentVolunteer(token)).toBeNull()
 
     const t3 = await createSession(vol.id)
-    await deleteAllSessions(vol.id)
+    await revokeAccess(vol.id)
     expect(await getCurrentVolunteer(t3)).toBeNull()
+  })
+
+  it('revokes API tokens and a pre-session token too, counting only what was live', async () => {
+    const vol = await createVolunteer()
+    await createSession(vol.id)
+    await prisma.session.create({
+      data: { volunteerId: vol.id, tokenHash: `stale-${vol.id}`, expiresAt: new Date(0) },
+    })
+    await prisma.volunteer.update({
+      where: { id: vol.id },
+      data: { authToken: `legacy-${vol.id}`, authTokenExpiresAt: new Date(Date.now() + 60_000) },
+    })
+    const { token: forever } = await createApiToken(vol.id, {
+      name: 'a',
+      scopes: [],
+      expiresAt: null,
+    })
+    await createApiToken(vol.id, {
+      name: 'b',
+      scopes: [],
+      expiresAt: new Date(Date.now() + 60_000),
+    })
+    await createApiToken(vol.id, { name: 'c', scopes: [], expiresAt: new Date(0) })
+
+    expect(await revokeAccess(vol.id)).toEqual({ sessions: 2, apiTokens: 2 })
+    expect(await authenticateApiToken(`Bearer ${forever}`)).toBeNull()
+    expect(await getCurrentVolunteer(`legacy-${vol.id}`)).toBeNull()
+    expect(await prisma.session.count({ where: { volunteerId: vol.id } })).toBe(0)
+    expect(await prisma.apiToken.count({ where: { volunteerId: vol.id } })).toBe(0)
+    expect(await revokeAccess(vol.id)).toEqual({ sessions: 0, apiTokens: 0 })
   })
 
   it('ignores sessions of deleted volunteers and swallows a failed lastUsedAt touch', async () => {

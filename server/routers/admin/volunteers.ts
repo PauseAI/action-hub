@@ -1,11 +1,20 @@
 import { z } from 'zod'
 import { ORPCError } from '@orpc/server'
 import { prisma } from '@/lib/prisma'
-import { redactVolunteer } from '@/lib/auth'
 import { dismissDuplicatePair, findDuplicatePairs } from '@/lib/duplicate-accounts'
 import { adminProcedure, staffProcedure } from '../../procedures'
 import { canAdminChapter, type ChapterAccess } from '@/lib/chapter-access'
-import { InterestStatus, ProjectStatus, WorkItemType } from '@/generated/prisma/enums'
+import {
+  ChapterAuditAction,
+  InterestStatus,
+  ProjectStatus,
+  WorkItemType,
+} from '@/generated/prisma/enums'
+import { audit } from '@/lib/chapter-roles'
+import { outranks } from '@/lib/chapter-access-server'
+import { notifyUser } from '@/lib/notify'
+import { redactVolunteer, revokeAccess } from '@/lib/auth'
+import { checkRateLimit } from '@/lib/rate-limit'
 
 const MAX_DETAIL_ROWS = 100
 
@@ -262,6 +271,81 @@ export const adminVolunteersRouter = {
         },
       })
       return { message: 'Skill endorsed' }
+    }),
+
+  /**
+   * Ends every session the member has, on every device, for their chapter's staff or a global
+   * admin, as when an account may be in someone else's hands. They can sign in again as usual.
+   */
+  signOutEverywhere: staffProcedure
+    .input(z.object({ volunteerId: z.number().int() }))
+    .handler(async ({ input, context }) => {
+      const target = await prisma.volunteer.findFirst({
+        where: { id: input.volunteerId, deletedAt: null },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          emailConfirmed: true,
+          nationalChapterId: true,
+        },
+      })
+      if (!target || !canAdminChapter(context.access, target.nationalChapterId)) {
+        throw new ORPCError('NOT_FOUND', { message: 'Volunteer not found' })
+      }
+      if (target.id === context.volunteer.id) {
+        throw new ORPCError('BAD_REQUEST', {
+          message: 'Sign yourself out of other devices from your settings',
+        })
+      }
+      if (await outranks(context.access, target)) {
+        throw new ORPCError('FORBIDDEN', {
+          message: `Only a global admin can sign ${target.name} out`,
+        })
+      }
+      const { allowed } = checkRateLimit(
+        context.request,
+        `sign-out-everywhere:${context.volunteer.id}:${target.id}`,
+        { limit: 3, windowMs: 60 * 60 * 1000 },
+      )
+      if (!allowed) {
+        throw new ORPCError('TOO_MANY_REQUESTS', {
+          message: `You have signed ${target.name} out several times this hour; try again later`,
+        })
+      }
+      const revoked = await prisma.$transaction(async (tx) => {
+        const ended = await revokeAccess(target.id, { db: tx })
+        if (ended.sessions || ended.apiTokens) {
+          await audit(tx, ChapterAuditAction.SESSIONS_REVOKED, {
+            actorId: context.volunteer.id,
+            chapterId: target.nationalChapterId,
+            targetVolunteerId: target.id,
+            details: ended,
+          })
+        }
+        return ended
+      })
+      if (!revoked.sessions && !revoked.apiTokens) {
+        return { message: `${target.name} was not signed in anywhere` }
+      }
+      await notifyUser(
+        target.id,
+        'signed_out_by_staff',
+        'You were signed out on every device',
+        'Someone who helps run Action Hub signed you out everywhere, in case your account was in someone else’s hands. Sign in again as usual. If you did not expect this, please change your password.',
+        '/settings',
+        {
+          subject: 'You were signed out of Action Hub on every device',
+          message:
+            'Someone who helps run Action Hub signed you out on every device, in case your account was in someone else’s hands. You can sign in again as usual. If you did not expect this, please change your password from your settings.',
+          ctaLabel: 'Open your settings',
+          ctaUrl: '/settings',
+        },
+      )
+      const tokens = revoked.apiTokens
+        ? ` and ${revoked.apiTokens === 1 ? 'their API token is' : `their ${revoked.apiTokens} API tokens are`} revoked`
+        : ''
+      return { message: `${target.name} is signed out everywhere${tokens}` }
     }),
 
   /**

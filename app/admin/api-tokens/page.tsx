@@ -77,7 +77,8 @@ export default function AdminApiTokensPage() {
       <P className="text-text-light">
         A token lets a program, such as an AI agent connected to the MCP server at{' '}
         <code>/api/mcp</code>, act as you within the permissions you give it. Anyone holding it can
-        do the same, so keep it secret and revoke it if it leaks.
+        do the same, so keep it secret and revoke it if it leaks. Changing your password, or logging
+        out of your other sessions, revokes every token too.
       </P>
 
       {created && (
