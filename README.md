@@ -106,6 +106,39 @@ Key variables:
   Reaching it is logged but raises no alert, since anyone can request resets
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — for Google OAuth
 - `STUB_EMAIL=true` — suppress real emails in development
+- `SENTRY_DSN` — reports errors to the `action-hub` project in PauseAI's Sentry org
+  (`pauseai-global`). Leave it unset in development, tests and previews: without it Sentry is
+  never initialised and nothing is sent. See [Error reporting](#error-reporting)
+- `SENTRY_AUTH_TOKEN` — build only: uploads source maps to Sentry and creates the release.
+  Without it the upload is skipped and the build still passes. `SENTRY_ORG` and
+  `SENTRY_PROJECT` override `pauseai-global` and `action-hub`
+- `SENTRY_ENVIRONMENT` — optional; defaults to `render-standby` on Render, else
+  `RAILWAY_ENVIRONMENT_NAME`, then `NODE_ENV`
+
+### Error reporting
+
+With `SENTRY_DSN` set, errors go to Sentry (`@sentry/nextjs`) from the server, the edge runtime
+and the browser: anything Next reports through `onRequestError` (`instrumentation.ts`), every
+`logger.error` and `logger.fatal` in the Next server (`lib/logger.ts`; at most five of the same
+error a minute), and both error boundaries for errors thrown in the browser (`app/error.tsx`,
+`app/global-error.tsx`; a server error reaching them was reported by the server). The
+start-up scripts (`migrate`, `seed-preview`, the pre-deploy backup) and the cron and backup
+services don't initialise Sentry, so their errors are in the logs only. Each event is tagged with the deploy's commit as its release
+(`RAILWAY_GIT_COMMIT_SHA`, else `RENDER_GIT_COMMIT`). The browser's settings are inlined at build
+time by `next.config.ts`, which also adds the DSN's host to the CSP's `connect-src`, so the DSN
+must be set for the build as well as at runtime.
+
+Action Hub holds volunteers' personal data, so `lib/sentry.ts` sets the SDK's `dataCollection`
+to collect no user info, cookies, bodies or query strings (SDK 11's replacement for
+`sendDefaultPii`, whose defaults collect everything), and scrubs every event and breadcrumb
+before it is sent. The user, request bodies, cookies, query strings, stack-frame variables and
+every header but `User-Agent` are removed. Sentry is told not to record the sender's IP address
+(`infer_ip: never`). Email and IP addresses, phone numbers, bearer and session tokens, Prisma's
+dump of a failed call's arguments, and values under keys naming personal data (any key
+containing `name`, `email`, `number`, `notes`, `message`, `password`, `token` and the like) are
+replaced. Console breadcrumbs are dropped, click breadcrumbs lose their selectors' attributes (an
+`aria-label` can be a name), and stack frames' file names lose their query strings.
+There is no tracing, session replay or browser session tracking.
 
 ### Running
 

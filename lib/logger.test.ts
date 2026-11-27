@@ -1,4 +1,7 @@
+import pino from 'pino'
 import { describe, expect, it } from 'vitest'
+import { errorReports } from '@/test/fakes/error-reporter'
+import { setErrorReporter } from './error-reporter'
 import { logger, loggerDestination, loggerOptions } from './logger'
 
 describe('loggerOptions', () => {
@@ -7,11 +10,62 @@ describe('loggerOptions', () => {
   })
 
   it('logs structured JSON at info level in production', () => {
-    expect(loggerOptions('production')).toEqual({ level: 'info' })
+    expect(loggerOptions('production')).toMatchObject({ level: 'info' })
   })
 
   it('logs at debug level everywhere else', () => {
-    expect(loggerOptions('development')).toEqual({ level: 'debug' })
+    expect(loggerOptions('development')).toMatchObject({ level: 'debug' })
+  })
+})
+
+describe('error reporting', () => {
+  function productionLogger() {
+    const lines: string[] = []
+    const log = pino(loggerOptions('production'), { write: (line: string) => lines.push(line) })
+    return { log, lines }
+  }
+
+  it('reports every error and fatal log, at its level, and still writes it', () => {
+    const { log, lines } = productionLogger()
+    const error = new Error('boom')
+    log.error(error, '[EMAIL ERROR]')
+    log.fatal('[MIGRATE] gave up')
+    expect(errorReports.reports).toEqual([
+      { kind: 'exception', error, level: 'error', extra: { log: '[EMAIL ERROR]' } },
+      { kind: 'message', message: '[MIGRATE] gave up', level: 'fatal' },
+    ])
+    expect(lines).toHaveLength(2)
+    expect(JSON.parse(lines[0])).toMatchObject({ level: 50, msg: '[EMAIL ERROR]' })
+  })
+
+  it('still logs, and does not throw, when reporting fails', () => {
+    const { log, lines } = productionLogger()
+    setErrorReporter({
+      captureException: () => {
+        throw new Error('reporter down')
+      },
+      captureMessage: () => {},
+    })
+    try {
+      expect(() => log.error(new Error('boom'), '[EMAIL ERROR]')).not.toThrow()
+      expect(lines).toHaveLength(1)
+    } finally {
+      setErrorReporter(errorReports)
+    }
+  })
+
+  it('reports nothing below error level', () => {
+    const { log, lines } = productionLogger()
+    log.warn('[EMAIL] slow')
+    log.info('started')
+    expect(errorReports.reports).toEqual([])
+    expect(lines).toHaveLength(2)
+  })
+
+  it('reports from development too', () => {
+    const log = pino(loggerOptions('development'), { write: () => {} })
+    log.error('[DEV] failed')
+    expect(errorReports.last).toMatchObject({ kind: 'message', message: '[DEV] failed' })
   })
 })
 

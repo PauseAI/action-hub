@@ -2,10 +2,12 @@ import { afterAll, beforeEach } from 'vitest'
 import { createTestDb, dropTestDb, testUrl, DB_PREFIX } from './pg'
 import { setDatabaseUrl } from '@/lib/db-url'
 import { setEmailTransport } from '@/lib/email-transport'
+import { resetReportThrottle, setErrorReporter } from '@/lib/error-reporter'
 import { setGoogleVerifier } from '@/lib/google-auth'
 import { setRateLimiter } from '@/lib/rate-limit'
 import { setSnsGateway } from '@/lib/sns'
 import { emails } from './fakes/email'
+import { errorReports } from './fakes/error-reporter'
 import { google } from './fakes/google'
 import { rateLimit } from './fakes/rate-limit'
 import { sns } from './fakes/sns'
@@ -48,9 +50,10 @@ process.env.EMAIL_HASH_SECRET = 'email-hash-secret'
 // The network edge is faked: outgoing email lands in the in-memory outbox `emails`, Google
 // credentials verify only when a test has registered them with `google.accept`, requests
 // are rate-limited only when a test asks with `rateLimit.denyNext`, SNS messages are signed
-// and checked against `sns`'s own key, and the scheduled jobs
-// record that they ran instead of backing up or mailing anything.
+// and checked against `sns`'s own key, the scheduled jobs record that they ran instead of
+// backing up or mailing anything, and reported errors land in `errorReports`.
 setEmailTransport(emails)
+setErrorReporter(errorReports)
 setGoogleVerifier(google)
 setRateLimiter(rateLimit)
 setSnsGateway(sns)
@@ -64,4 +67,6 @@ beforeEach(() => {
   rateLimit.reset()
   sns.reset()
   cronJobs.reset()
+  errorReports.reset()
+  resetReportThrottle()
 })

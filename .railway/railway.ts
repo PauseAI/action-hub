@@ -55,6 +55,8 @@ export default defineRailway((ctx) => {
       NEXT_PUBLIC_GA_MEASUREMENT_ID: preserve(),
       REPLY_TO_EMAIL: preserve(),
       RESEND_API_KEY: preserve(),
+      SENTRY_AUTH_TOKEN: preserve(),
+      SENTRY_DSN: preserve(),
     },
   })
 

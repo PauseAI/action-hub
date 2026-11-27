@@ -1,3 +1,7 @@
+import * as Sentry from '@sentry/nextjs'
+import { setErrorReporter } from './lib/error-reporter'
+import { sentryOptions, serverSentrySettings } from './lib/sentry'
+
 // instrumentation.ts is Next.js's server startup hook — the only place that
 // runs eagerly after runtime env vars are injected but before the first request.
 // next.config.ts runs at build time (env vars not yet available on Railway),
@@ -8,4 +12,12 @@ export async function register() {
     const { validateEnv } = await import('./lib/env')
     validateEnv()
   }
+  const options = sentryOptions(serverSentrySettings())
+  if (options) {
+    Sentry.init(options)
+    setErrorReporter(Sentry)
+  }
 }
+
+/** Errors thrown while rendering, in route handlers, server actions and the proxy. */
+export const onRequestError = Sentry.captureRequestError

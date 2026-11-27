@@ -54,6 +54,8 @@ describe('.railway/railway.ts', () => {
       'NEXT_PUBLIC_GA_MEASUREMENT_ID',
       'REPLY_TO_EMAIL',
       'RESEND_API_KEY',
+      'SENTRY_AUTH_TOKEN',
+      'SENTRY_DSN',
     ])
     expect(names('service.Cron for digest')).toEqual(['CRON_HEALTHCHECK_URL', 'CRON_SECRET'])
     expect(names('service.backup')).toEqual([

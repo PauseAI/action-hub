@@ -1,12 +1,28 @@
 import pino from 'pino'
 import pretty from 'pino-pretty'
 import { env } from './env'
+import { reportLoggedError } from './error-reporter'
+
+const ERROR_LEVEL = 50
+
+/** Every `logger.error` and `logger.fatal` is also sent to the error reporter. */
+const hooks: pino.LoggerOptions['hooks'] = {
+  logMethod(args, method, level) {
+    if (level >= ERROR_LEVEL) {
+      // Reporting must never stop the line being logged, or throw out of a catch handler.
+      try {
+        reportLoggedError(args, level)
+      } catch {}
+    }
+    return method.apply(this, args)
+  },
+}
 
 /** Silent in tests, structured JSON in production, pretty-printed everywhere else. */
 export function loggerOptions(nodeEnv: string): pino.LoggerOptions {
   if (nodeEnv === 'test') return { level: 'silent' }
-  if (nodeEnv === 'production') return { level: 'info' }
-  return { level: 'debug' }
+  if (nodeEnv === 'production') return { level: 'info', hooks }
+  return { level: 'debug', hooks }
 }
 
 /**
