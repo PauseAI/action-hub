@@ -290,6 +290,12 @@ const rowFor: Record<string, (who: Person, other: Person) => Promise<Row>> = {
     }),
   'Coordinator.volunteer': (who, other) =>
     prisma.coordinator.create({ data: { volunteerId: who.id, appointedById: other.id } }),
+  'OnboardingCall.host': (who) =>
+    prisma.onboardingCall.create({
+      data: { name: 'Call A', startsAt: new Date(), hostId: who.id, actionToken: `a${nextSeq()}` },
+    }),
+  'OnboardingMember.volunteer': (who) =>
+    prisma.onboardingMember.create({ data: { volunteerId: who.id } }),
   'ChapterTransferRequest.volunteer': (who) =>
     prisma.chapterTransferRequest.create({ data: { volunteerId: who.id, toCountry: 'FR' } }),
   'ContactRequest.from': (who, other) =>
@@ -466,7 +472,14 @@ describe('every exported link', () => {
     const other = await createVolunteer()
     // A row's id, or for a row with no id of its own, the columns of its primary key.
     const key = (r: Row) =>
-      String(r.id ?? ('callId' in r ? [r.callId, r.volunteerId] : [r.volunteerAId, r.volunteerBId]))
+      String(
+        r.id ??
+          ('callId' in r
+            ? [r.callId, r.volunteerId]
+            : 'volunteerAId' in r
+              ? [r.volunteerAId, r.volunteerBId]
+              : r.volunteerId),
+      )
     const mine: Record<string, string> = {}
     const theirs: Record<string, string> = {}
     for (const link of EXPORTED_LINKS) {

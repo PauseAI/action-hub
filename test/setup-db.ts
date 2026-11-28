@@ -6,12 +6,14 @@ import { resetReportThrottle, setErrorReporter } from '@/lib/error-reporter'
 import { setGoogleVerifier } from '@/lib/google-auth'
 import { setRateLimiter } from '@/lib/rate-limit'
 import { setSnsGateway } from '@/lib/sns'
+import { setLumaClient } from '@/lib/luma'
 import { emails } from './fakes/email'
 import { errorReports } from './fakes/error-reporter'
 import { google } from './fakes/google'
 import { rateLimit } from './fakes/rate-limit'
 import { sns } from './fakes/sns'
 import { cronJobs } from './fakes/cron-jobs'
+import { luma } from './fakes/luma'
 import { GLOBAL_ADMIN_SLOTS, globalAdminEmail } from './admin-emails'
 
 /**
@@ -51,12 +53,14 @@ process.env.EMAIL_HASH_SECRET = 'email-hash-secret'
 // credentials verify only when a test has registered them with `google.accept`, requests
 // are rate-limited only when a test asks with `rateLimit.denyNext`, SNS messages are signed
 // and checked against `sns`'s own key, the scheduled jobs record that they ran instead of
-// backing up or mailing anything, and reported errors land in `errorReports`.
+// backing up or mailing anything, reported errors land in `errorReports`, and the Luma calendar
+// is `luma`, in memory.
 setEmailTransport(emails)
 setErrorReporter(errorReports)
 setGoogleVerifier(google)
 setRateLimiter(rateLimit)
 setSnsGateway(sns)
+setLumaClient(luma)
 // The jobs module reaches `lib/prisma`, whose client is built from the URL on import, so it
 // is loaded only after that is set above.
 const { setCronJobRunners } = await import('@/lib/cron-jobs')
@@ -68,5 +72,6 @@ beforeEach(() => {
   sns.reset()
   cronJobs.reset()
   errorReports.reset()
+  luma.reset()
   resetReportThrottle()
 })

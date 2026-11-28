@@ -1370,6 +1370,8 @@ model Volunteer {
   sessions                                Session[]
   apiTokens                               ApiToken[]
   profilePicture                          ProfilePicture?
+  onboardingMember                        OnboardingMember?
+  onboardingCallsHosted                   OnboardingCall[]         @relation("OnboardingCallHost")
 
   @@index([country], map: "idx_volunteers_country")
   @@index([nationalChapterId], map: "idx_volunteers_chapter")
@@ -1729,4 +1731,89 @@ model SnsMessage {
 
   @@index([receivedAt])
   @@map("sns_messages")
+}
+
+// ============================================================================
+// Global Onboarding: the team that runs calls for new volunteers (lib/onboarding.ts).
+// ============================================================================
+
+enum OnboardingRole {
+  LEAD
+  DEPUTY
+  MEMBER
+}
+
+/// Someone on the Global Onboarding team. A global admin names the lead; the lead names
+/// deputies, and the lead or a deputy adds and removes members.
+model OnboardingMember {
+  volunteerId Int            @id @map("volunteer_id")
+  role        OnboardingRole @default(MEMBER)
+  createdAt   DateTime       @default(now()) @map("created_at")
+  volunteer   Volunteer      @relation(fields: [volunteerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@map("onboarding_members")
+}
+
+/// A regular onboarding call, such as every other Wednesday at 14:00 UTC. The cron job makes a
+/// call from it for each day it falls on a few weeks ahead.
+model OnboardingSlot {
+  id         Int              @id @default(autoincrement())
+  name       String
+  /// The first day it falls on, in UTC; it repeats on the same weekday every `everyWeeks` weeks.
+  firstDay   DateTime         @map("first_day") @db.Date
+  everyWeeks Int              @map("every_weeks")
+  /// UTC, as HH:MM.
+  time       String
+  createdAt  DateTime         @default(now()) @map("created_at")
+  calls      OnboardingCall[]
+
+  @@map("onboarding_slots")
+}
+
+/// One onboarding call. Action Hub is its source of truth; the cron job mirrors it to Luma.
+model OnboardingCall {
+  id               Int             @id @default(autoincrement())
+  name             String
+  startsAt         DateTime        @map("starts_at")
+  slotId           Int?            @map("slot_id")
+  /// The UTC day the slot made it for, so the slot makes one call a day however its time moves.
+  slotDay          DateTime?       @map("slot_day") @db.Date
+  hostId           Int?            @map("host_id")
+  /// The host said "I'm on". Cleared whenever the host changes.
+  confirmedAt      DateTime?       @map("confirmed_at")
+  coverRequestedAt DateTime?       @map("cover_requested_at")
+  /// The current host was sent their reminder.
+  remindedAt       DateTime?       @map("reminded_at")
+  /// The rest of the team was asked to host it. Cleared when someone takes it.
+  teamAskedAt      DateTime?       @map("team_asked_at")
+  cancelledAt      DateTime?       @map("cancelled_at")
+  /// Signs the reminder's "I'm on" and "I need cover" links; replaced whenever the host changes.
+  /// @zod.custom.omit([model])
+  actionToken      String          @unique @map("action_token")
+  lumaEventId      String?         @map("luma_event_id")
+  lumaUrl          String?         @map("luma_url")
+  /// The address the host was added to the Luma event under, to take them off when it changes.
+  lumaHostEmail    String?         @map("luma_host_email")
+  /// Something Luma shows (name, time, Meet link, cancellation) changed since it was last sent.
+  lumaStale        Boolean         @default(true) @map("luma_stale")
+  /// Approved registrations, as Luma last reported them.
+  lumaGuests       Int?            @map("luma_guests")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  slot             OnboardingSlot? @relation(fields: [slotId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  host             Volunteer?      @relation("OnboardingCallHost", fields: [hostId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([slotId, slotDay])
+  @@index([startsAt], map: "idx_onboarding_calls_starts")
+  @@map("onboarding_calls")
+}
+
+/// Singleton (id 1): what every onboarding call's Luma event says, and the Google Meet link it
+/// uses, owned by globalonboarding@. Unset fields fall back to lib/onboarding.ts.
+model OnboardingSettings {
+  id              Int     @id @default(1)
+  meetLink        String? @map("meet_link")
+  lumaTitle       String? @map("luma_title")
+  lumaDescription String? @map("luma_description")
+
+  @@map("onboarding_settings")
 }

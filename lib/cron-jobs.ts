@@ -7,6 +7,7 @@ import { runDeadlineRemindersJob } from '@/jobs/deadline-reminders'
 import { runNotificationDigestJob } from '@/jobs/notification-digest'
 import { runEmailHousekeepingJob } from '@/jobs/email-housekeeping'
 import { runEmailCapCheckJob } from '@/jobs/email-cap-check'
+import { runOnboardingCallsJob } from '@/jobs/onboarding-calls'
 import {
   CRON_JOB_INFO,
   CRON_JOB_NAMES,
@@ -30,6 +31,7 @@ const realRunners: CronJobRunners = {
   'notification-digest': runNotificationDigestJob,
   'email-housekeeping': runEmailHousekeepingJob,
   'email-cap-check': runEmailCapCheckJob,
+  'onboarding-calls': runOnboardingCallsJob,
 }
 
 let current: CronJobRunners = realRunners
@@ -73,6 +75,8 @@ async function lastRunFailed(name: CronJobName): Promise<boolean> {
 const QUIET_RUN: Partial<Record<CronJobName, (result: unknown) => Promise<boolean> | boolean>> = {
   'notification-digest': (r) => (r as { due?: number }).due === 0,
   'email-cap-check': async () => !(await lastRunFailed('email-cap-check')),
+  'onboarding-calls': (r) =>
+    Object.values((r ?? {}) as Record<string, unknown>).every((v) => v === 0 || v === 'off'),
 }
 
 /** Jobs that read what the others did, so they start once the rest have settled. */

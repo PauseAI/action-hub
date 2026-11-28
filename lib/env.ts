@@ -82,6 +82,10 @@ export const env = {
   get RAILWAY_GIT_COMMIT_SHA(): string | undefined {
     return process.env.RAILWAY_GIT_COMMIT_SHA || process.env.RENDER_GIT_COMMIT || undefined
   },
+  /** Key to the PauseAI Luma calendar; used only on the live site (lib/luma.ts). */
+  get LUMA_API_KEY(): string | undefined {
+    return process.env.LUMA_API_KEY || undefined
+  },
   get RAILWAY_ENVIRONMENT_NAME(): string | undefined {
     return process.env.RAILWAY_ENVIRONMENT_NAME
   },

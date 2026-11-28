@@ -24,6 +24,7 @@ const RequiredActionsContext = createContext<RequiredActionsValue | null>(null)
 const QUIET_PATHS = [
   '/merge-accounts',
   '/confirm-merge',
+  '/onboarding/respond',
   '/verify-email',
   '/reset-password',
   '/accept-invite',

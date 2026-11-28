@@ -51,6 +51,7 @@ describe('.railway/railway.ts', () => {
       'DATABASE_URL',
       'FROM_EMAIL',
       'GOOGLE_CLIENT_ID',
+      'LUMA_API_KEY',
       'NEXT_PUBLIC_GA_MEASUREMENT_ID',
       'REPLY_TO_EMAIL',
       'RESEND_API_KEY',

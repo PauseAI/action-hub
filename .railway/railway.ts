@@ -52,6 +52,7 @@ export default defineRailway((ctx) => {
       DATABASE_URL: preserve(),
       FROM_EMAIL: preserve(),
       GOOGLE_CLIENT_ID: preserve(),
+      LUMA_API_KEY: preserve(),
       NEXT_PUBLIC_GA_MEASUREMENT_ID: preserve(),
       REPLY_TO_EMAIL: preserve(),
       RESEND_API_KEY: preserve(),

@@ -29,6 +29,8 @@ import { TaskSurrenderedOwnerEmail } from './emails/TaskSurrenderedOwnerEmail'
 import { TaskSurrenderedAssigneeEmail } from './emails/TaskSurrenderedAssigneeEmail'
 import { DailySummaryEmail, type SummaryEmailSection } from './emails/DailySummaryEmail'
 import { NotificationDigestEmail } from './emails/NotificationDigestEmail'
+import { OnboardingCallEmail } from './emails/OnboardingCallEmail'
+import type { FooterButton } from './emails/components/Footer'
 import type { DigestSection } from './notification-digest'
 
 export type { ChapterRoleInvite, DigestProject, SummaryEmailSection }
@@ -976,4 +978,36 @@ export async function sendNotificationDigestEmail({
   sections: DigestSection[]
 }): Promise<boolean> {
   return sendEmail(to, subject, await buildNotificationDigestHtml(name, sections))
+}
+
+export type OnboardingEmail = {
+  subject: string
+  heading: string
+  paragraphs: string[]
+  buttons: FooterButton[]
+}
+
+export function buildOnboardingCallHtml(name: string, email: OnboardingEmail): Promise<string> {
+  return render(
+    <OnboardingCallEmail
+      name={name}
+      heading={email.heading}
+      paragraphs={email.paragraphs}
+      buttons={email.buttons}
+      appUrl={env.APP_URL}
+    />,
+  )
+}
+
+/** A Global Onboarding reminder, cover request or swap (lib/onboarding-emails.ts). */
+export async function sendOnboardingCallEmail({
+  to,
+  name,
+  email,
+}: {
+  to: string
+  name: string
+  email: OnboardingEmail
+}): Promise<boolean> {
+  return sendEmail(to, email.subject, await buildOnboardingCallHtml(name, email))
 }

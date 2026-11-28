@@ -409,6 +409,7 @@ export const authRouter = {
         skillEndorsementsReceived: { include: { skill: true } },
         chapter: { select: { id: true, name: true, country: true } },
         group: { select: { name: true } },
+        onboardingMember: { select: { role: true } },
       },
     })
     if (!vol) throw new ORPCError('NOT_FOUND')
@@ -431,7 +432,11 @@ export const authRouter = {
       })),
     })
     const { viewingAsVolunteer, access } = context
-    const chapterInfo = { chapter: vol.chapter, access }
+    const chapterInfo = {
+      chapter: vol.chapter,
+      access,
+      onboardingRole: vol.onboardingMember?.role ?? null,
+    }
     // Super admin is decided by email address, so it has to be withdrawn here explicitly.
     return viewingAsVolunteer
       ? { ...me, ...chapterInfo, isAdmin: false, isSuperAdmin: false, viewingAsVolunteer }

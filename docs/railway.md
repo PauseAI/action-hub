@@ -31,6 +31,8 @@ Variables set on the service:
 - `DATABASE_URL`: also passed to the build, where `prisma generate` reads it
 - `APP_URL`, `CRON_SECRET`, `RESEND_API_KEY`: the app refuses to start in production without them
 - `FROM_EMAIL`, `REPLY_TO_EMAIL`, `GOOGLE_CLIENT_ID`, `ADMIN_EMAILS`
+- `LUMA_API_KEY`: production only. Global Onboarding's calls go on the PauseAI Luma calendar
+  (`lib/luma.ts`); a preview with the key copied in still leaves Luma alone
 - `NEXT_PUBLIC_GA_MEASUREMENT_ID`: build time only, inlined into the client bundle
 - `SENTRY_DSN`: build and runtime. Production only: without it (previews, the Render standby
   unless entered there) Sentry is never initialised. The build inlines it into the browser's
