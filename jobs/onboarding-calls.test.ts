@@ -140,6 +140,26 @@ describe('asking the team for cover', () => {
   })
 })
 
+describe('hosts who have gone', () => {
+  it('frees the calls of a host who left the team or whose account was suspended', async () => {
+    const suspended = await createOnboardingMember()
+    const gone = await createOnboardingMember()
+    const staying = await createOnboardingMember()
+    const a = await createOnboardingCall({ hostId: suspended.id, startsAt: inDays(9) })
+    const b = await createOnboardingCall({ hostId: gone.id, startsAt: inDays(9) })
+    const c = await createOnboardingCall({ hostId: staying.id, startsAt: inDays(9) })
+    await prisma.volunteer.update({ where: { id: suspended.id }, data: { suspendedAt: now } })
+    await prisma.onboardingMember.delete({ where: { volunteerId: gone.id } })
+    expect(await runOnboardingCallsJob(now)).toMatchObject({ freed: 2 })
+    const hosts = await prisma.onboardingCall.findMany({
+      where: { id: { in: [a.id, b.id, c.id] } },
+      orderBy: { id: 'asc' },
+    })
+    expect(hosts.map((h) => h.hostId)).toEqual([null, null, staying.id])
+    expect(hosts[0].actionToken).not.toBe(a.actionToken)
+  })
+})
+
 describe('keeping Luma in step', () => {
   afterEach(() => {
     setLumaClient(luma)
@@ -207,6 +227,9 @@ describe('keeping Luma in step', () => {
     })
     expect(await runOnboardingCallsJob(now)).toMatchObject({ cancelled: 1 })
     expect(luma.live).toHaveLength(0)
+    // Touched again, as by a change of host, it does not ask Luma to cancel it twice.
+    await prisma.onboardingCall.update({ where: { id: call.id }, data: { lumaStale: true } })
+    expect(await runOnboardingCallsJob(now)).toMatchObject({ cancelled: 0 })
   })
 
   it('leaves Luma alone for a call cancelled before it got there, and for one too far ahead', async () => {
@@ -214,6 +237,42 @@ describe('keeping Luma in step', () => {
     await createOnboardingCall({ startsAt: inDays(40) })
     expect(await runOnboardingCallsJob(now)).toMatchObject({ created: 0, cancelled: 0 })
     expect(luma.events.size).toBe(0)
+  })
+
+  it('does not lose track of the event’s host when Luma fails between taking one off and adding the next', async () => {
+    const first = await createOnboardingMember()
+    const second = await createOnboardingMember()
+    const call = await createOnboardingCall({ startsAt: inDays(5), hostId: first.id })
+    await runOnboardingCallsJob(now)
+    await prisma.onboardingCall.update({
+      where: { id: call.id },
+      data: { hostId: second.id, lumaStale: true },
+    })
+    const event = luma.live[0]
+    const addHost = luma.addHost.bind(luma)
+    luma.addHost = async () => {
+      throw new Error('Luma is down')
+    }
+    await expect(runOnboardingCallsJob(now)).rejects.toThrow('Luma is down')
+    luma.addHost = addHost
+    expect(event.hosts).toEqual([])
+    await runOnboardingCallsJob(now)
+    expect(event.hosts).toEqual([second.email])
+  })
+
+  it('reads the event’s page on a later run when it could not right after creating it', async () => {
+    const call = await createOnboardingCall({ startsAt: inDays(20) })
+    const getEvent = luma.getEvent.bind(luma)
+    luma.getEvent = async () => {
+      throw new Error('Luma is down')
+    }
+    await expect(runOnboardingCallsJob(now)).rejects.toThrow('Luma is down')
+    luma.getEvent = getEvent
+    await runOnboardingCallsJob(now)
+    expect(
+      (await prisma.onboardingCall.findUniqueOrThrow({ where: { id: call.id } })).lumaUrl,
+    ).toBe(`https://luma.com/${luma.live[0].id}`)
+    expect(luma.live).toHaveLength(1)
   })
 
   it('tries again next run when Luma fails, and fails the run so it shows', async () => {
@@ -231,6 +290,7 @@ describe('keeping Luma in step', () => {
     setLumaClient(null)
     await createOnboardingCall({ startsAt: inDays(5) })
     expect(await runOnboardingCallsJob(now)).toEqual({
+      freed: 0,
       made: 0,
       reminded: 0,
       asked: 0,

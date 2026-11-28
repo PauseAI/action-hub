@@ -77,6 +77,24 @@ describe('hosting', () => {
     await expect(clientAs(member).onboarding.take({ callId: c.id })).rejects.toMatchObject(conflict)
   })
 
+  it('lets a member take a close call whose host has not said they are on', async () => {
+    const { member, other } = await team()
+    const quiet = await createOnboardingCall({ hostId: other.id, startsAt: inDays(1) })
+    const sure = await createOnboardingCall({
+      hostId: other.id,
+      startsAt: inDays(1),
+      confirmedAt: new Date(),
+    })
+    const overview = await clientAs(member).onboarding.overview()
+    expect(overview.calls.find((c) => c.id === quiet.id)?.takeable).toBe(true)
+    expect(overview.calls.find((c) => c.id === sure.id)?.takeable).toBe(false)
+    await clientAs(member).onboarding.take({ callId: quiet.id })
+    expect((await call(quiet.id)).hostId).toBe(member.id)
+    await expect(clientAs(member).onboarding.take({ callId: sure.id })).rejects.toMatchObject(
+      conflict,
+    )
+  })
+
   it('takes a close call as confirmed, so no reminder follows', async () => {
     const { member } = await team()
     const c = await createOnboardingCall({ startsAt: inDays(2) })
@@ -209,8 +227,13 @@ describe('times and cancelling', () => {
   it('asks the host again when the lead moves their call', async () => {
     const { lead, member } = await team()
     const c = await createOnboardingCall({ hostId: member.id, confirmedAt: new Date() })
+    await prisma.onboardingCall.update({ where: { id: c.id }, data: { teamAskedAt: new Date() } })
     await clientAs(lead).onboarding.setTime({ callId: c.id, startsAt: inDays(9) })
-    expect(await call(c.id)).toMatchObject({ confirmedAt: null, remindedAt: null })
+    expect(await call(c.id)).toMatchObject({
+      confirmedAt: null,
+      remindedAt: null,
+      teamAskedAt: null,
+    })
   })
 
   it('lets the lead cancel any call, and a host only a close one nobody registered for', async () => {
@@ -298,6 +321,29 @@ describe('the lead’s tools', () => {
     expect(await prisma.onboardingCall.count({ where: { name: 'Call C' } })).toBeGreaterThan(2)
   })
 
+  it('drops today’s open call when a change would move it into the past', async () => {
+    const { lead } = await team()
+    const today = new Date(new Date().toISOString().slice(0, 10))
+    const slot = await prisma.onboardingSlot.create({
+      data: { name: 'Call C', firstDay: today, everyWeeks: 1, time: '23:59' },
+    })
+    const todays = await createOnboardingCall({
+      slotId: slot.id,
+      slotDay: today,
+      startsAt: new Date(Date.now() + HOUR),
+      lumaEventId: 'evt-today',
+    })
+    await clientAs(lead).onboarding.saveSlot({
+      slotId: slot.id,
+      name: 'Call C',
+      firstDay: today,
+      everyWeeks: 1,
+      time: '00:00',
+    })
+    expect(await call(todays.id)).toMatchObject({ startsAt: todays.startsAt, lumaStale: true })
+    expect((await call(todays.id)).cancelledAt).not.toBeNull()
+  })
+
   it('moves the coming calls nobody hosts when a regular call changes, and leaves hosted ones', async () => {
     const { lead, member } = await team()
     const today = new Date(new Date().toISOString().slice(0, 10))
@@ -372,11 +418,17 @@ describe('the team', () => {
     ).rejects.toMatchObject(notFound)
   })
 
-  it('removes a member and frees the calls they were hosting', async () => {
+  it('removes a member and frees the calls they were hosting, leaving cancelled ones be', async () => {
     const { deputy, member } = await team()
     const c = await createOnboardingCall({ hostId: member.id, confirmedAt: new Date() })
+    const cancelled = await createOnboardingCall({ hostId: member.id, cancelledAt: new Date() })
+    await prisma.onboardingCall.update({
+      where: { id: cancelled.id },
+      data: { lumaStale: false },
+    })
     await clientAs(deputy).onboarding.removeMember({ volunteerId: member.id })
     expect(await call(c.id)).toMatchObject({ hostId: null, confirmedAt: null })
+    expect(await call(cancelled.id)).toMatchObject({ hostId: member.id, lumaStale: false })
     await expect(
       clientAs(deputy).onboarding.removeMember({ volunteerId: member.id }),
     ).rejects.toMatchObject(notFound)

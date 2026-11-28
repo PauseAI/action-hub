@@ -95,8 +95,14 @@ type CallState = {
   cancelledAt: Date | null
 }
 
-/** The call has no host who will run it: none, or one who asked for cover. */
-export const needsHost = (call: CallState) => call.hostId === null || call.coverRequestedAt !== null
+/**
+ * Anyone on the team may take the call: it has no host, its host asked for cover, or its host has
+ * not said "I'm on" with CONFIRM_BY_DAYS to go.
+ */
+export const needsHost = (call: CallState, now: Date) =>
+  call.hostId === null ||
+  call.coverRequestedAt !== null ||
+  (call.confirmedAt === null && call.startsAt.getTime() - now.getTime() <= CONFIRM_BY_DAYS * DAY_MS)
 
 /** Whether the team should be asked to host `call` at `now`. */
 export function teamShouldBeAsked(call: CallState, now: Date): boolean {

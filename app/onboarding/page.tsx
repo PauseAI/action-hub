@@ -116,8 +116,7 @@ function CallCard({ call, overview }: { call: Call; overview: Overview }) {
   })
   const startsAt = new Date(call.startsAt)
   const mine = call.host?.id === overview.me
-  const canTake =
-    !call.cancelled && overview.role !== null && !mine && (!call.host || call.coverRequested)
+  const canTake = !call.cancelled && overview.role !== null && !mine && call.takeable
   const swappable = overview.calls.filter(
     (c) => !c.cancelled && c.host && c.host.id !== overview.me,
   )

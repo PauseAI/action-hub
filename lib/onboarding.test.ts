@@ -53,10 +53,13 @@ describe('slots', () => {
 })
 
 describe('call state', () => {
-  it('needs a host when it has none, or its host asked for cover', () => {
-    expect(needsHost(call())).toBe(false)
-    expect(needsHost(call({ hostId: null }))).toBe(true)
-    expect(needsHost(call({ coverRequestedAt: now }))).toBe(true)
+  it('needs a host when it has none, its host asked for cover, or has not confirmed in time', () => {
+    expect(needsHost(call(), now)).toBe(false)
+    expect(needsHost(call({ hostId: null }), now)).toBe(true)
+    expect(needsHost(call({ coverRequestedAt: now }), now)).toBe(true)
+    const tomorrow = at('2026-12-02T12:00:00Z')
+    expect(needsHost(call({ startsAt: tomorrow }), now)).toBe(true)
+    expect(needsHost(call({ startsAt: tomorrow, confirmedAt: now }), now)).toBe(false)
   })
 
   it('asks the team for cover, for an unhosted call a few days out, and an unconfirmed one two', () => {

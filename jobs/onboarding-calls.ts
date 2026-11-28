@@ -15,12 +15,38 @@ import {
 import { coverEmail, reminderEmail, type CoverReason } from '@/lib/onboarding-emails'
 import {
   emailMember,
+  freshHost,
   newActionToken,
   onboardingSettings,
   reachableTeam,
 } from '@/lib/onboarding-server'
 
 const DAY_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Takes the host off each coming call whose host has left the team or whose account is suspended
+ * or deleted, so the call needs a host again and their reminder link stops working.
+ */
+async function freeLostHosts(now: Date): Promise<number> {
+  const calls = await prisma.onboardingCall.findMany({
+    where: {
+      cancelledAt: null,
+      startsAt: { gt: now },
+      host: {
+        OR: [
+          { deletedAt: { not: null } },
+          { suspendedAt: { not: null } },
+          { onboardingMember: null },
+        ],
+      },
+    },
+    select: { id: true },
+  })
+  for (const call of calls) {
+    await prisma.onboardingCall.update({ where: { id: call.id }, data: freshHost(null) })
+  }
+  return calls.length
+}
 
 /** Makes a call for each day a regular slot falls on, up to WEEKS_AHEAD; never twice a day. */
 export async function makeCallsFromSlots(now: Date): Promise<number> {
@@ -104,9 +130,14 @@ async function syncHost(
 ) {
   const email = call.host?.email ?? null
   if (email === call.lumaHostEmail) return
-  if (call.lumaHostEmail) await client.removeHost(eventId, call.lumaHostEmail)
-  if (email) await client.addHost(eventId, { email, name: call.host!.name })
-  await prisma.onboardingCall.update({ where: { id: call.id }, data: { lumaHostEmail: email } })
+  if (call.lumaHostEmail) {
+    await client.removeHost(eventId, call.lumaHostEmail)
+    await prisma.onboardingCall.update({ where: { id: call.id }, data: { lumaHostEmail: null } })
+  }
+  if (email) {
+    await client.addHost(eventId, { email, name: call.host!.name })
+    await prisma.onboardingCall.update({ where: { id: call.id }, data: { lumaHostEmail: email } })
+  }
 }
 
 /**
@@ -129,6 +160,11 @@ async function pushToLuma(now: Date, client: LumaClient, settings: Settings): Pr
       if (call.cancelledAt) {
         if (call.lumaEventId) {
           await client.cancelEvent(call.lumaEventId)
+          // Luma has deleted it, so there is nothing left to send.
+          await prisma.onboardingCall.update({
+            where: { id: call.id },
+            data: { lumaEventId: null },
+          })
           tally.cancelled++
         }
         continue
@@ -150,9 +186,11 @@ async function pushToLuma(now: Date, client: LumaClient, settings: Settings): Pr
           where: { id: call.id },
           data: { lumaEventId: eventId },
         })
+        tally.created++
+      }
+      if (!call.lumaUrl) {
         const { url } = await client.getEvent(eventId)
         await prisma.onboardingCall.update({ where: { id: call.id }, data: { lumaUrl: url } })
-        tally.created++
       }
       await syncHost(client, eventId, call)
     } catch (err) {
@@ -188,15 +226,16 @@ async function readGuests(now: Date, client: LumaClient, errors: string[]): Prom
  * fails the run once everything else is done, so the cron healthcheck shows it.
  */
 export async function runOnboardingCallsJob(now: Date = new Date()) {
+  const freed = await freeLostHosts(now)
   const made = await makeCallsFromSlots(now)
   const settings = await onboardingSettings()
   const reminded = await remindHosts(now, settings.meetLink)
   const asked = await askTeam(now)
   const client = lumaClient()
-  if (!client) return { made, reminded, asked, luma: 'off' as const }
+  if (!client) return { freed, made, reminded, asked, luma: 'off' as const }
   const tally = await pushToLuma(now, client, settings)
   await readGuests(now, client, tally.errors)
   if (tally.errors.length > 0) throw new Error(`Luma: ${tally.errors.join('; ')}`)
   const { created, updated, cancelled } = tally
-  return { made, reminded, asked, created, updated, cancelled }
+  return { freed, made, reminded, asked, created, updated, cancelled }
 }

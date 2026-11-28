@@ -127,6 +127,7 @@ export const onboardingRouter = {
         lumaUrl: c.lumaUrl,
         lumaGuests: c.lumaGuests,
         hostMayCancel: hostMayCancel(c, now),
+        takeable: needsHost(c, now),
       })),
       members: members.map((m) => ({ ...m.volunteer, role: m.role })),
       slots: slots.map((s) => ({
@@ -143,12 +144,17 @@ export const onboardingRouter = {
   take: memberProcedure.input(callId).handler(async ({ input, context }) => {
     if (!context.role) throw new ORPCError('FORBIDDEN', { message: 'Only the team hosts calls' })
     const call = await upcomingCall(input.callId)
-    if (!needsHost(call) || call.hostId === context.volunteer.id) {
+    if (!needsHost(call, new Date()) || call.hostId === context.volunteer.id) {
       throw new ORPCError('CONFLICT', { message: 'Someone is already hosting that call' })
     }
     const confirmedAt = takenIsConfirmed(call.startsAt, new Date()) ? new Date() : null
     const { count } = await prisma.onboardingCall.updateMany({
-      where: { id: call.id, hostId: call.hostId, coverRequestedAt: call.coverRequestedAt },
+      where: {
+        id: call.id,
+        hostId: call.hostId,
+        coverRequestedAt: call.coverRequestedAt,
+        confirmedAt: call.confirmedAt,
+      },
       data: freshHost(context.volunteer.id, confirmedAt),
     })
     if (count === 0) throw new ORPCError('CONFLICT', { message: 'Someone else just took it' })
@@ -214,6 +220,7 @@ export const onboardingRouter = {
           startsAt: input.startsAt,
           lumaStale: true,
           remindedAt: null,
+          teamAskedAt: null,
           // A host whose call someone else moved is asked again.
           ...(call.hostId !== context.volunteer.id && { confirmedAt: null }),
         },
@@ -294,10 +301,11 @@ export const onboardingRouter = {
         })
         for (const call of open) {
           const day = call.slotDay!
-          if (slotFallsOn(slot, day)) {
+          const startsAt = atTime(day, slot.time)
+          if (slotFallsOn(slot, day) && startsAt > now) {
             await prisma.onboardingCall.update({
               where: { id: call.id },
-              data: { name: slot.name, startsAt: atTime(day, slot.time), lumaStale: true },
+              data: { name: slot.name, startsAt, lumaStale: true },
             })
           } else if (call.lumaEventId) {
             await prisma.onboardingCall.update({
@@ -391,7 +399,7 @@ export const onboardingRouter = {
       await prisma.$transaction(async (tx) => {
         await tx.onboardingMember.delete({ where: { volunteerId: member.volunteerId } })
         const hosted = await tx.onboardingCall.findMany({
-          where: { hostId: member.volunteerId, startsAt: { gt: new Date() } },
+          where: { hostId: member.volunteerId, cancelledAt: null, startsAt: { gt: new Date() } },
           select: { id: true },
         })
         for (const call of hosted) {
