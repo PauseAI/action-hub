@@ -93,6 +93,8 @@ Key variables:
   - `EMAIL_HASH_SECRET` — a random secret keying the hashes suppressed addresses are kept under
     (`openssl rand -hex 32`); changing it forgets every suppression
 
+- `LUMA_API_KEY` — the PauseAI Luma calendar's API key, for Global Onboarding's calls
+  (`lib/luma.ts`). Used only where `RAILWAY_ENVIRONMENT_NAME` is `production`
 - `FROM_EMAIL` — the sender; with SES it must be set, on the verified domain:
   `Action Hub <noreply@action.pauseai.info>`
 - `EMAIL_HOURLY_CAP` — the most emails sent in one clock hour across every process, through

@@ -18,6 +18,8 @@ interface User {
   /** Null: the holding pool. */
   chapter: { id: number; name: string; country: string } | null
   access: ChapterAccess
+  /** Their place on the Global Onboarding team, if any (lib/onboarding.ts). */
+  onboardingRole?: 'LEAD' | 'DEPUTY' | 'MEMBER' | null
   approvalStatus: string
   emailConfirmed: boolean
   hasPassword: boolean

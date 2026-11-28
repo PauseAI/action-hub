@@ -231,3 +231,27 @@ export async function createCoordinator(
   await prisma.coordinator.create({ data: { volunteerId: coordinator.id, remit: 'Media' } })
   return coordinator
 }
+
+/** A volunteer on the Global Onboarding team. */
+export async function createOnboardingMember(
+  role: 'LEAD' | 'DEPUTY' | 'MEMBER' = 'MEMBER',
+  overrides: Partial<Prisma.VolunteerUncheckedCreateInput> = {},
+) {
+  const volunteer = await createVolunteer(overrides)
+  await prisma.onboardingMember.create({ data: { volunteerId: volunteer.id, role } })
+  return volunteer
+}
+
+/** An onboarding call, a week from now unless `startsAt` says otherwise. */
+export function createOnboardingCall(
+  overrides: Partial<Prisma.OnboardingCallUncheckedCreateInput> = {},
+) {
+  return prisma.onboardingCall.create({
+    data: {
+      name: 'Call B',
+      startsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      actionToken: `token-${nextSeq()}-${Math.random().toString(36).slice(2)}`,
+      ...overrides,
+    },
+  })
+}

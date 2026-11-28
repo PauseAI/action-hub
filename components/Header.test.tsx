@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma'
 import { queryClient } from '@/lib/query-client'
 import {
   createCoordinator,
+  createOnboardingMember,
   createVolunteer,
   createSuperAdmin,
   createChapter,
@@ -269,6 +270,19 @@ describe('Header', () => {
     await userEvent.click(await screen.findByRole('button', { name: vol.name }))
     expect(screen.getByRole('link', { name: 'Calls for volunteers' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Coordinate' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Global Onboarding' })).toBeNull()
+  })
+
+  it('offers Global Onboarding to its team', async () => {
+    const member = await createOnboardingMember('MEMBER', { locationConfirmedAt: new Date() })
+    await mount(member, '/dashboard')
+    await userEvent.click(await screen.findByRole('button', { name: member.name }))
+    expect(screen.getByRole('link', { name: 'Global Onboarding' })).toHaveAttribute(
+      'href',
+      '/onboarding',
+    )
+    await userEvent.click(screen.getByLabelText('Open menu'))
+    expect(screen.getAllByRole('link', { name: 'Global Onboarding' })).toHaveLength(2)
   })
 
   it("names a chapter's admin area for its staff, and offers none to a member", async () => {

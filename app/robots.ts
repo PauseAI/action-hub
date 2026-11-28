@@ -26,6 +26,7 @@ export default function robots(): MetadataRoute.Robots {
         '/accept-invite',
         '/merge-accounts',
         '/confirm-merge',
+        '/onboarding',
       ],
     },
     sitemap: `${env.APP_URL}/sitemap.xml`,

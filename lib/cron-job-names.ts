@@ -8,6 +8,7 @@ export const CRON_JOB_NAMES = [
   'notification-digest',
   'email-housekeeping',
   'email-cap-check',
+  'onboarding-calls',
 ] as const
 
 export type CronJobName = (typeof CRON_JOB_NAMES)[number]
@@ -68,6 +69,12 @@ export const CRON_JOB_INFO: Record<CronJobName, CronJobInfo> = {
   'email-cap-check': {
     description:
       'Fails, so the cron healthcheck alerts, while the hourly bulk email cap has refused mail this hour or last.',
+    idempotent: true,
+    every: 'hour',
+  },
+  'onboarding-calls': {
+    description:
+      'Global Onboarding: makes calls from the regular times, reminds hosts, asks the team for cover, and keeps Luma in step.',
     idempotent: true,
     every: 'hour',
   },

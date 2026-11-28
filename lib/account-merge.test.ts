@@ -10,6 +10,7 @@ import {
   createTask,
   createTeam,
   createVolunteer,
+  createOnboardingMember,
 } from '@/test/factories'
 import {
   MERGE_REFERENCES,
@@ -280,6 +281,11 @@ describe('mergeAccounts', () => {
     expect((await prisma.volunteer.findUniqueOrThrow({ where: { id: deputy.id } })).deletedAt).toBe(
       null,
     )
+    // Folded into a kept account on the team too, a lead's role would be lost.
+    const lead = await createOnboardingMember('LEAD')
+    await expect(mergeAccounts(kept.id, lead.id, kept.id)).rejects.toMatchObject({
+      message: expect.stringContaining('Global Onboarding team'),
+    })
   })
 
   it('refuses every merge while a reference has no policy', async () => {

@@ -56,6 +56,8 @@ export const EXPORTED_LINKS: readonly string[] = [
   'ChapterAuditEvent.targetVolunteer',
   'ChapterDeputy.volunteer',
   'Coordinator.volunteer',
+  'OnboardingCall.host',
+  'OnboardingMember.volunteer',
   'ChapterTransferRequest.volunteer',
   'ContactRequest.from',
   'ContactRequest.to',
@@ -114,6 +116,8 @@ const STAFF_ACTION = "a decision taken about someone else; it is that person's d
 
 /** Links left out, each with the reason. */
 export const OMITTED_LINKS: Readonly<Record<string, string>> = {
+  'OnboardingCall.lumaHostEmail':
+    'the address its host was added to Luma under; the call is exported through OnboardingCall.host',
   'AdminInvite.invitedBy': "invites sent to other people's addresses",
   'AdminNote.author': 'notes written about other people',
   'BugReport.assignee': STAFF_ACTION,
@@ -152,6 +156,7 @@ export const SECRET_FIELDS: Readonly<Record<string, readonly string[]>> = {
   EmailVerificationToken: ['token'],
   ExperimentalOutreachLoginToken: ['tokenHash'],
   ExperimentalOutreachSession: ['tokenHash'],
+  OnboardingCall: ['actionToken'],
   PasswordResetToken: ['token'],
   RejectedApplication: ['emailHash'],
   Session: ['tokenHash'],

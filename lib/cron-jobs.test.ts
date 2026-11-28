@@ -132,6 +132,17 @@ describe('runScheduledJobs (the hourly trigger)', () => {
     expect(await digestRuns()).toBe(before + 1)
   })
 
+  it('keeps an onboarding run in the history only when it did something', async () => {
+    const runs = () => prisma.cronJobRun.count({ where: { jobName: 'onboarding-calls' } })
+    const before = await runs()
+    cronJobs.returns('onboarding-calls', { made: 0, reminded: 0, asked: 0, luma: 'off' })
+    await trigger(hour('2026-12-11', 3))
+    expect(await runs()).toBe(before)
+    cronJobs.returns('onboarding-calls', { made: 0, reminded: 1, asked: 0, created: 0 })
+    await trigger(hour('2026-12-11', 4))
+    expect(await runs()).toBe(before + 1)
+  })
+
   it('keeps the email cap check in the history when it fails and when it recovers', async () => {
     const checks = async () =>
       (

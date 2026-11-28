@@ -119,6 +119,7 @@ export default function Header() {
   const { user, loading, logout } = useAuth()
   const adminArea = user ? adminAreaName(user.access, user.chapter) : null
   const coordinates = user ? canSendCalls(user) : false
+  const onboards = Boolean(user && (user.onboardingRole || user.access.globalAdmin))
   const member = isApprovedMember(user)
   const navItems = NAV_ITEMS.filter((item) => member || !item.members)
   const { actions: requiredActions, show: showRequiredAction } = useRequiredActions()
@@ -273,6 +274,14 @@ export default function Header() {
                           className="block px-4 py-3 text-brand-text no-underline"
                         >
                           Coordinate
+                        </Link>
+                      )}
+                      {onboards && (
+                        <Link
+                          href="/onboarding"
+                          className="block px-4 py-3 text-brand-text no-underline"
+                        >
+                          Global Onboarding
                         </Link>
                       )}
                       {adminArea && (
@@ -436,6 +445,7 @@ export default function Header() {
                   <MobileNavLink href="/settings">Settings</MobileNavLink>
                   {member && <MobileNavLink href="/calls">Calls for volunteers</MobileNavLink>}
                   {coordinates && <MobileNavLink href="/coordinate">Coordinate</MobileNavLink>}
+                  {onboards && <MobileNavLink href="/onboarding">Global Onboarding</MobileNavLink>}
 
                   {adminArea && (
                     <>

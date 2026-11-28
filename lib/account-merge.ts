@@ -19,8 +19,8 @@ type Tx = Prisma.TransactionClient
  *   one the kept account already has, by any unique index, is dropped instead.
  * - `delete` drops the merged account's rows (credentials, and requests the merge settles).
  * - `keep` leaves them on the merged account.
- * - `refuse` stops the merge while the merged account has any: a chapter or coordinator role must
- *   be handed to the kept account first, since staff belong to the chapter they serve.
+ * - `refuse` stops the merge while the merged account has any: a chapter, coordinator or onboarding
+ *   role must be handed to the kept account first, since staff belong to the chapter they serve.
  * - `pairs` is the distinct-account pair table, whose lower id comes first.
  *
  * A reference missing from this map stops every merge, and `account-merge.test.ts` fails on it.
@@ -45,6 +45,8 @@ export const MERGE_REFERENCES = {
   'bug_reports.reporter_id': 'move',
   'bug_reports.resolved_by_id': 'move',
   'call_dismissals.volunteer_id': 'move',
+  'onboarding_calls.host_id': 'move',
+  'onboarding_members.volunteer_id': 'refuse',
   'call_responses.volunteer_id': 'move',
   'calls.sender_id': 'move',
   'chapter_audit_events.actor_id': 'move',
@@ -345,7 +347,7 @@ export async function mergeAccounts(
 
       if ((await holdingRoles([mergedId], tx)).size) {
         throw refused(
-          'The account being merged in holds a chapter role or is a coordinator. A global admin must give the role to the account being kept first.',
+          'The account being merged in holds a chapter role, is a coordinator or is on the Global Onboarding team. Give the role to the account being kept first.',
         )
       }
 

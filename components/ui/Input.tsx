@@ -1,7 +1,17 @@
 import { forwardRef, type ComponentPropsWithoutRef } from 'react'
 import { twMerge } from 'tailwind-merge'
 
-type TextInputType = 'text' | 'email' | 'number' | 'url' | 'password' | 'search' | 'date' | 'tel'
+type TextInputType =
+  | 'text'
+  | 'email'
+  | 'number'
+  | 'url'
+  | 'password'
+  | 'search'
+  | 'date'
+  | 'tel'
+  | 'time'
+  | 'datetime-local'
 
 type InputProps = Omit<ComponentPropsWithoutRef<'input'>, 'type'> & {
   type?: TextInputType
