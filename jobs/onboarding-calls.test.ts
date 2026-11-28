@@ -108,7 +108,7 @@ describe('reminding hosts', () => {
 
 describe('asking the team for cover', () => {
   it('emails everyone else on the team when the host asks for cover, until someone takes it', async () => {
-    const host = await createOnboardingMember('MEMBER', { name: 'Kelly Host' })
+    const host = await createOnboardingMember('MEMBER', { name: 'Jo Host' })
     const other = await createOnboardingMember()
     const suspended = await createOnboardingMember('MEMBER', { suspendedAt: now })
     const call = await createOnboardingCall({
@@ -121,19 +121,19 @@ describe('asking the team for cover', () => {
     expect(emails.to(suspended.email!)).toHaveLength(0)
     const asked = emails.lastTo(other.email!)
     expect(asked.subject).toBe(ONBOARDING_SUBJECTS.cover(call.startsAt))
-    expect(asked.html).toContain('Kelly Host can&#x27;t make it and has asked for cover')
+    expect(asked.html).toContain('Jo Host can&#x27;t make it and has asked for cover')
     expect((await runOnboardingCallsJob(now)).asked).toBe(0)
   })
 
   it('asks when a host has not confirmed two days before, and when nobody hosts a close call', async () => {
-    const host = await createOnboardingMember('MEMBER', { name: 'Sean Quiet' })
+    const host = await createOnboardingMember('MEMBER', { name: 'Pat Quiet' })
     const other = await createOnboardingMember()
     await createOnboardingCall({ hostId: host.id, startsAt: inDays(1.5), remindedAt: now })
     await createOnboardingCall({ startsAt: inDays(3) })
     await createOnboardingCall({ hostId: host.id, startsAt: inDays(1), confirmedAt: now })
     expect(await runOnboardingCallsJob(now)).toMatchObject({ asked: 2 })
     const html = emails.to(other.email!).map((e) => e.html)
-    expect(html.some((h) => h.includes('Sean Quiet hasn&#x27;t said they&#x27;re on yet'))).toBe(
+    expect(html.some((h) => h.includes('Pat Quiet hasn&#x27;t said they&#x27;re on yet'))).toBe(
       true,
     )
     expect(html.some((h) => h.includes('Nobody is hosting it yet'))).toBe(true)

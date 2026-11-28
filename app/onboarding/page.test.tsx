@@ -31,8 +31,8 @@ beforeEach(async () => {
 
 describe('Global Onboarding, as a member', () => {
   it('takes a call, confirms it, asks for cover and swaps', async () => {
-    const member = await createOnboardingMember('MEMBER', { name: 'Will Member' })
-    const other = await createOnboardingMember('MEMBER', { name: 'Aarti Other' })
+    const member = await createOnboardingMember('MEMBER', { name: 'Max Member' })
+    const other = await createOnboardingMember('MEMBER', { name: 'Alex Other' })
     const open = await createOnboardingCall({ startsAt: inDays(10) })
     const theirs = await createOnboardingCall({
       name: 'Call A',
@@ -66,7 +66,7 @@ describe('Global Onboarding, as a member', () => {
 
     await userEvent.selectOptions(within(openCard).getByLabelText('Swap with'), String(theirs.id))
     await userEvent.click(within(openCard).getByRole('button', { name: 'Swap' }))
-    await screen.findByText('Swapped with Aarti Other')
+    await screen.findByText('Swapped with Alex Other')
     expect((await call(theirs.id)).hostId).toBe(member.id)
   })
 
@@ -127,8 +127,8 @@ describe('Global Onboarding, as a member', () => {
 
 describe('Global Onboarding, as the lead', () => {
   it('adds calls and regular calls, assigns hosts, and sets the Meet link', async () => {
-    const lead = await createOnboardingMember('LEAD', { name: 'Irina Lead' })
-    const member = await createOnboardingMember('MEMBER', { name: 'Kelly Member' })
+    const lead = await createOnboardingMember('LEAD', { name: 'Robin Lead' })
+    const member = await createOnboardingMember('MEMBER', { name: 'Jo Member' })
     const hosted = await createOnboardingCall({ hostId: member.id, startsAt: inDays(6) })
     await renderApp(<OnboardingPage />, { as: lead })
 
@@ -143,7 +143,7 @@ describe('Global Onboarding, as the lead', () => {
     const added = await card('Call C', at)
 
     await userEvent.selectOptions(within(added).getByLabelText('Host'), String(member.id))
-    await screen.findByText('Kelly Member is hosting it')
+    await screen.findByText('Jo Member is hosting it')
 
     const hostedCard = await card('Call B', hosted.startsAt)
     await userEvent.click(within(hostedCard).getByRole('button', { name: 'Ask for cover' }))
@@ -193,9 +193,9 @@ describe('Global Onboarding, as the lead', () => {
   })
 
   it('adds people to the team, names a deputy and removes people', async () => {
-    const lead = await createOnboardingMember('LEAD', { name: 'Irina Lead' })
-    await createOnboardingMember('MEMBER', { name: 'Kelly Member' })
-    const joining = await createVolunteer({ name: 'Chay Joining' })
+    const lead = await createOnboardingMember('LEAD', { name: 'Robin Lead' })
+    await createOnboardingMember('MEMBER', { name: 'Jo Member' })
+    const joining = await createVolunteer({ name: 'Lee Joining' })
     await renderApp(<OnboardingPage />, { as: lead })
 
     await userEvent.type(
@@ -203,13 +203,13 @@ describe('Global Onboarding, as the lead', () => {
       joining.email!,
     )
     await userEvent.click(screen.getByRole('button', { name: 'Add to team' }))
-    await screen.findByText('Chay Joining is on the team')
-    const row = (await screen.findByText('Chay Joining')).closest('li') as HTMLElement
+    await screen.findByText('Lee Joining is on the team')
+    const row = (await screen.findByText('Lee Joining')).closest('li') as HTMLElement
     await userEvent.click(within(row).getByRole('button', { name: 'Make deputy' }))
     expect(await within(row).findByText('· Deputy')).toBeInTheDocument()
     await userEvent.click(within(row).getByRole('button', { name: 'Make member' }))
     await screen.findByText('No longer a deputy')
-    await userEvent.click(screen.getByRole('button', { name: 'Remove Kelly Member from the team' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Remove Jo Member from the team' }))
     await screen.findByText('Removed from the team')
     expect(screen.queryByRole('form', { name: 'Set the lead' })).toBeNull()
   })
@@ -230,14 +230,14 @@ describe('Global Onboarding, as the lead', () => {
 describe('Global Onboarding, as a global admin', () => {
   it('names the lead', async () => {
     const admin = await createAdmin()
-    const irina = await createVolunteer({ name: 'Irina Tavera' })
+    const irina = await createVolunteer({ name: 'Robin Lead' })
     await renderApp(<OnboardingPage />, { as: admin })
     await userEvent.type(
       await screen.findByLabelText('Make lead (global admins only)'),
       irina.email!,
     )
     await userEvent.click(screen.getByRole('button', { name: 'Make lead' }))
-    await screen.findByText('Irina Tavera leads Global Onboarding')
+    await screen.findByText('Robin Lead leads Global Onboarding')
     expect(await screen.findByText('· Lead')).toBeInTheDocument()
   })
 
@@ -259,13 +259,13 @@ describe('reminder link page', () => {
   }
 
   it('confirms with the button the email’s link chose, signed out', async () => {
-    const host = await createOnboardingMember('MEMBER', { name: 'Sunyal Host' })
+    const host = await createOnboardingMember('MEMBER', { name: 'Sam Host' })
     const c = await createOnboardingCall({ hostId: host.id, name: 'Call A' })
     await open(`?token=${c.actionToken}&answer=on`)
     expect(
       await screen.findByRole('heading', { name: `Call A, ${formatCallTime(c.startsAt)}` }),
     ).toBeInTheDocument()
-    expect(screen.getByText(/Sunyal Host, you.re hosting/)).toBeInTheDocument()
+    expect(screen.getByText(/Sam Host, you.re hosting/)).toBeInTheDocument()
     expect((await call(c.id)).confirmedAt).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: "I'm on" }))
     expect(await screen.findByText(/Thanks, you.re on/)).toBeInTheDocument()

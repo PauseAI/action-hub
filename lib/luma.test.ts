@@ -86,22 +86,22 @@ describe('HttpLumaClient', () => {
 
   it('adds a host who can manage the event and shows on its page, and removes them', async () => {
     const { sent, client } = fakeFetch({ body: {} }, { body: {} })
-    await client.addHost('evt-1', { email: 'kelly@pauseai.info', name: 'Kelly' })
-    await client.removeHost('evt-1', 'kelly@pauseai.info')
+    await client.addHost('evt-1', { email: 'jo@pauseai.info', name: 'Jo' })
+    await client.removeHost('evt-1', 'jo@pauseai.info')
     expect(sent.map((s) => [s.url, s.body])).toEqual([
       [
         'https://public-api.luma.com/v1/events/hosts/add',
         {
           event_id: 'evt-1',
-          email: 'kelly@pauseai.info',
-          name: 'Kelly',
+          email: 'jo@pauseai.info',
+          name: 'Jo',
           access_level: 'manager',
           is_visible: true,
         },
       ],
       [
         'https://public-api.luma.com/v1/events/hosts/remove',
-        { event_id: 'evt-1', email: 'kelly@pauseai.info' },
+        { event_id: 'evt-1', email: 'jo@pauseai.info' },
       ],
     ])
   })

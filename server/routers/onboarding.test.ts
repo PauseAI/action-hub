@@ -27,10 +27,10 @@ beforeEach(async () => {
 })
 
 async function team() {
-  const lead = await createOnboardingMember('LEAD', { name: 'Irina Lead' })
+  const lead = await createOnboardingMember('LEAD', { name: 'Robin Lead' })
   const deputy = await createOnboardingMember('DEPUTY', { name: 'Dana Deputy' })
-  const member = await createOnboardingMember('MEMBER', { name: 'Will Member' })
-  const other = await createOnboardingMember('MEMBER', { name: 'Aarti Other' })
+  const member = await createOnboardingMember('MEMBER', { name: 'Max Member' })
+  const other = await createOnboardingMember('MEMBER', { name: 'Alex Other' })
   return { lead, deputy, member, other }
 }
 
@@ -42,10 +42,10 @@ describe('who sees the section', () => {
     expect(seen).toMatchObject({ role: 'MEMBER', manages: false, isAdmin: false, lumaLive: false })
     expect(seen.calls).toHaveLength(1)
     expect(seen.members.map((m) => m.name)).toEqual([
-      'Irina Lead',
+      'Robin Lead',
       'Dana Deputy',
-      'Will Member',
-      'Aarti Other',
+      'Max Member',
+      'Alex Other',
     ])
     expect(await clientAs(await createAdmin()).onboarding.overview()).toMatchObject({
       role: null,
@@ -154,7 +154,7 @@ describe('hosting', () => {
     await clientAs(member).onboarding.swap({ callId: mine.id, withCallId: theirs.id })
     expect(await call(mine.id)).toMatchObject({ hostId: other.id, confirmedAt: null })
     expect(await call(theirs.id)).toMatchObject({ hostId: member.id })
-    expect(emails.lastTo(other.email!).subject).toBe(ONBOARDING_SUBJECTS.swapped('Will Member'))
+    expect(emails.lastTo(other.email!).subject).toBe(ONBOARDING_SUBJECTS.swapped('Max Member'))
   })
 
   it('refuses a swap that is not the host’s, or with a call nobody else hosts', async () => {
@@ -360,7 +360,7 @@ describe('the lead’s tools', () => {
 describe('the team', () => {
   it('adds someone by their address, only an approved account', async () => {
     const { deputy } = await team()
-    const joining = await createVolunteer({ name: 'Chay New' })
+    const joining = await createVolunteer({ name: 'Lee New' })
     await clientAs(deputy).onboarding.addMember({ email: joining.email!.toUpperCase() })
     expect(
       await prisma.onboardingMember.findUnique({ where: { volunteerId: joining.id } }),
@@ -442,7 +442,7 @@ describe('reminder links', () => {
     const c = await createOnboardingCall({ hostId: member.id })
     expect(await anon().onboarding.byToken({ token: c.actionToken })).toMatchObject({
       name: 'Call B',
-      hostName: 'Will Member',
+      hostName: 'Max Member',
       confirmed: false,
       coverRequested: false,
     })
